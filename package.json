@@ -1,0 +1,46 @@
+{
+  "name": "garilai-frontend",
+  "description": "GARIL AI — Frontend (Next.js static export)",
+  "private": true,
+  "version": "0.0.1",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "lint": "next lint",
+    "start": "npx --yes serve@14 out -l 3000"
+  },
+  "dependencies": {
+    "@sgratzl/chartjs-chart-boxplot": "^4.4.5",
+    "@supabase/supabase-js": "^2.110.7",
+    "@tiptap/extension-image": "^3.28.0",
+    "@tiptap/pm": "^3.28.0",
+    "@tiptap/react": "^3.28.0",
+    "@tiptap/starter-kit": "^3.28.0",
+    "chart.js": "^4.5.1",
+    "docx": "^9.7.1",
+    "html2canvas": "^1.4.1",
+    "idb": "^8.0.3",
+    "jspdf": "^3.0.1",
+    "jstat": "^1.9.6",
+    "mammoth": "^1.12.0",
+    "marked": "^15.0.12",
+    "next": "^16.2.6",
+    "pptxgenjs": "^4.0.1",
+    "react": "^19.2.6",
+    "react-chartjs-2": "^5.3.1",
+    "react-dom": "^19.2.6",
+    "react-markdown": "^10.1.0",
+    "recharts": "^2.15.4",
+    "remark-gfm": "^4.0.1",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^22.19.19",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "postcss": "^8.5.20",
+    "tailwindcss": "^4.3.3",
+    "typescript": "~5.9.3"
+  }
+}
