@@ -3,7 +3,9 @@ import type { NextConfig } from "next";
 const DEV_BACKEND = process.env.FEYNMAN_BACKEND_URL ?? "http://127.0.0.1:3141";
 
 const nextConfig: NextConfig = {
-	output: "export",
+	// Static export is for production builds only. Keeping it on in `next dev`
+	// breaks rewrites (API/WS proxy) and can leave webpack HMR serving stale chunks.
+	...(process.env.NODE_ENV === "production" ? { output: "export" as const } : {}),
 	images: {
 		unoptimized: true,
 	},
@@ -19,7 +21,7 @@ const nextConfig: NextConfig = {
 	// client bundles — strip the prefix and stub Node builtins for the browser.
 	webpack: (config, { isServer, webpack }) => {
 		config.plugins.push(
-			new webpack.NormalModuleReplacementPlugin(/^node:/, (resource) => {
+			new webpack.NormalModuleReplacementPlugin(/^node:/, (resource: { request: string }) => {
 				resource.request = resource.request.replace(/^node:/, "");
 			}),
 		);
