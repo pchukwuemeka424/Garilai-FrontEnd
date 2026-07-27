@@ -39,6 +39,15 @@ import {
 } from "@/lib/research-figure-appendix";
 import { peekOutlinePageContext, resolveOutlinePageContext } from "@/lib/research-outline-context";
 import { consumePendingResearchPaper } from "@/lib/research-paper-pending";
+import { fetchSavedResearchById } from "@/lib/research-api";
+import { fetchResearchJobById, startResearchPaperJob } from "@/lib/research-jobs-api";
+import {
+	clearTrackedResearchJob,
+	getTrackedResearchJob,
+	isTerminalResearchJobStatus,
+	markTrackedResearchJobNotified,
+	setTrackedResearchJob,
+} from "@/lib/research-job-tracker";
 import { ResearchPaperMarkdown } from "@/components/research/ResearchPaperMarkdown";
 import { savedResearchPagePath } from "@/lib/saved-research-routes";
 import { DEFAULT_CITATION_STYLE, type CitationStyle } from "@/lib/citation-styles";
@@ -92,6 +101,8 @@ export function FeynmanApp({ layout = "aula" }: { layout?: "aula" | "student" })
 	const [projectName, setProjectName] = useState<string | null>(null);
 	const [paperOpenedInNewTab, setPaperOpenedInNewTab] = useState(false);
 	const [openedPaperId, setOpenedPaperId] = useState<string | null>(null);
+	const [backgroundJobId, setBackgroundJobId] = useState<string | null>(null);
+	const [backgroundJobRunning, setBackgroundJobRunning] = useState(false);
 	const [savedPapers, setSavedPapers] = useState<SavedResearchPaper[]>([]);
 	const [viewingSaved, setViewingSaved] = useState<SavedResearchPaper | null>(null);
 	const [saveNotice, setSaveNotice] = useState<string | null>(null);
@@ -129,7 +140,7 @@ export function FeynmanApp({ layout = "aula" }: { layout?: "aula" | "student" })
 	const activePaperContent = viewingSaved?.content ?? paperContentWithFigures;
 	const formattedPaperContent = activePaperContent ? formatResearchPaperReferences(activePaperContent) : "";
 	const paperTitle = extractPaperTitle(formattedPaperContent || activePaperContent, paperTopic || "Research paper");
-	const paperReady = Boolean(formattedPaperContent) && !isBusy;
+	const paperReady = Boolean(formattedPaperContent) && !isBusy && !backgroundJobRunning;
 	const isStudent = layout === "student";
 	const isResearchPaperRoute =
 		pathname === "/research/paper" || pathname === "/student/research/paper";
@@ -138,7 +149,7 @@ export function FeynmanApp({ layout = "aula" }: { layout?: "aula" | "student" })
 		researchFlowActive &&
 		!paperOpenedInNewTab &&
 		!paperPrepError &&
-		(paperPreparing || isBusy || !paperReady);
+		(paperPreparing || backgroundJobRunning || isBusy || !paperReady);
 	const loadingProjectName = projectName?.trim() || paperTitle || "Research paper";
 
 	const firstUserPrompt = messages.find((m) => m.role === "user")?.content.trim() ?? initialChat.input.trim();
@@ -339,7 +350,7 @@ export function FeynmanApp({ layout = "aula" }: { layout?: "aula" | "student" })
 	const handleSubmit = (e: React.FormEvent) => {
 		e.preventDefault();
 		const trimmed = input.trim();
-		if (!trimmed || isBusy) return;
+		if (!trimmed || isBusy || backgroundJobRunning) return;
 		setInput("");
 		setViewingSaved(null);
 		if (!hasAssistantPaper) {
@@ -374,7 +385,8 @@ export function FeynmanApp({ layout = "aula" }: { layout?: "aula" | "student" })
 
 	useEffect(() => {
 		if (!pendingAutoGenerateRef.current || autoGenerateRef.current) return;
-		if (status !== "connected" || isBusy || hasAssistantPaper) return;
+		if (authLoading || !user) return;
+		if (isBusy || backgroundJobRunning || hasAssistantPaper || viewingSaved) return;
 
 		const pending = consumePendingResearchPaper();
 		const paperKey = pending?.key ?? pendingPaperKeyRef.current;
@@ -385,11 +397,13 @@ export function FeynmanApp({ layout = "aula" }: { layout?: "aula" | "student" })
 			pendingAutoGenerateRef.current = false;
 			researchFlowGenerationRef.current = true;
 			setResearchFlowActive(true);
+			let displayTopic = pending?.projectName?.trim() || "";
 			if (pending?.projectName?.trim()) {
 				setProjectName(pending.projectName.trim());
 			} else {
 				const context = resolveOutlinePageContext(paperKey) ?? peekOutlinePageContext(paperKey);
 				if (context?.idea.title) {
+					displayTopic = context.idea.title;
 					setProjectName(context.idea.title);
 				}
 			}
@@ -399,7 +413,7 @@ export function FeynmanApp({ layout = "aula" }: { layout?: "aula" | "student" })
 			void prepareResearchPaperPrompt(paperKey, pending?.citationStyle ?? DEFAULT_CITATION_STYLE, {
 				onTokenQuota: setTokenQuota,
 			})
-				.then((prompt) => {
+				.then(async (prompt) => {
 					if (!prompt?.trim()) {
 						throw new Error("Could not prepare research paper.");
 					}
@@ -407,10 +421,18 @@ export function FeynmanApp({ layout = "aula" }: { layout?: "aula" | "student" })
 					saveChatCitationStyle(style);
 					setCitationStyle(style);
 					setInput(prompt);
-					sendResearchPaper(prompt);
+					const job = await startResearchPaperJob({
+						prompt,
+						topic: displayTopic || undefined,
+					});
+					setTrackedResearchJob({ jobId: job.id, topic: job.topic });
+					setBackgroundJobId(job.id);
+					setBackgroundJobRunning(true);
 				})
 				.catch((prepError) => {
 					autoGenerateRef.current = false;
+					setResearchFlowActive(false);
+					researchFlowGenerationRef.current = false;
 					setPaperPrepError(
 						prepError instanceof Error ? prepError.message : "Could not start research generation.",
 					);
@@ -423,8 +445,134 @@ export function FeynmanApp({ layout = "aula" }: { layout?: "aula" | "student" })
 
 		autoGenerateRef.current = true;
 		pendingAutoGenerateRef.current = false;
-		sendResearchPaper(input.trim());
-	}, [input, status, isBusy, hasAssistantPaper, sendResearchPaper, setTokenQuota]);
+		researchFlowGenerationRef.current = true;
+		setResearchFlowActive(true);
+		setPaperPrepError(null);
+		void startResearchPaperJob({ prompt: input.trim(), topic: projectName?.trim() || undefined })
+			.then((job) => {
+				setTrackedResearchJob({ jobId: job.id, topic: job.topic });
+				setBackgroundJobId(job.id);
+				setBackgroundJobRunning(true);
+			})
+			.catch((startError) => {
+				autoGenerateRef.current = false;
+				setResearchFlowActive(false);
+				researchFlowGenerationRef.current = false;
+				setPaperPrepError(
+					startError instanceof Error ? startError.message : "Could not start research generation.",
+				);
+			});
+	}, [
+		authLoading,
+		user,
+		input,
+		isBusy,
+		backgroundJobRunning,
+		hasAssistantPaper,
+		viewingSaved,
+		projectName,
+		setTokenQuota,
+	]);
+
+	useEffect(() => {
+		if (!backgroundJobId || !backgroundJobRunning) return;
+
+		let cancelled = false;
+
+		const finishWithPaper = async (savedResearchId: string, jobId: string) => {
+			markTrackedResearchJobNotified(jobId);
+			const paper = await fetchSavedResearchById(savedResearchId);
+			if (cancelled) return;
+			if (!paper) {
+				setPaperPrepError("Research finished but the saved paper could not be loaded.");
+				setBackgroundJobRunning(false);
+				setResearchFlowActive(false);
+				researchFlowGenerationRef.current = false;
+				return;
+			}
+
+			setSavedPapers((prev) => {
+				const without = prev.filter((p) => p.id !== paper.id);
+				return [paper, ...without];
+			});
+			setViewingSaved(paper);
+			setBackgroundJobRunning(false);
+			researchFlowGenerationRef.current = false;
+			setResearchFlowActive(false);
+
+			if (isResearchPaperRoute) {
+				const viewUrl = savedResearchPagePath(paper.id, savedPaperVariant);
+				const opened = window.open(viewUrl, "_blank", "noopener,noreferrer");
+				setOpenedPaperId(paper.id);
+				setPaperOpenedInNewTab(true);
+				setSaveNotice(
+					opened
+						? "Research paper ready — opened in a new tab. You can keep browsing while we save it."
+						: "Research paper ready — use Open paper to view it (popup may be blocked).",
+				);
+			} else {
+				setSaveNotice(
+					isStudent
+						? "Research saved automatically to your history."
+						: "Research saved to your library.",
+				);
+			}
+			window.setTimeout(() => setSaveNotice(null), 8000);
+			clearTrackedResearchJob(jobId);
+		};
+
+		const poll = async () => {
+			const job = await fetchResearchJobById(backgroundJobId);
+			if (cancelled || !job) return;
+
+			if (job.status === "completed" && job.savedResearchId) {
+				await finishWithPaper(job.savedResearchId, job.id);
+				return;
+			}
+
+			if (isTerminalResearchJobStatus(job.status)) {
+				markTrackedResearchJobNotified(job.id);
+				clearTrackedResearchJob(job.id);
+				setBackgroundJobRunning(false);
+				setResearchFlowActive(false);
+				researchFlowGenerationRef.current = false;
+				setPaperPrepError(job.error || "Research generation failed.");
+			}
+		};
+
+		void poll();
+		const timer = window.setInterval(() => void poll(), 3000);
+		return () => {
+			cancelled = true;
+			window.clearInterval(timer);
+		};
+	}, [
+		backgroundJobId,
+		backgroundJobRunning,
+		isResearchPaperRoute,
+		isStudent,
+		savedPaperVariant,
+	]);
+
+	useEffect(() => {
+		if (!isResearchPaperRoute || authLoading || !user) return;
+		const tracked = getTrackedResearchJob();
+		if (!tracked || tracked.notified || backgroundJobRunning || backgroundJobId) return;
+
+		let cancelled = false;
+		void fetchResearchJobById(tracked.jobId).then((job) => {
+			if (cancelled || !job) return;
+			if (!isTerminalResearchJobStatus(job.status)) {
+				setBackgroundJobId(job.id);
+				setBackgroundJobRunning(true);
+				setResearchFlowActive(true);
+				setProjectName((prev) => prev || job.topic);
+			}
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, [isResearchPaperRoute, authLoading, user, backgroundJobRunning, backgroundJobId]);
 
 	useEffect(() => {
 		if (pendingAutoGenerateRef.current || !input.trim() || prefillFocusedRef.current) return;
@@ -613,7 +761,7 @@ export function FeynmanApp({ layout = "aula" }: { layout?: "aula" | "student" })
 							)}
 							<ChatPanel
 								messages={displayMessages}
-								isBusy={(isBusy || paperPreparing) && !viewingSaved}
+								isBusy={(isBusy || paperPreparing || backgroundJobRunning) && !viewingSaved}
 								onSuggestionClick={handleSuggestionClick}
 							/>
 						</div>
@@ -649,7 +797,7 @@ export function FeynmanApp({ layout = "aula" }: { layout?: "aula" | "student" })
 											handleSubmit(e);
 										}
 									}}
-									disabled={status !== "connected"}
+									disabled={status !== "connected" || backgroundJobRunning}
 								/>
 								<div className="chat-composer-footer">
 									{isBusy ? (
@@ -666,7 +814,7 @@ export function FeynmanApp({ layout = "aula" }: { layout?: "aula" | "student" })
 									<button
 										type="submit"
 										className="chat-composer-send"
-										disabled={!input.trim() || isBusy || status !== "connected"}
+										disabled={!input.trim() || isBusy || backgroundJobRunning || status !== "connected"}
 										aria-label={hasAssistantPaper ? "Send message" : "Generate paper"}
 									>
 										<SendIcon />

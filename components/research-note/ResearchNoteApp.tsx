@@ -1,6 +1,7 @@
 "use client";
 
 import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import { Dashboard } from "@/components/research-note/features/dashboard/Dashboard";
 import { SearchModal } from "@/components/research-note/features/search/SearchModal";
@@ -34,7 +35,12 @@ type Props = {
 };
 
 export function ResearchNoteApp({ author }: Props) {
-	const [view, setView] = useState<View>({ kind: "dashboard" });
+	const router = useRouter();
+	const searchParams = useSearchParams();
+	const projectFromUrl = searchParams.get("project")?.trim() || "";
+	const [view, setView] = useState<View>(() =>
+		projectFromUrl ? { kind: "project", projectId: projectFromUrl } : { kind: "dashboard" },
+	);
 	const [showSearch, setShowSearch] = useState(false);
 	const ai = useSettings();
 	const theme = useTheme();
@@ -44,6 +50,15 @@ export function ResearchNoteApp({ author }: Props) {
 		name: author.name || author.email || "Researcher",
 		email: author.email || "",
 	};
+
+	useEffect(() => {
+		if (!projectFromUrl) return;
+		setView((prev) =>
+			prev.kind === "project" && prev.projectId === projectFromUrl
+				? prev
+				: { kind: "project", projectId: projectFromUrl },
+		);
+	}, [projectFromUrl]);
 
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
@@ -56,7 +71,15 @@ export function ResearchNoteApp({ author }: Props) {
 		return () => window.removeEventListener("keydown", onKey);
 	}, []);
 
-	const openProject = (projectId: string) => setView({ kind: "project", projectId });
+	const openProject = (projectId: string) => {
+		setView({ kind: "project", projectId });
+		router.replace(`/research/note?project=${encodeURIComponent(projectId)}`, { scroll: false });
+	};
+
+	const backToDashboard = () => {
+		setView({ kind: "dashboard" });
+		router.replace("/research/note", { scroll: false });
+	};
 
 	const modals = (
 		<SearchModal open={showSearch} onClose={() => setShowSearch(false)} onOpenProject={openProject} />
@@ -78,7 +101,7 @@ export function ResearchNoteApp({ author }: Props) {
 						projectId={view.projectId}
 						settings={ai.settings}
 						author={noteUser.name}
-						onBack={() => setView({ kind: "dashboard" })}
+						onBack={backToDashboard}
 					/>
 				</Suspense>
 				{modals}

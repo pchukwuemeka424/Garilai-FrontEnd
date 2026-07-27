@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { AuthField } from "@/components/auth/AuthField";
 import { AuthRoleSelector, type AuthAccountRole } from "@/components/auth/AuthRoleSelector";
@@ -17,6 +17,10 @@ import {
 	NIGERIA_PROGRAM_LEVELS,
 } from "@/lib/nigeria-departments";
 import { getUniversityLabel, NIGERIA_UNIVERSITY_GROUPS } from "@/lib/nigeria-universities";
+import {
+	fetchOnboardedUniversities,
+	type OnboardedUniversity,
+} from "@/lib/universities-api";
 
 type Props = {
 	defaultRole?: AuthAccountRole;
@@ -43,6 +47,8 @@ export function RegisterScreen({ defaultRole = "lecturer" }: Props) {
 	const [confirmPassword, setConfirmPassword] = useState("");
 	const [error, setError] = useState<string | null>(null);
 	const [submitting, setSubmitting] = useState(false);
+	const [universities, setUniversities] = useState<OnboardedUniversity[] | null>(null);
+	const [universitiesLoading, setUniversitiesLoading] = useState(true);
 
 	useEffect(() => {
 		if (!loading && user) router.replace(dashboardPathForRole(user.role));
@@ -53,14 +59,64 @@ export function RegisterScreen({ defaultRole = "lecturer" }: Props) {
 		if (fromQuery) setRole(parseRole(fromQuery));
 	}, [searchParams]);
 
+	useEffect(() => {
+		let cancelled = false;
+		setUniversitiesLoading(true);
+		void fetchOnboardedUniversities()
+			.then((list) => {
+				if (!cancelled) setUniversities(list);
+			})
+			.catch(() => {
+				// Fall back to static catalogue if the public endpoint is unavailable.
+				if (!cancelled) setUniversities(null);
+			})
+			.finally(() => {
+				if (!cancelled) setUniversitiesLoading(false);
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, []);
+
 	const isStudent = role === "student";
+	const usingOnboardedList = universities !== null;
+	const noOnboardedUniversities = usingOnboardedList && universities.length === 0;
+
+	const institutionOptions = useMemo(() => {
+		if (usingOnboardedList) {
+			return universities.map((university) => ({
+				id: university.catalogueId,
+				label: university.name,
+			}));
+		}
+		return NIGERIA_UNIVERSITY_GROUPS.flatMap((group) => group.universities);
+	}, [universities, usingOnboardedList]);
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
 		setError(null);
 
+		if (universitiesLoading) {
+			setError("Still loading institutions. Please wait a moment.");
+			return;
+		}
+
+		if (noOnboardedUniversities) {
+			setError(
+				"Your university is not yet onboarded on this platform. Contact your administrator.",
+			);
+			return;
+		}
+
 		if (!institutionId) {
 			setError("Please select your institution.");
+			return;
+		}
+
+		if (usingOnboardedList && !universities.some((u) => u.catalogueId === institutionId)) {
+			setError(
+				"Your university is not yet onboarded on this platform. Contact your administrator.",
+			);
 			return;
 		}
 
@@ -87,7 +143,10 @@ export function RegisterScreen({ defaultRole = "lecturer" }: Props) {
 		const department = isStudent
 			? formatStudentProgram(departmentId, programLevelId)
 			: getDepartmentLabel(departmentId);
-		const institution = getUniversityLabel(institutionId);
+		const selected = usingOnboardedList
+			? universities.find((u) => u.catalogueId === institutionId)
+			: null;
+		const institution = selected?.name ?? getUniversityLabel(institutionId);
 
 		setSubmitting(true);
 		try {
@@ -164,19 +223,28 @@ export function RegisterScreen({ defaultRole = "lecturer" }: Props) {
 							label="Institution"
 							value={institutionId}
 							onChange={(e) => setInstitutionId(e.target.value)}
-							placeholder="Select your university or polytechnic"
+							placeholder={
+								universitiesLoading
+									? "Loading institutions…"
+									: noOnboardedUniversities
+										? "No onboarded institutions yet"
+										: "Select your university or polytechnic"
+							}
 							required
+							disabled={submitting || universitiesLoading || noOnboardedUniversities}
 						>
-							{NIGERIA_UNIVERSITY_GROUPS.map((group) => (
-								<optgroup key={group.id} label={group.label}>
-									{group.universities.map((university) => (
-										<option key={university.id} value={university.id}>
-											{university.label}
-										</option>
-									))}
-								</optgroup>
+							{institutionOptions.map((university) => (
+								<option key={university.id} value={university.id}>
+									{university.label}
+								</option>
 							))}
 						</AuthSelectField>
+
+						{noOnboardedUniversities && (
+							<p className="login-form-note" role="status">
+								Your university is not yet onboarded on this platform. Contact your administrator.
+							</p>
+						)}
 
 						<div className={isStudent ? "login-form-fields-grid" : undefined}>
 							<AuthSelectField
@@ -253,7 +321,11 @@ export function RegisterScreen({ defaultRole = "lecturer" }: Props) {
 					</div>
 				)}
 
-				<button type="submit" className="login-btn" disabled={submitting || loading}>
+				<button
+					type="submit"
+					className="login-btn"
+					disabled={submitting || loading || universitiesLoading || noOnboardedUniversities}
+				>
 					{submitting
 						? "Creating account…"
 						: isStudent

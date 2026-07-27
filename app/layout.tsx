@@ -1,4 +1,4 @@
-import { Inter } from "next/font/google";
+import { Inter, Source_Sans_3, Source_Serif_4 } from "next/font/google";
 import type { Metadata } from "next";
 
 import { Providers } from "@/components/Providers";
@@ -9,6 +9,16 @@ import "./globals.css";
 const inter = Inter({
 	subsets: ["latin"],
 	variable: "--font-sans",
+});
+
+const homeSans = Source_Sans_3({
+	subsets: ["latin"],
+	variable: "--font-home-sans",
+});
+
+const homeDisplay = Source_Serif_4({
+	subsets: ["latin"],
+	variable: "--font-home-display",
 });
 
 export const metadata: Metadata = {
@@ -22,7 +32,11 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
 	return (
-		<html lang="en" className={inter.variable} suppressHydrationWarning>
+		<html
+			lang="en"
+			className={`${inter.variable} ${homeSans.variable} ${homeDisplay.variable}`}
+			suppressHydrationWarning
+		>
 			<body className={inter.className} suppressHydrationWarning>
 				<Providers>{children}</Providers>
 			</body>

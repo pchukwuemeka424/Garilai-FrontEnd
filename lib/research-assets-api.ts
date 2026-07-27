@@ -23,7 +23,9 @@ export type ResearchDataset = {
 export type AttachmentPayload = {
 	name: string;
 	mime: string;
-	data: string;
+	data?: string;
+	downloadUrl?: string;
+	sizeBytes?: number;
 };
 
 export type ResearchSourceSelection = {
@@ -97,7 +99,13 @@ export async function createDataset(input: {
 	fileName?: string;
 	fileMime?: string;
 	fileData?: string;
+	/** When set, uploads directly to MinIO (supports up to 2 GB). */
+	file?: File;
 }): Promise<ResearchDataset> {
+	if (input.file) {
+		return createDatasetViaDirectUpload(input, input.file);
+	}
+
 	const res = await fetch(apiUrl("/api/research/datasets"), {
 		method: "POST",
 		headers: { "Content-Type": "application/json", ...authHeaders() },
@@ -122,6 +130,96 @@ export async function createDataset(input: {
 	const data = (await res.json()) as { dataset?: ResearchDataset };
 	if (!data.dataset) throw new Error("Could not save dataset.");
 	return data.dataset;
+}
+
+/** Direct browser → MinIO PUT (default max 2 GiB). Requires S3 configured + CORS. */
+export async function createDatasetViaDirectUpload(
+	input: {
+		title: string;
+		description: string;
+		discipline: string;
+		format: string;
+		year: string;
+		license: string;
+		accessUrl: string;
+		sizeLabel: string;
+		tagsText: string;
+		visibility: "private" | "shared";
+		projectId?: string;
+	},
+	file: File,
+	onProgress?: (ratio: number) => void,
+): Promise<ResearchDataset> {
+	const sessionRes = await fetch(apiUrl("/api/research/datasets/upload-session"), {
+		method: "POST",
+		headers: { "Content-Type": "application/json", ...authHeaders() },
+		body: JSON.stringify({
+			title: input.title,
+			description: input.description,
+			discipline: input.discipline,
+			format: input.format,
+			year: input.year,
+			license: input.license,
+			accessUrl: input.accessUrl,
+			sizeLabel: input.sizeLabel || undefined,
+			tags: parseTagsText(input.tagsText),
+			visibility: input.visibility,
+			projectId: input.projectId,
+			fileName: file.name,
+			fileMime: file.type || "application/octet-stream",
+			fileSizeBytes: file.size,
+		}),
+	});
+	if (!sessionRes.ok) {
+		throw new Error(await parseError(sessionRes, "Could not start MinIO upload."));
+	}
+	const session = (await sessionRes.json()) as {
+		dataset?: ResearchDataset;
+		uploadUrl?: string;
+	};
+	if (!session.dataset?.id || !session.uploadUrl) {
+		throw new Error("Could not start MinIO upload.");
+	}
+
+	await putFileToPresignedUrl(session.uploadUrl, file, onProgress);
+
+	const doneRes = await fetch(
+		apiUrl(`/api/research/datasets/${encodeURIComponent(session.dataset.id)}/complete-upload`),
+		{ method: "POST", headers: { ...authHeaders() } },
+	);
+	if (!doneRes.ok) {
+		throw new Error(await parseError(doneRes, "Upload finished but confirmation failed."));
+	}
+	const done = (await doneRes.json()) as { dataset?: ResearchDataset };
+	if (!done.dataset) throw new Error("Upload confirmation failed.");
+	return done.dataset;
+}
+
+function putFileToPresignedUrl(
+	uploadUrl: string,
+	file: File,
+	onProgress?: (ratio: number) => void,
+): Promise<void> {
+	return new Promise((resolve, reject) => {
+		const xhr = new XMLHttpRequest();
+		xhr.open("PUT", uploadUrl);
+		xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+		xhr.upload.onprogress = (event) => {
+			if (!onProgress || !event.lengthComputable || event.total <= 0) return;
+			onProgress(Math.min(1, event.loaded / event.total));
+		};
+		xhr.onload = () => {
+			if (xhr.status >= 200 && xhr.status < 300) resolve();
+			else reject(new Error(`MinIO upload failed (HTTP ${xhr.status}).`));
+		};
+		xhr.onerror = () =>
+			reject(
+				new Error(
+					"MinIO upload failed. If the file is larger than ~100 MB, set s3.garilai.com to DNS-only (grey cloud) in Cloudflare.",
+				),
+			);
+		xhr.send(file);
+	});
 }
 
 export async function fetchDataset(id: string): Promise<ResearchDataset> {

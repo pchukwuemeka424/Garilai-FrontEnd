@@ -7,8 +7,6 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { AulaModal } from "@/components/aula/AulaModal";
 import { NavIcon } from "@/components/aula/NavIcon";
 import { AulaLayout } from "@/components/AulaLayout";
-import { listProjects } from "@/components/research-note/storage/repositories";
-import type { Project } from "@/components/research-note/storage/types";
 import {
 	IconArrowRight,
 	IconBook,
@@ -29,8 +27,10 @@ import { roleDisplay, userInitials } from "@/lib/aula-utils";
 import { loadAllSavedPapers, type SavedResearchPaper } from "@/lib/chat-research-storage";
 import { fetchSavedCoursePlansFromApi } from "@/lib/lesson-planner-api";
 import type { SavedCoursePlan } from "@/lib/lesson-planner-storage";
+import { fetchProjects, type ResearchProject } from "@/lib/research-assets-api";
 import { loadAllSavedIdeas, type SavedIdea } from "@/lib/research-storage";
 import { savedCourseOutlinePath } from "@/lib/saved-courses-routes";
+import { savedResearchPagePath } from "@/lib/saved-research-routes";
 import { researchTokenAllowance } from "@/lib/student-tokens";
 
 type ActivityItem = {
@@ -92,7 +92,7 @@ export function AulaDashboard() {
 	const [ideas, setIdeas] = useState<SavedIdea[]>([]);
 	const [papers, setPapers] = useState<SavedResearchPaper[]>([]);
 	const [courses, setCourses] = useState<SavedCoursePlan[]>([]);
-	const [projects, setProjects] = useState<Project[]>([]);
+	const [projects, setProjects] = useState<ResearchProject[]>([]);
 	const [quickOpen, setQuickOpen] = useState(false);
 	const [toolModalId, setToolModalId] = useState<string | null>(null);
 	const [topicDraft, setTopicDraft] = useState("");
@@ -104,7 +104,8 @@ export function AulaDashboard() {
 				loadAllSavedIdeas().catch(() => [] as SavedIdea[]),
 				loadAllSavedPapers().catch(() => [] as SavedResearchPaper[]),
 				fetchSavedCoursePlansFromApi().then((r) => r ?? []).catch(() => [] as SavedCoursePlan[]),
-				listProjects().catch(() => [] as Project[]),
+				// Notebooks live in Mongo via /api/research/projects (same as Research Note).
+				fetchProjects().catch(() => [] as ResearchProject[]),
 			]);
 			setIdeas(ideaRows);
 			setPapers(paperRows);
@@ -116,8 +117,9 @@ export function AulaDashboard() {
 	}, []);
 
 	useEffect(() => {
+		if (!user) return;
 		void load();
-	}, [load]);
+	}, [load, user]);
 
 	const allowance = user?.tokenQuota?.allowance ?? researchTokenAllowance(user?.role ?? "lecturer") ?? 0;
 	const remaining = user?.tokenQuota?.remaining ?? allowance;
@@ -139,7 +141,7 @@ export function AulaDashboard() {
 				kind: "paper" as const,
 				title: paper.title || paper.topic,
 				meta: "Saved paper",
-				href: "/research/saved",
+				href: savedResearchPagePath(paper.id),
 				at: paper.updatedAt || paper.createdAt,
 			})),
 			...courses.map((course) => ({
@@ -154,8 +156,8 @@ export function AulaDashboard() {
 				id: `nb-${project.id}`,
 				kind: "notebook" as const,
 				title: project.title || "Untitled notebook",
-				meta: "Research notebook",
-				href: "/research/note",
+				meta: project.description?.trim() || "Research notebook",
+				href: `/research/note?project=${encodeURIComponent(project.id)}`,
 				at: project.updatedAt || project.createdAt,
 			})),
 		];

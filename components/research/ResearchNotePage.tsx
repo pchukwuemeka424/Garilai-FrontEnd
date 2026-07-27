@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 import { AulaLayout } from "@/components/AulaLayout";
@@ -33,13 +33,21 @@ export function ResearchNotePage({ variant = "lecturer" }: Props) {
 	}
 
 	const app = (
-		<ResearchNoteApp
-			author={{
-				id: user.id,
-				name: user.name || user.email || "Researcher",
-				email: user.email || "",
-			}}
-		/>
+		<Suspense
+			fallback={
+				<div className="research-note-loading" style={{ padding: "2rem", color: "var(--text-muted, #64748b)" }}>
+					Loading Research Note…
+				</div>
+			}
+		>
+			<ResearchNoteApp
+				author={{
+					id: user.id,
+					name: user.name || user.email || "Researcher",
+					email: user.email || "",
+				}}
+			/>
+		</Suspense>
 	);
 
 	return isStudent ? (

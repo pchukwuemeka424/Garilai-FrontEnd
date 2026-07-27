@@ -25,7 +25,7 @@ export function ResearchPaperLoadingScreen({ projectName, preparing = false, stu
 						<p className="research-paper-loading-detail">
 							{preparing
 								? "Searching literature and building your outline first."
-								: "This may take a minute. Sections and citations will stream in shortly."}
+								: "This may take a few minutes. You can navigate to other pages — we will notify you when it is ready."}
 						</p>
 					</div>
 				</div>
