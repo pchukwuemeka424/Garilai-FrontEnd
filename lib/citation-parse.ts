@@ -257,7 +257,6 @@ function extractTitleAndJournal(body: string, sourceType: SourceType): {
 }
 
 function detectSourceType(text: string, url?: string, doi?: string): SourceType {
-	const lower = text.toLowerCase();
 	if (url && !doi) return "website";
 	if (/\b(paper presented at|presented at|proceedings of)\b/i.test(text)) return "conference";
 	if (/\bIn\s+.+,?\s*edited by\b/i.test(text) || /\bIn\s+[A-Z]/i.test(text)) return "chapter";

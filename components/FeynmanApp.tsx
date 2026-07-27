@@ -22,7 +22,7 @@ import {
 	saveResearchPaper,
 	type SavedResearchPaper,
 } from "@/lib/chat-research-storage";
-import { downloadMarkdownAsPdf, researchPaperFilename } from "@/lib/research-paper-pdf";
+import { downloadMarkdownAsPdf } from "@/lib/research-paper-pdf";
 import {
 	clearChatCitationStyle,
 	isIntegratedResearchPrompt,

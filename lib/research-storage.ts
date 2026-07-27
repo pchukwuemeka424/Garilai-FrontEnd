@@ -131,7 +131,7 @@ export async function removeSavedIdea(id: string, title: string, dbId?: string):
 
 	if (remoteId) {
 		const remote = await deleteIdeaFromApi(remoteId);
-		if (remote.status === 401 || remote.status === 403) {
+		if (!remote.ok && (remote.status === 401 || remote.status === 403)) {
 			writeLocalIdeas(current);
 			return current;
 		}
@@ -143,7 +143,7 @@ export async function removeSavedIdea(id: string, title: string, dbId?: string):
 export async function clearSavedIdeas(): Promise<SavedIdea[]> {
 	writeLocalIdeas([]);
 	const remote = await deleteAllIdeasFromApi();
-	if (remote.status === 401 || remote.status === 403) {
+	if (!remote.ok && (remote.status === 401 || remote.status === 403)) {
 		const restored = await loadAllSavedIdeas();
 		return restored;
 	}

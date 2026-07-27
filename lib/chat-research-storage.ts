@@ -190,7 +190,7 @@ export async function removeSavedPaper(
 
 	const remote = await deleteResearchFromApi(trimmedId);
 
-	if (remote.status === 401 || remote.status === 403) {
+	if (!remote.ok && (remote.status === 401 || remote.status === 403)) {
 		writeLocalPapers(currentPapers);
 		return {
 			papers: currentPapers,
@@ -219,7 +219,7 @@ export async function removeAllSavedPapers(
 	writeLocalPapers([]);
 
 	const remote = await deleteAllResearchFromApi();
-	if (remote.status === 401 || remote.status === 403) {
+	if (!remote.ok && (remote.status === 401 || remote.status === 403)) {
 		writeLocalPapers(currentPapers);
 		return {
 			papers: currentPapers,

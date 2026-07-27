@@ -60,7 +60,7 @@ export function StudentTopBar({ onMenuClick }: Props) {
 					</span>
 				</div>
 
-				<button type="button" className="stu-topbar-signout" onClick={logout}>
+				<button type="button" className="stu-topbar-signout" onClick={() => logout()}>
 					<IconLogOut size={16} />
 					Sign out
 				</button>
