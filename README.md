@@ -122,7 +122,7 @@ npm start   # serve out/ on :3000
 | Setting | Value |
 |---------|--------|
 | Dockerfile | repo root `Dockerfile` |
-| Port | `80` |
+| Port | Coolify `$PORT` (nginx binds automatically; default `80`) |
 | Health check | `/healthz` |
 | Build arg / env | `NEXT_PUBLIC_FEYNMAN_BACKEND` = public backend URL |
 
