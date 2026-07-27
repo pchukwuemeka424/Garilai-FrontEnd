@@ -1,5 +1,6 @@
 # Coolify / Docker — GARIL AI frontend (static Next export + nginx)
 # Build arg: NEXT_PUBLIC_FEYNMAN_BACKEND=https://your-api.example.com
+# Runtime: listens on $PORT (Coolify sets this; default 80)
 
 FROM node:22-bookworm-slim AS build
 
@@ -24,8 +25,13 @@ RUN npm run build && test -f out/index.html
 
 FROM nginx:1.27-alpine AS runtime
 
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+ENV PORT=80
+
+COPY nginx.conf /etc/nginx/nginx-app.conf.template
+COPY docker-entrypoint.sh /docker-entrypoint-app.sh
+RUN chmod +x /docker-entrypoint-app.sh
+
 COPY --from=build /app/out /usr/share/nginx/html
 
 EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
+ENTRYPOINT ["/docker-entrypoint-app.sh"]

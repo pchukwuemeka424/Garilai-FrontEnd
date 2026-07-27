@@ -6,7 +6,7 @@ Next.js **static export** (`out/`), served by nginx. The browser calls the backe
 
 1. Application → this Git repo (`Garilai-FrontEnd`).
 2. **Build Pack:** Dockerfile (root `Dockerfile`).
-3. **Port:** `80`
+3. **Port:** leave Coolify default (or `80`) — the container reads `$PORT` and nginx binds to it.
 4. **Health check:** `/healthz`
 5. **Build-time env / ARG:**
 
@@ -15,6 +15,8 @@ Next.js **static export** (`out/`), served by nginx. The browser calls the backe
 | `NEXT_PUBLIC_FEYNMAN_BACKEND` | `https://api.your.domain` (backend Coolify URL) |
 
 No trailing slash. Must be reachable from the user’s browser (HTTPS in production).
+
+If you see **Bad Gateway**, Coolify’s proxy could not reach the app port — redeploy this image (entrypoint binds nginx to `$PORT`).
 
 ## Docker
 
