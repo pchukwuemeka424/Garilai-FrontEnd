@@ -274,19 +274,6 @@ export function HomeScreen() {
 								? "Continue research, teaching and academic projects in your institutional workspace."
 								: `${APP_NAME} gives universities, colleges of education and polytechnics a purpose-built AI environment where students, lecturers and researchers can work with AI while institutions maintain visibility into AI use across academic activities.`}
 						</p>
-						<div className="home-hero-actions">
-							<Link href={user ? "/dashboard" : "/register"} className="home-btn home-btn-primary home-btn-lg">
-								{user ? "Open workspace" : "Start Your Research"}
-								<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-									<path d="M5 12h14M12 5l7 7-7 7" />
-								</svg>
-							</Link>
-							{!user && (
-								<Link href="/login" className="home-btn home-btn-ghost home-btn-lg">
-									Sign In to Your Institution
-								</Link>
-							)}
-						</div>
 					</div>
 				</div>
 			</section>
@@ -466,16 +453,6 @@ export function HomeScreen() {
 							academic literature, every capability is designed around higher education.
 						</p>
 					</div>
-					{!user && (
-						<div className="home-band-actions">
-							<Link href="/register" className="home-btn home-btn-light home-btn-lg">
-								Start Your Research
-							</Link>
-							<Link href="/login" className="home-btn home-btn-ghost-light home-btn-lg">
-								Sign In to Your Institution
-							</Link>
-						</div>
-					)}
 				</div>
 			</section>
 
