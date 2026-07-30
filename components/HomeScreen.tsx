@@ -262,7 +262,7 @@ export function HomeScreen() {
 
 			<section className="home-hero" aria-label="Introduction">
 				{/* eslint-disable-next-line @next/next/no-img-element */}
-				<img className="home-hero-bg" src="/images/hero-researcher.png" alt="" aria-hidden />
+				<img className="home-hero-bg" src="/images/hero-researcher.png?v=20260730" alt="" aria-hidden />
 				<div className="home-hero-overlay" aria-hidden />
 				<div className="home-hero-content">
 					<div className="home-hero-inner home-reveal">
@@ -315,7 +315,7 @@ export function HomeScreen() {
 					<figure className="home-media">
 						{/* eslint-disable-next-line @next/next/no-img-element */}
 						<img
-							src="/images/feature-workflows.png"
+							src="/images/feature-workflows.png?v=20260730"
 							alt="Students and lecturers working in a Nigerian higher education research workspace"
 						/>
 					</figure>
@@ -348,7 +348,7 @@ export function HomeScreen() {
 					<figure className="home-media">
 						{/* eslint-disable-next-line @next/next/no-img-element */}
 						<img
-							src="/images/feature-portal.png"
+							src="/images/feature-portal.png?v=20260730"
 							alt="Academic workflows guiding research from literature review to thesis writing"
 						/>
 					</figure>
@@ -402,7 +402,7 @@ export function HomeScreen() {
 						<figure className="home-media home-media-wide">
 							{/* eslint-disable-next-line @next/next/no-img-element */}
 							<img
-								src="/images/feature-agent.png"
+								src="/images/feature-agent.png?v=20260730"
 								alt="Researchers reviewing scholarly literature with AI-supported academic workflows"
 							/>
 						</figure>
@@ -448,7 +448,7 @@ export function HomeScreen() {
 					<figure className="home-media">
 						{/* eslint-disable-next-line @next/next/no-img-element */}
 						<img
-							src="/images/feature-workflows.png"
+							src="/images/feature-workflows.png?v=20260730"
 							alt="Institutional dashboard for monitoring governed AI use across academic activities"
 						/>
 					</figure>

@@ -100,7 +100,7 @@ type Props = {
 	badge?: React.ReactNode;
 };
 
-const DEFAULT_HERO_IMAGE = "/images/auth-scholar-research.png";
+const DEFAULT_HERO_IMAGE = "/images/auth-scholar-research.png?v=20260730";
 
 export function AuthSplitLayout({
 	title,
