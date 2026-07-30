@@ -59,14 +59,14 @@ export function StudentSidebar({ user, id, className, onNavigate }: Props) {
 					</SidebarNav>
 				</SidebarSection>
 
-				<StudentTokenQuotaBar quota={user.tokenQuota} role={user.role} />
-
 				<div className="sb-actions">
 					<SidebarSignOut onLogout={handleLogout} />
 				</div>
-
-				<SidebarProfile user={user} />
 			</div>
+
+			<SidebarProfile user={user}>
+				<StudentTokenQuotaBar quota={user.tokenQuota} role={user.role} />
+			</SidebarProfile>
 		</aside>
 	);
 }

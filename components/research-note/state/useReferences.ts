@@ -3,6 +3,7 @@ import {
   createReference,
   deleteReference,
   listReferences,
+  updateReference,
 } from '@/components/research-note/storage/repositories'
 import type { Reference } from '@/components/research-note/storage/types'
 import type { ParsedReference } from '@/components/research-note/features/references/crossref'
@@ -34,10 +35,16 @@ export function useReferences(projectId: string) {
     [projectId],
   )
 
+  const update = useCallback(async (id: string, parsed: ParsedReference) => {
+    const ref = await updateReference(id, parsed)
+    setReferences((prev) => prev.map((r) => (r.id === id ? ref : r)))
+    return ref
+  }, [])
+
   const remove = useCallback(async (id: string) => {
     await deleteReference(id)
     setReferences((prev) => prev.filter((r) => r.id !== id))
   }, [])
 
-  return { references, loading, add, remove }
+  return { references, loading, add, update, remove }
 }

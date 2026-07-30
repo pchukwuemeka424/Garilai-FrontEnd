@@ -9,6 +9,7 @@ import { AuthRoleSelector, type AuthAccountRole } from "@/components/auth/AuthRo
 import { AuthSelectField } from "@/components/auth/AuthSelectField";
 import { AuthSplitLayout, REGISTER_HERO } from "@/components/auth/AuthSplitLayout";
 import { useAuth } from "@/hooks/useAuth";
+import { getRegisterCountry, REGISTER_COUNTRIES } from "@/lib/countries";
 import { dashboardPathForRole } from "@/lib/dashboard-routes";
 import {
 	formatStudentProgram,
@@ -16,7 +17,6 @@ import {
 	NIGERIA_DEPARTMENT_GROUPS,
 	NIGERIA_PROGRAM_LEVELS,
 } from "@/lib/nigeria-departments";
-import { getUniversityLabel, NIGERIA_UNIVERSITY_GROUPS } from "@/lib/nigeria-universities";
 import {
 	fetchOnboardedUniversities,
 	type OnboardedUniversity,
@@ -40,6 +40,7 @@ export function RegisterScreen({ defaultRole = "lecturer" }: Props) {
 	);
 	const [name, setName] = useState("");
 	const [email, setEmail] = useState("");
+	const [countryCode, setCountryCode] = useState("");
 	const [institutionId, setInstitutionId] = useState("");
 	const [departmentId, setDepartmentId] = useState("");
 	const [programLevelId, setProgramLevelId] = useState("");
@@ -47,8 +48,13 @@ export function RegisterScreen({ defaultRole = "lecturer" }: Props) {
 	const [confirmPassword, setConfirmPassword] = useState("");
 	const [error, setError] = useState<string | null>(null);
 	const [submitting, setSubmitting] = useState(false);
-	const [universities, setUniversities] = useState<OnboardedUniversity[] | null>(null);
-	const [universitiesLoading, setUniversitiesLoading] = useState(true);
+	const [universities, setUniversities] = useState<OnboardedUniversity[]>([]);
+	const [universitiesLoading, setUniversitiesLoading] = useState(false);
+	const [universitiesError, setUniversitiesError] = useState<string | null>(null);
+
+	const isStudent = role === "student";
+	const selectedCountry = getRegisterCountry(countryCode);
+	const noOnboardedUniversities = Boolean(countryCode) && !universitiesLoading && universities.length === 0;
 
 	useEffect(() => {
 		if (!loading && user) router.replace(dashboardPathForRole(user.role));
@@ -60,50 +66,72 @@ export function RegisterScreen({ defaultRole = "lecturer" }: Props) {
 	}, [searchParams]);
 
 	useEffect(() => {
+		if (!countryCode) {
+			setUniversities([]);
+			setUniversitiesLoading(false);
+			setUniversitiesError(null);
+			setInstitutionId("");
+			return;
+		}
+
 		let cancelled = false;
 		setUniversitiesLoading(true);
-		void fetchOnboardedUniversities()
+		setUniversitiesError(null);
+		setInstitutionId("");
+		setUniversities([]);
+
+		void fetchOnboardedUniversities(countryCode)
 			.then((list) => {
 				if (!cancelled) setUniversities(list);
 			})
-			.catch(() => {
-				// Fall back to static catalogue if the public endpoint is unavailable.
-				if (!cancelled) setUniversities(null);
+			.catch((err) => {
+				if (!cancelled) {
+					setUniversities([]);
+					setUniversitiesError(
+						err instanceof Error ? err.message : "Could not load institutions.",
+					);
+				}
 			})
 			.finally(() => {
 				if (!cancelled) setUniversitiesLoading(false);
 			});
+
 		return () => {
 			cancelled = true;
 		};
-	}, []);
+	}, [countryCode]);
 
-	const isStudent = role === "student";
-	const usingOnboardedList = universities !== null;
-	const noOnboardedUniversities = usingOnboardedList && universities.length === 0;
-
-	const institutionOptions = useMemo(() => {
-		if (usingOnboardedList) {
-			return universities.map((university) => ({
+	const institutionOptions = useMemo(
+		() =>
+			universities.map((university) => ({
 				id: university.catalogueId,
 				label: university.name,
-			}));
-		}
-		return NIGERIA_UNIVERSITY_GROUPS.flatMap((group) => group.universities);
-	}, [universities, usingOnboardedList]);
+			})),
+		[universities],
+	);
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
 		setError(null);
+
+		if (!countryCode) {
+			setError("Please select your country.");
+			return;
+		}
 
 		if (universitiesLoading) {
 			setError("Still loading institutions. Please wait a moment.");
 			return;
 		}
 
+		if (universitiesError) {
+			setError(universitiesError);
+			return;
+		}
+
 		if (noOnboardedUniversities) {
 			setError(
-				"Your university is not yet onboarded on this platform. Contact your administrator.",
+				"No onboarded universities for this country yet. Contact your administrator.",
 			);
 			return;
 		}
@@ -113,7 +141,7 @@ export function RegisterScreen({ defaultRole = "lecturer" }: Props) {
 			return;
 		}
 
-		if (usingOnboardedList && !universities.some((u) => u.catalogueId === institutionId)) {
+		if (!universities.some((u) => u.catalogueId === institutionId)) {
 			setError(
 				"Your university is not yet onboarded on this platform. Contact your administrator.",
 			);
@@ -143,10 +171,8 @@ export function RegisterScreen({ defaultRole = "lecturer" }: Props) {
 		const department = isStudent
 			? formatStudentProgram(departmentId, programLevelId)
 			: getDepartmentLabel(departmentId);
-		const selected = usingOnboardedList
-			? universities.find((u) => u.catalogueId === institutionId)
-			: null;
-		const institution = selected?.name ?? getUniversityLabel(institutionId);
+		const institution =
+			universities.find((u) => u.catalogueId === institutionId)?.name ?? institutionId;
 
 		setSubmitting(true);
 		try {
@@ -157,6 +183,7 @@ export function RegisterScreen({ defaultRole = "lecturer" }: Props) {
 				department,
 				institution,
 				catalogueId: institutionId,
+				country: countryCode,
 			};
 
 			const registered = isStudent ? await registerStudent(payload) : await register(payload);
@@ -167,6 +194,18 @@ export function RegisterScreen({ defaultRole = "lecturer" }: Props) {
 			setSubmitting(false);
 		}
 	};
+
+	const institutionPlaceholder = !countryCode
+		? "Select a country first"
+		: universitiesLoading
+			? "Loading institutions…"
+			: noOnboardedUniversities
+				? "No onboarded institutions for this country"
+				: universitiesError
+					? "Could not load institutions"
+					: selectedCountry
+						? `Select your institution in ${selectedCountry.label}`
+						: "Select your university or polytechnic";
 
 	return (
 		<AuthSplitLayout
@@ -219,19 +258,36 @@ export function RegisterScreen({ defaultRole = "lecturer" }: Props) {
 					<h2 className="login-form-section-title">Institution</h2>
 					<div className="login-form-fields">
 						<AuthSelectField
+							id="register-country"
+							label="Country"
+							value={countryCode}
+							onChange={(e) => setCountryCode(e.target.value)}
+							placeholder="Select your country"
+							required
+							disabled={submitting}
+						>
+							{REGISTER_COUNTRIES.map((country) => (
+								<option key={country.code} value={country.code}>
+									{country.label}
+								</option>
+							))}
+						</AuthSelectField>
+
+						<AuthSelectField
 							id="register-institution"
 							label="Institution"
 							value={institutionId}
 							onChange={(e) => setInstitutionId(e.target.value)}
-							placeholder={
-								universitiesLoading
-									? "Loading institutions…"
-									: noOnboardedUniversities
-										? "No onboarded institutions yet"
-										: "Select your university or polytechnic"
-							}
+							placeholder={institutionPlaceholder}
 							required
-							disabled={submitting || universitiesLoading || noOnboardedUniversities}
+							disabled={
+								submitting ||
+								!countryCode ||
+								universitiesLoading ||
+								noOnboardedUniversities ||
+								Boolean(universitiesError) ||
+								institutionOptions.length === 0
+							}
 						>
 							{institutionOptions.map((university) => (
 								<option key={university.id} value={university.id}>
@@ -242,7 +298,14 @@ export function RegisterScreen({ defaultRole = "lecturer" }: Props) {
 
 						{noOnboardedUniversities && (
 							<p className="login-form-note" role="status">
-								Your university is not yet onboarded on this platform. Contact your administrator.
+								No universities are onboarded for {selectedCountry?.label ?? "this country"} yet.
+								Contact your administrator.
+							</p>
+						)}
+
+						{universitiesError && (
+							<p className="login-form-note" role="alert">
+								{universitiesError}
 							</p>
 						)}
 
@@ -324,7 +387,14 @@ export function RegisterScreen({ defaultRole = "lecturer" }: Props) {
 				<button
 					type="submit"
 					className="login-btn"
-					disabled={submitting || loading || universitiesLoading || noOnboardedUniversities}
+					disabled={
+						submitting ||
+						loading ||
+						universitiesLoading ||
+						noOnboardedUniversities ||
+						!countryCode ||
+						Boolean(universitiesError)
+					}
 				>
 					{submitting
 						? "Creating account…"
@@ -334,8 +404,8 @@ export function RegisterScreen({ defaultRole = "lecturer" }: Props) {
 				</button>
 
 				<p className="login-form-note">
-					By creating an account you agree to use {isStudent ? "student" : "lecturer"} tools within your
-					institution&apos;s governed AI environment.
+					By creating an account you agree to use {isStudent ? "student" : "lecturer"} tools within
+					your institution&apos;s governed AI environment.
 				</p>
 			</form>
 		</AuthSplitLayout>

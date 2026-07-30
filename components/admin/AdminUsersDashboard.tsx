@@ -151,13 +151,18 @@ export function AdminUsersDashboard() {
 	};
 
 	const onChangeStatus = async (user: UserRecord, status: "active" | "inactive" | "suspended") => {
+		let suspensionReason: string | undefined;
 		if (status === "suspended") {
 			const reason = window.prompt("Reason for suspension:")?.trim();
 			if (!reason) return;
+			suspensionReason = reason;
 		}
 		setWorking(true);
 		try {
-			await updateAdminUser(user.id, { status });
+			await updateAdminUser(user.id, {
+				status,
+				...(suspensionReason ? { suspensionReason } : {}),
+			});
 			await load();
 		} catch (err) {
 			setError(err instanceof Error ? err.message : String(err));
@@ -216,10 +221,16 @@ export function AdminUsersDashboard() {
 
 	const onBulkStatus = async (status: "active" | "inactive" | "suspended") => {
 		if (selectedIds.size === 0) return;
+		let suspensionReason: string | undefined;
+		if (status === "suspended") {
+			const reason = window.prompt("Reason for suspension:")?.trim();
+			if (!reason) return;
+			suspensionReason = reason;
+		}
 		if (!window.confirm(`Change ${selectedIds.size} users to ${status}?`)) return;
 		setWorking(true);
 		try {
-			await bulkAdminUserStatus(Array.from(selectedIds), status);
+			await bulkAdminUserStatus(Array.from(selectedIds), status, suspensionReason);
 			setSelectedIds(new Set());
 			await load();
 		} catch (err) {

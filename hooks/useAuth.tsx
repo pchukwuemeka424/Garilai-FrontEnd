@@ -62,6 +62,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 		void refreshUser().finally(() => setLoading(false));
 	}, [refreshUser]);
 
+	// Re-fetch quota when the tab is focused so admin token resets/allocations appear in the sidebar.
+	useEffect(() => {
+		let timer: ReturnType<typeof setTimeout> | null = null;
+		const scheduleRefresh = () => {
+			if (!getStoredToken()) return;
+			if (timer) clearTimeout(timer);
+			timer = setTimeout(() => {
+				void refreshUser();
+			}, 300);
+		};
+		const onVisible = () => {
+			if (document.visibilityState === "visible") scheduleRefresh();
+		};
+		document.addEventListener("visibilitychange", onVisible);
+		window.addEventListener("focus", scheduleRefresh);
+		return () => {
+			if (timer) clearTimeout(timer);
+			document.removeEventListener("visibilitychange", onVisible);
+			window.removeEventListener("focus", scheduleRefresh);
+		};
+	}, [refreshUser]);
+
 	const login = useCallback(async (input: LoginInput) => {
 		const res = await fetch(apiUrl("/api/auth/login"), {
 			method: "POST",
@@ -105,6 +127,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 	}, []);
 
 	const logout = useCallback((redirectTo?: string | false) => {
+		try {
+			const doomed: string[] = [];
+			for (let i = 0; i < sessionStorage.length; i++) {
+				const key = sessionStorage.key(i);
+				if (
+					key &&
+					(key.startsWith("aula.research.wizard.draft") ||
+						key === "aula.research.quickTopic" ||
+						key === "aula.research.paper.sources" ||
+						key === "aula.research.paper.pending")
+				) {
+					doomed.push(key);
+				}
+			}
+			for (const key of doomed) sessionStorage.removeItem(key);
+		} catch {
+			/* ignore */
+		}
 		clearStoredToken();
 		setUser(null);
 		// Call sites may use onClick={logout}; React then passes a SyntheticEvent.

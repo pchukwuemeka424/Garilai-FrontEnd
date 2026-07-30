@@ -11,15 +11,18 @@ const KIND_LABEL: Record<SearchHit['kind'], string> = {
   labentry: 'Lab log',
 }
 
-/** Global search across every project's notes, datasets, drafts and lab log. */
+/** Global (or project-scoped) search across notes, datasets, drafts and lab log. */
 export function SearchModal({
   open,
   onClose,
   onOpenProject,
+  projectId,
 }: {
   open: boolean
   onClose: () => void
-  onOpenProject: (projectId: string) => void
+  onOpenProject: (projectId: string, pageId?: string) => void
+  /** When set, search only within this notebook. */
+  projectId?: string
 }) {
   const [query, setQuery] = useState('')
   const [hits, setHits] = useState<SearchHit[]>([])
@@ -29,12 +32,12 @@ export function SearchModal({
   const run = useMemo(
     () =>
       debounce((q: string) => {
-        searchAll(q).then((r) => {
+        searchAll(q, projectId ? { projectId } : undefined).then((r) => {
           setHits(r.filter((h) => h.kind !== 'reference'))
           setSearching(false)
         })
       }, 200),
-    [],
+    [projectId],
   )
 
   useEffect(() => {
@@ -52,12 +55,20 @@ export function SearchModal({
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Search everything">
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={projectId ? 'Search this notebook' : 'Search everything'}
+    >
       <input
         ref={inputRef}
         value={query}
         onChange={(e) => onChange(e.target.value)}
-        placeholder="Search notes, data, drafts, lab log…"
+        placeholder={
+          projectId
+            ? 'Search notes, data, drafts, lab log in this notebook…'
+            : 'Search notes, data, drafts, lab log…'
+        }
         className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-canvas)] px-3 py-2 text-sm outline-none focus:border-[var(--color-brand)]"
       />
       <div className="mt-3 max-h-80 space-y-1 overflow-y-auto">
@@ -70,10 +81,10 @@ export function SearchModal({
         ) : (
           hits.map((h, i) => (
             <button
-              key={i}
+              key={`${h.kind}-${h.entityId ?? i}`}
               type="button"
               onClick={() => {
-                onOpenProject(h.projectId)
+                onOpenProject(h.projectId, h.kind === 'page' ? h.entityId : undefined)
                 onClose()
               }}
               className="block w-full rounded-lg border border-transparent px-3 py-2 text-left hover:border-[var(--color-border)] hover:bg-[var(--color-surface)]"
@@ -83,9 +94,15 @@ export function SearchModal({
                   {KIND_LABEL[h.kind]}
                 </span>
                 <span className="truncate text-sm font-medium">{h.title}</span>
-                <span className="ml-auto shrink-0 truncate text-xs text-[var(--color-muted)]">{h.projectTitle}</span>
+                {!projectId && (
+                  <span className="ml-auto shrink-0 truncate text-xs text-[var(--color-muted)]">
+                    {h.projectTitle}
+                  </span>
+                )}
               </div>
-              {h.snippet && <p className="mt-0.5 truncate text-xs text-[var(--color-muted)]">{h.snippet}</p>}
+              {h.snippet && (
+                <p className="mt-0.5 truncate text-xs text-[var(--color-muted)]">{h.snippet}</p>
+              )}
             </button>
           ))
         )}

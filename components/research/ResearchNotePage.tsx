@@ -41,6 +41,7 @@ export function ResearchNotePage({ variant = "lecturer" }: Props) {
 			}
 		>
 			<ResearchNoteApp
+				basePath={isStudent ? "/student/research/note" : "/research/note"}
 				author={{
 					id: user.id,
 					name: user.name || user.email || "Researcher",

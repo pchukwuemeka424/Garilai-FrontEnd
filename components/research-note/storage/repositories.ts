@@ -251,6 +251,8 @@ export async function createPage(input: {
   projectId: string
   title: string
   position?: number
+  content?: RichTextDoc | null
+  tags?: string[]
 }): Promise<Page> {
   const db = await getDB()
   const now = nowISO()
@@ -260,7 +262,8 @@ export async function createPage(input: {
     sectionId: input.sectionId,
     projectId: input.projectId,
     title: input.title.trim() || 'Untitled page',
-    content: null,
+    content: input.content ?? null,
+    tags: input.tags?.length ? input.tags : undefined,
     position,
     createdAt: now,
     updatedAt: now,
@@ -274,7 +277,7 @@ export async function createPage(input: {
 
 export async function updatePage(
   id: string,
-  patch: Partial<Pick<Page, 'title' | 'position' | 'sectionId'>> & {
+  patch: Partial<Pick<Page, 'title' | 'position' | 'sectionId' | 'tags'>> & {
     content?: RichTextDoc | null
   },
 ): Promise<Page> {
@@ -443,6 +446,22 @@ export async function createAsset(input: {
   return asset
 }
 
+export async function updateAsset(
+  id: string,
+  patch: Partial<Pick<Asset, 'name' | 'caption'>>,
+): Promise<Asset> {
+  const db = await getDB()
+  const tx = db.transaction(['assets', 'changelog'], 'readwrite')
+  const store = tx.objectStore('assets')
+  const existing = await store.get(id)
+  if (!existing) throw new Error(`Asset ${id} not found`)
+  const updated: Asset = { ...existing, ...patch }
+  await store.put(updated)
+  await logInTx(tx, makeChange('asset', id, 'update', assetMeta(updated)))
+  await tx.done
+  return updated
+}
+
 export async function deleteAsset(id: string): Promise<void> {
   const db = await getDB()
   const tx = db.transaction(['assets', 'changelog'], 'readwrite')
@@ -472,7 +491,18 @@ export async function saveDraft(
   projectId: string,
   outputType: OutputType,
   section: string | null,
-  patch: Partial<Pick<Draft, 'content' | 'humanEdited' | 'provider' | 'model'>>,
+  patch: Partial<
+    Pick<
+      Draft,
+      | 'content'
+      | 'humanEdited'
+      | 'provider'
+      | 'model'
+      | 'aiBaselineContent'
+      | 'generationTrace'
+      | 'generationHistory'
+    >
+  >,
 ): Promise<Draft> {
   const db = await getDB()
   const existing = await getDraftFor(projectId, outputType, section)
@@ -488,6 +518,9 @@ export async function saveDraft(
         humanEdited: patch.humanEdited ?? false,
         provider: patch.provider ?? null,
         model: patch.model ?? null,
+        aiBaselineContent: patch.aiBaselineContent ?? null,
+        generationTrace: patch.generationTrace ?? null,
+        generationHistory: patch.generationHistory ?? [],
         createdAt: now,
         updatedAt: now,
       }
@@ -742,16 +775,22 @@ export interface SearchHit {
   projectTitle: string
   title: string
   snippet: string
+  /** Entity id (page/reference/dataset/draft/labentry) when available. */
+  entityId?: string
 }
 
 /** Search notes, references, datasets, drafts and lab entries across all projects. */
-export async function searchAll(query: string): Promise<SearchHit[]> {
+export async function searchAll(
+  query: string,
+  options?: { projectId?: string },
+): Promise<SearchHit[]> {
   const q = query.trim().toLowerCase()
   if (q.length < 2) return []
   const db = await getDB()
   const projects = await db.getAll('projects')
   const titleById = new Map(projects.map((p) => [p.id, p.title]))
   const hits: SearchHit[] = []
+  const scope = options?.projectId
 
   const snippet = (text: string): string => {
     const i = text.toLowerCase().indexOf(q)
@@ -760,32 +799,78 @@ export async function searchAll(query: string): Promise<SearchHit[]> {
     return (start > 0 ? '…' : '') + text.slice(start, i + q.length + 60).trim() + '…'
   }
   const pt = (pid: string) => titleById.get(pid) ?? 'Project'
+  const inScope = (pid: string) => !scope || pid === scope
 
   for (const page of await db.getAll('pages')) {
+    if (!inScope(page.projectId)) continue
     const body = docToPlainTextLocal(page.content)
-    if (page.title.toLowerCase().includes(q) || body.toLowerCase().includes(q)) {
-      hits.push({ kind: 'page', projectId: page.projectId, projectTitle: pt(page.projectId), title: page.title || 'Untitled page', snippet: snippet(body || page.title) })
+    const tags = (page.tags ?? []).join(' ')
+    if (
+      page.title.toLowerCase().includes(q) ||
+      body.toLowerCase().includes(q) ||
+      tags.toLowerCase().includes(q)
+    ) {
+      hits.push({
+        kind: 'page',
+        projectId: page.projectId,
+        projectTitle: pt(page.projectId),
+        title: page.title || 'Untitled page',
+        snippet: snippet(body || page.title),
+        entityId: page.id,
+      })
     }
   }
   for (const ref of await db.getAll('references')) {
+    if (!inScope(ref.projectId)) continue
     const hay = `${ref.title} ${ref.authors.join(' ')} ${ref.containerTitle ?? ''}`
     if (hay.toLowerCase().includes(q)) {
-      hits.push({ kind: 'reference', projectId: ref.projectId, projectTitle: pt(ref.projectId), title: ref.title, snippet: ref.authors.join(', ') || ref.containerTitle || '' })
+      hits.push({
+        kind: 'reference',
+        projectId: ref.projectId,
+        projectTitle: pt(ref.projectId),
+        title: ref.title,
+        snippet: ref.authors.join(', ') || ref.containerTitle || '',
+        entityId: ref.id,
+      })
     }
   }
   for (const ds of await db.getAll('datasets')) {
+    if (!inScope(ds.projectId)) continue
     if (ds.name.toLowerCase().includes(q)) {
-      hits.push({ kind: 'dataset', projectId: ds.projectId, projectTitle: pt(ds.projectId), title: ds.name, snippet: `${ds.rows.length} rows × ${ds.columns.length} cols` })
+      hits.push({
+        kind: 'dataset',
+        projectId: ds.projectId,
+        projectTitle: pt(ds.projectId),
+        title: ds.name,
+        snippet: `${ds.rows.length} rows × ${ds.columns.length} cols`,
+        entityId: ds.id,
+      })
     }
   }
   for (const draft of await db.getAll('drafts')) {
+    if (!inScope(draft.projectId)) continue
     if (draft.content.toLowerCase().includes(q)) {
-      hits.push({ kind: 'draft', projectId: draft.projectId, projectTitle: pt(draft.projectId), title: `${draft.outputType}${draft.section ? ' · ' + draft.section : ''}`, snippet: snippet(draft.content) })
+      hits.push({
+        kind: 'draft',
+        projectId: draft.projectId,
+        projectTitle: pt(draft.projectId),
+        title: `${draft.outputType}${draft.section ? ' · ' + draft.section : ''}`,
+        snippet: snippet(draft.content),
+        entityId: draft.id,
+      })
     }
   }
   for (const e of await db.getAll('labentries')) {
+    if (!inScope(e.projectId)) continue
     if (e.text.toLowerCase().includes(q)) {
-      hits.push({ kind: 'labentry', projectId: e.projectId, projectTitle: pt(e.projectId), title: 'Lab log', snippet: snippet(e.text) })
+      hits.push({
+        kind: 'labentry',
+        projectId: e.projectId,
+        projectTitle: pt(e.projectId),
+        title: 'Lab log',
+        snippet: snippet(e.text),
+        entityId: e.id,
+      })
     }
   }
   return hits.slice(0, 50)
@@ -826,6 +911,7 @@ export interface SerializedAsset {
   projectId: string
   name: string
   mime: string
+  caption?: string
   createdAt: string
   dataUrl: string
 }
@@ -894,6 +980,7 @@ export async function getProjectState(projectId: string): Promise<ProjectState> 
         projectId: asset.projectId,
         name: asset.name,
         mime: asset.mime,
+        caption: asset.caption,
         createdAt: asset.createdAt,
         dataUrl: await blobToDataUrl(asset.blob),
       })
@@ -991,6 +1078,7 @@ export async function applyProjectState(
         projectId: row.projectId,
         name: row.name,
         mime: row.mime,
+        caption: row.caption,
         createdAt: row.createdAt,
         blob: dataUrlToBlob(row.dataUrl, row.mime),
       }

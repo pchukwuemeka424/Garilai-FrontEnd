@@ -12,14 +12,15 @@ export async function getFiguresContext(projectId: string): Promise<string> {
     .map((a, i) => {
       const when = a.createdAt.slice(0, 10)
       const kind = a.mime.startsWith('image/') ? 'image' : a.mime
-      return `- Figure ${i + 1}: “${a.name}” (${kind}, added ${when}) — cite as Figure ${i + 1} in Results; summarise its finding in Abstract when relevant.`
+      const label = a.caption?.trim() || a.name || 'Untitled'
+      return `- Figure ${i + 1}: “${label}” (${kind}, file “${a.name}”, added ${when}) — cite as Figure ${i + 1} in Results; summarise its finding in Abstract when relevant.`
     })
     .join('\n')
   return [
     '## Figures',
     '',
     'Saved research-note figures (empirical). Use these when drafting Title, Abstract, Results, Discussion, and Supplementary.',
-    'Do not invent figures that are not listed. Reference them by the Figure N / file name below.',
+    'Do not invent figures that are not listed. Reference them by the Figure N / caption below.',
     '',
     list,
   ].join('\n')

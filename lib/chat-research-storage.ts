@@ -6,7 +6,8 @@ import {
 	persistResearchToApi,
 	updateSavedResearchOnApi,
 } from "@/lib/research-api";
-import { getStoredToken } from "@/lib/auth";
+import { getStoredToken, getStoredUserId } from "@/lib/auth";
+import type { ResearchSourceSelection } from "@/lib/research-assets-api";
 import {
 	downloadMarkdownAsPdf,
 	researchPaperFilename,
@@ -17,8 +18,19 @@ import type { TokenUsage } from "@/lib/token-usage";
 
 export { extractPaperTitle } from "@/lib/research-paper-title";
 
-const SAVED_PAPERS_KEY = "aula.chat.research.saved";
+const SAVED_PAPERS_KEY_PREFIX = "aula.chat.research.saved";
+const LEGACY_SAVED_PAPERS_KEY = "aula.chat.research.saved";
+const GUEST_SCOPE = "__guest__";
 const MAX_SAVED = 30;
+
+function papersStorageKey(): string {
+	return `${SAVED_PAPERS_KEY_PREFIX}.${getStoredUserId() ?? GUEST_SCOPE}`;
+}
+
+function removeLegacyPapersKey(): void {
+	if (typeof window === "undefined") return;
+	localStorage.removeItem(LEGACY_SAVED_PAPERS_KEY);
+}
 
 export const SAVED_RESEARCH_CHANGED = "feynman:saved-research-changed";
 
@@ -32,6 +44,10 @@ export type SavedResearchPaper = {
 	topic: string;
 	title: string;
 	content: string;
+	/** Content as last written by AI — used to score user edit effort. */
+	aiBaselineContent?: string | null;
+	humanEdited?: boolean;
+	sources?: ResearchSourceSelection | null;
 	tokenUsage?: TokenUsage;
 	createdAt: string;
 	updatedAt: string;
@@ -76,8 +92,9 @@ function dedupeSavedPapers(papers: SavedResearchPaper[]): SavedResearchPaper[] {
 
 export function loadSavedPapers(): SavedResearchPaper[] {
 	if (typeof window === "undefined") return [];
+	if (getStoredUserId()) removeLegacyPapersKey();
 	try {
-		const raw = localStorage.getItem(SAVED_PAPERS_KEY);
+		const raw = localStorage.getItem(papersStorageKey());
 		return raw ? (JSON.parse(raw) as SavedResearchPaper[]) : [];
 	} catch {
 		return [];
@@ -85,8 +102,9 @@ export function loadSavedPapers(): SavedResearchPaper[] {
 }
 
 function writeLocalPapers(papers: SavedResearchPaper[]): SavedResearchPaper[] {
+	if (getStoredUserId()) removeLegacyPapersKey();
 	const next = papers.slice(0, MAX_SAVED);
-	localStorage.setItem(SAVED_PAPERS_KEY, JSON.stringify(next));
+	localStorage.setItem(papersStorageKey(), JSON.stringify(next));
 	return next;
 }
 
@@ -107,7 +125,11 @@ export async function loadAllSavedPapers(): Promise<SavedResearchPaper[]> {
 	return dedupeSavedPapers(loadSavedPapers());
 }
 
-export function saveResearchPaperLocal(topic: string, content: string): SavedResearchPaper[] {
+export function saveResearchPaperLocal(
+	topic: string,
+	content: string,
+	sources?: ResearchSourceSelection | null,
+): SavedResearchPaper[] {
 	const trimmedTopic = topic.trim();
 	const trimmedContent = content.trim();
 	if (!trimmedTopic || !trimmedContent) return loadSavedPapers();
@@ -123,6 +145,9 @@ export function saveResearchPaperLocal(topic: string, content: string): SavedRes
 			...match,
 			title,
 			content: trimmedContent,
+			aiBaselineContent: trimmedContent,
+			humanEdited: false,
+			sources: sources ?? match.sources ?? null,
 			updatedAt: now,
 		};
 		const next = dedupeSavedPapers([updated, ...existing.filter((p) => p.id !== match.id)]);
@@ -134,6 +159,9 @@ export function saveResearchPaperLocal(topic: string, content: string): SavedRes
 		topic: trimmedTopic,
 		title,
 		content: trimmedContent,
+		aiBaselineContent: trimmedContent,
+		humanEdited: false,
+		sources: sources ?? null,
 		createdAt: now,
 		updatedAt: now,
 	};
@@ -143,7 +171,11 @@ export function saveResearchPaperLocal(topic: string, content: string): SavedRes
 export async function saveResearchPaper(
 	topic: string,
 	content: string,
-	options?: { sessionId?: string | null; tokenUsage?: TokenUsage },
+	options?: {
+		sessionId?: string | null;
+		tokenUsage?: TokenUsage;
+		sources?: ResearchSourceSelection | null;
+	},
 ): Promise<SavedResearchPaper[]> {
 	const trimmedTopic = topic.trim();
 	const trimmedContent = content.trim();
@@ -155,6 +187,7 @@ export async function saveResearchPaper(
 		sessionId: options?.sessionId,
 		workflow: "chat-paper",
 		tokenUsage: options?.tokenUsage,
+		sources: options?.sources,
 	});
 
 	if (fromApi) {
@@ -163,7 +196,7 @@ export async function saveResearchPaper(
 		return next;
 	}
 
-	const next = saveResearchPaperLocal(trimmedTopic, trimmedContent);
+	const next = saveResearchPaperLocal(trimmedTopic, trimmedContent, options?.sources);
 	notifySavedResearchChanged();
 	return next;
 }
@@ -291,11 +324,14 @@ export async function updateSavedResearchPaper(
 	}
 
 	const now = new Date().toISOString();
+	const baseline = existing.aiBaselineContent?.trim() || existing.content;
 	const updated: SavedResearchPaper = {
 		...existing,
 		topic: trimmedTopic,
 		title: extractPaperTitle(trimmedContent, trimmedTopic),
 		content: trimmedContent,
+		aiBaselineContent: baseline,
+		humanEdited: trimmedContent.trim() !== baseline.trim(),
 		updatedAt: now,
 	};
 	const papers = writeLocalPapers(

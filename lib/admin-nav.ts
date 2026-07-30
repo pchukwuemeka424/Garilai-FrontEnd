@@ -250,16 +250,52 @@ export const SUPER_ADMIN_NAV_GROUPS: AdminNavGroup[] = [
 				iconId: "dashboard",
 				description: "Onboard and activate universities",
 				instructions:
-					"Onboard new universities and activate or update institution records. Each university becomes a tenant so its admins and users only see their own governance data.",
+					"Onboard new universities and activate or update institution records. Each university becomes a tenant so its admins and users only see their own governance data. Open a university for tenant-level user and admin management, and set default token allowances for students and lecturers.",
+			},
+			{
+				id: "super-users",
+				label: "All users",
+				href: "/super-admin/users",
+				iconId: "users",
+				description: "Platform-wide accounts, suspend, delete",
+				instructions:
+					"Manage every account across onboarded universities: open full user details, create students and lecturers, suspend or delete users, reset passwords, and filter by institution or role.",
 			},
 			{
 				id: "super-admins",
-				label: "University admins",
+				label: "Admins",
 				href: "/super-admin/admins",
 				iconId: "users",
-				description: "Create and manage university admins",
+				description: "Super admins and university console admins",
 				instructions:
-					"Create and manage university administrators who govern a single institution. Assign them to a university so they cannot access another institution’s users or governance records.",
+					"Create platform super administrators or university console roles for onboarded institutions. Use filters, bulk actions, and the detail panel to manage access, reset passwords, suspend, or delete admins.",
+			},
+			{
+				id: "super-tokens",
+				label: "Token management",
+				href: "/super-admin/tokens",
+				iconId: "tokens",
+				description: "Quotas, usage, university defaults",
+				instructions:
+					"Monitor token usage across the platform, reset or adjust individual allowances, and set default student and lecturer token quotas for each onboarded university.",
+			},
+			{
+				id: "super-activities",
+				label: "Activities",
+				href: "/super-admin/activities",
+				iconId: "audit",
+				description: "Platform-wide admin and system activity",
+				instructions:
+					"Review platform-wide activity across universities: onboarding, user changes, token updates, and governance events. Filter by category or severity to investigate recent actions.",
+			},
+			{
+				id: "super-research",
+				label: "Research content",
+				href: "/super-admin/research",
+				iconId: "research",
+				description: "Papers, notebooks, and uploads",
+				instructions:
+					"Manage platform research content: saved papers, research notebooks (CanvAtlas projects), and uploaded documents or datasets. Filter by university, inspect details, and delete items when needed for support or compliance.",
 			},
 		],
 	},

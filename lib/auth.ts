@@ -29,6 +29,7 @@ export type RegisterInput = {
 	department: string;
 	institution?: string;
 	catalogueId?: string;
+	country?: string;
 };
 
 export type StudentRegisterInput = RegisterInput;

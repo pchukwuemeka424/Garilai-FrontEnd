@@ -37,6 +37,7 @@ import {
 	injectSavedFiguresIntoPaper,
 	peekResearchFigureAppendix,
 } from "@/lib/research-figure-appendix";
+import { peekPaperSources } from "@/lib/research-paper-sources";
 import { peekOutlinePageContext, resolveOutlinePageContext } from "@/lib/research-outline-context";
 import { consumePendingResearchPaper } from "@/lib/research-paper-pending";
 import { fetchSavedResearchById } from "@/lib/research-api";
@@ -183,6 +184,17 @@ export function FeynmanApp({ layout = "aula" }: { layout?: "aula" | "student" })
 				void saveResearchPaper(paperTopic, withFigures, {
 					sessionId,
 					tokenUsage: paperTokenUsage,
+					sources:
+						peekPaperSources() ??
+						(() => {
+							const key = searchParams.get("key")?.trim() || "";
+							if (!key) return null;
+							return (
+								peekOutlinePageContext(key)?.sources ??
+								resolveOutlinePageContext(key)?.sources ??
+								null
+							);
+						})(),
 				}).then((next) => {
 					setSavedPapers(next);
 					const saved =
@@ -223,6 +235,7 @@ export function FeynmanApp({ layout = "aula" }: { layout?: "aula" | "student" })
 		isStudent,
 		isResearchPaperRoute,
 		savedPaperVariant,
+		searchParams,
 	]);
 
 	const handleSavePaper = () => {
@@ -232,6 +245,7 @@ export function FeynmanApp({ layout = "aula" }: { layout?: "aula" | "student" })
 		void saveResearchPaper(paperTopic, withFigures, {
 			sessionId,
 			tokenUsage: paperTokenUsage,
+			sources: peekPaperSources() ?? null,
 		}).then((next) => {
 			setSavedPapers(next);
 			setSaveNotice("Research saved.");

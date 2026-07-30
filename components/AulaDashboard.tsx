@@ -441,7 +441,7 @@ export function AulaDashboard() {
 						</span>
 						<span>
 							<strong>References</strong>
-							<small>Format institutional citations</small>
+							<small>Format &amp; validate citations</small>
 						</span>
 					</Link>
 				</div>

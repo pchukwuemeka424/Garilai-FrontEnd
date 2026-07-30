@@ -148,10 +148,12 @@ export function useCloudNotebook(projectId: string) {
     saveNow,
     statusLabel: saving
       ? 'Saving…'
-      : lastSaved
-        ? `Saved ${new Date(lastSaved).toLocaleTimeString()}`
-        : ready
-          ? 'Cloud ready'
-          : 'Loading…',
+      : error
+        ? 'Saved on this device only'
+        : lastSaved
+          ? `Saved ${new Date(lastSaved).toLocaleTimeString()}`
+          : ready
+            ? 'Cloud ready'
+            : 'Loading…',
   }
 }

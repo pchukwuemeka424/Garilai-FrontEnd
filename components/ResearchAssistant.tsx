@@ -72,12 +72,13 @@ import {
 } from "@/lib/research-ideas";
 import { stageOutlinePageContext } from "@/lib/research-outline-context";
 import {
-	STRONG_TOPIC_EXAMPLES,
 	TOPIC_INPUT_HINT,
+	TOPIC_INPUT_PLACEHOLDER,
 } from "@/lib/research-topic-guidance";
 import { loadAllSavedPapers, type SavedResearchPaper } from "@/lib/chat-research-storage";
 import { loadAllSavedOutlines } from "@/lib/research-outline-storage";
 import { stagePendingResearchPaper } from "@/lib/research-paper-pending";
+import { stagePaperSources } from "@/lib/research-paper-sources";
 import {
 	clearSavedIdeas,
 	loadAllRecentSessions,
@@ -89,6 +90,12 @@ import {
 	saveIdea,
 	type SavedIdea,
 } from "@/lib/research-storage";
+import {
+	clearResearchWizardDraft,
+	loadResearchWizardDraft,
+	researchWizardInputKey,
+	saveResearchWizardDraft,
+} from "@/lib/research-wizard-draft";
 
 type WizardStep = 1 | 2 | 3;
 
@@ -124,12 +131,14 @@ function SkeletonCards() {
 }
 
 export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecturer" | "student" }) {
-	const { user, setTokenQuota } = useAuth();
+	const { user, loading: authLoading, setTokenQuota } = useAuth();
 	const router = useRouter();
 	const searchParams = useSearchParams();
 	const hasTokens = studentHasResearchTokens(user?.tokenQuota, user?.role);
 	const { status, messages, error, isBusy, sendPrompt, resetSession, clearMessages, abort } = useFeynmanSocket();
 	const isStudent = variant === "student";
+	/** Only save drafts after a successful load for this exact user — blocks cross-account writes. */
+	const draftOwnerRef = useRef<string | null>(null);
 
 	const [step, setStep] = useState<WizardStep>(1);
 	const [discipline, setDiscipline] = useState("");
@@ -164,21 +173,122 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 	});
 	const [sourcesLoading, setSourcesLoading] = useState(false);
 	const [sourcesError, setSourcesError] = useState<string | null>(null);
+	const [draftReady, setDraftReady] = useState(false);
 	const prevBusyRef = useRef(false);
 	const generateAbortRef = useRef<AbortController | null>(null);
+	/** Last inputs used for a successful idea generation — avoid wipe on Back → Next. */
+	const lastGenerateKeyRef = useRef<string | null>(null);
 
 	useEffect(() => {
+		draftOwnerRef.current = null;
+		setDraftReady(false);
+
+		if (authLoading) return;
+
+		const resetWizard = (topicFromQuick = "") => {
+			setStep(1);
+			setDiscipline("");
+			setTopic(topicFromQuick);
+			setScope("");
+			setCitationStyle("");
+			setFocusFilter("all");
+			setLocalIdeas(null);
+			setHasGenerated(false);
+			setTopicAnalysis(null);
+			setSelectedSources({
+				documentIds: [],
+				datasetIds: [],
+				noteIds: [],
+				projectIds: [],
+			});
+			setViewMode("cards");
+			lastGenerateKeyRef.current = null;
+			if (topicFromQuick) setTopicTouched(false);
+		};
+
+		if (!user?.id) {
+			resetWizard();
+			return;
+		}
+
+		const draft = loadResearchWizardDraft(variant, user.id);
+		let topicFromQuick = "";
 		try {
 			const quick = sessionStorage.getItem("aula.research.quickTopic");
 			if (quick?.trim()) {
-				setTopic(quick.trim().slice(0, 500));
-				setTopicTouched(false);
+				topicFromQuick = quick.trim().slice(0, 500);
 				sessionStorage.removeItem("aula.research.quickTopic");
 			}
 		} catch {
 			/* ignore storage errors */
 		}
-	}, []);
+
+		if (draft) {
+			setStep(draft.step);
+			setDiscipline(draft.discipline);
+			setTopic(topicFromQuick || draft.topic);
+			setScope(draft.scope);
+			setCitationStyle(draft.citationStyle);
+			setFocusFilter(draft.focusFilter);
+			setLocalIdeas(draft.localIdeas);
+			setHasGenerated(draft.hasGenerated);
+			setTopicAnalysis(draft.topicAnalysis);
+			setSelectedSources(draft.selectedSources);
+			setViewMode(draft.viewMode);
+			if (draft.hasGenerated && draft.localIdeas?.length) {
+				lastGenerateKeyRef.current = researchWizardInputKey({
+					discipline: draft.discipline,
+					topic: topicFromQuick || draft.topic,
+					scope: draft.scope,
+					citationStyle: draft.citationStyle,
+					sources: draft.selectedSources,
+				});
+			}
+		} else {
+			resetWizard(topicFromQuick);
+		}
+
+		draftOwnerRef.current = user.id;
+		setDraftReady(true);
+	}, [variant, user?.id, authLoading]);
+
+	useEffect(() => {
+		if (!draftReady || authLoading) return;
+		if (!user?.id || draftOwnerRef.current !== user.id) return;
+		saveResearchWizardDraft(
+			variant,
+			{
+				step,
+				discipline,
+				topic,
+				scope,
+				citationStyle,
+				focusFilter,
+				localIdeas,
+				hasGenerated,
+				topicAnalysis,
+				selectedSources,
+				viewMode,
+			},
+			user.id,
+		);
+	}, [
+		draftReady,
+		authLoading,
+		variant,
+		user?.id,
+		step,
+		discipline,
+		topic,
+		scope,
+		citationStyle,
+		focusFilter,
+		localIdeas,
+		hasGenerated,
+		topicAnalysis,
+		selectedSources,
+		viewMode,
+	]);
 
 	useEffect(() => {
 		const view = searchParams.get("view");
@@ -390,6 +500,13 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 			if (result.analysis) setTopicAnalysis(result.analysis);
 			setRecentSessions(pushRecentSession({ discipline, topic: topic.trim(), scope, ideas: parsed }));
 			setGenerationPhase("done");
+			lastGenerateKeyRef.current = researchWizardInputKey({
+				discipline,
+				topic,
+				scope,
+				citationStyle,
+				sources: selectedSources,
+			});
 			return true;
 		} catch (err) {
 			if (controller.signal.aborted) return false;
@@ -409,6 +526,13 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 			setLocalIdeas(ideas);
 			setRecentSessions(pushRecentSession({ discipline, topic: topic.trim(), scope, ideas }));
 			setGenerationPhase("done");
+			lastGenerateKeyRef.current = researchWizardInputKey({
+				discipline,
+				topic,
+				scope,
+				citationStyle,
+				sources: selectedSources,
+			});
 			return true;
 		} finally {
 			window.clearInterval(phaseTimer);
@@ -426,7 +550,14 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 		const ideas = generateLocalResearchIdeas(discipline, topic);
 		setLocalIdeas(ideas);
 		setRecentSessions(pushRecentSession({ discipline, topic: topic.trim(), scope, ideas }));
-	}, [hasGenerated, isBusy, isGenerating, topic, localIdeas, parsedIdeas, status, assistantContent, error, generateError, discipline, scope, selectedSourceCount]);
+		lastGenerateKeyRef.current = researchWizardInputKey({
+			discipline,
+			topic,
+			scope,
+			citationStyle,
+			sources: selectedSources,
+		});
+	}, [hasGenerated, isBusy, isGenerating, topic, localIdeas, parsedIdeas, status, assistantContent, error, generateError, discipline, scope, selectedSourceCount, citationStyle, selectedSources]);
 
 	useEffect(() => {
 		if (prevBusyRef.current && !isBusy && parsedIdeas?.length && scope) {
@@ -437,12 +568,16 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 
 	const handleStartOver = () => {
 		setStep(1);
+		setDiscipline("");
 		setTopic("");
 		setScope("");
+		setCitationStyle("");
 		setLocalIdeas(null);
 		setHasGenerated(false);
 		setTopicTouched(false);
 		setScopeTouched(false);
+		setDisciplineTouched(false);
+		setCitationTouched(false);
 		setFocusFilter("all");
 		setShowSaved(false);
 		setShowHistory(false);
@@ -450,12 +585,21 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 		setGenerateError(null);
 		setGenerationPhase(null);
 		setIsGenerating(false);
+		setSelectedSources({
+			documentIds: [],
+			datasetIds: [],
+			noteIds: [],
+			projectIds: [],
+		});
+		lastGenerateKeyRef.current = null;
 		generateAbortRef.current?.abort();
+		clearResearchWizardDraft(variant, user?.id);
 		resetSession();
 	};
 
 	const handleRegenerate = () => {
 		if (!topic.trim()) return;
+		lastGenerateKeyRef.current = null;
 		handleGenerate();
 	};
 
@@ -468,6 +612,13 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 		setShowSaved(false);
 		setShowHistory(false);
 		setStep(3);
+		lastGenerateKeyRef.current = researchWizardInputKey({
+			discipline: session.discipline,
+			topic: session.topic,
+			scope: session.scope,
+			citationStyle,
+			sources: selectedSources,
+		});
 		resetSession();
 	};
 
@@ -524,6 +675,22 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 		if (step === 2) {
 			setTopicTouched(true);
 			if (!topic.trim()) return;
+			const inputKey = researchWizardInputKey({
+				discipline,
+				topic,
+				scope,
+				citationStyle,
+				sources: selectedSources,
+			});
+			// Returning from Back with the same inputs — keep ideas; do not regenerate.
+			if (
+				hasGenerated &&
+				(localIdeas?.length || parsedIdeas?.length) &&
+				lastGenerateKeyRef.current === inputKey
+			) {
+				setStep(3);
+				return;
+			}
 			handleGenerate();
 		}
 	};
@@ -548,6 +715,27 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 			typeof window !== "undefined"
 				? `${window.location.pathname}${window.location.search}`
 				: undefined;
+		// Persist wizard state before navigating away so Back restores everything.
+		if (user?.id && draftOwnerRef.current === user.id) {
+			saveResearchWizardDraft(
+				variant,
+				{
+					step,
+					discipline,
+					topic: trimmedTopic,
+					scope,
+					citationStyle,
+					focusFilter,
+					localIdeas,
+					hasGenerated,
+					topicAnalysis,
+					selectedSources,
+					viewMode,
+				},
+				user.id,
+			);
+		}
+		stagePaperSources(selectedSources);
 		const key = stageOutlinePageContext({
 			idea,
 			discipline,
@@ -564,6 +752,7 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 		router.push(researchPaperWorkspacePath(trimmedTopic, isStudent ? "student" : "lecturer", key));
 	};
 
+	/** Step Back keeps all wizard inputs, sources, and generated ideas intact. */
 	const goBack = () => {
 		if (showSaved || showHistory) {
 			setShowSaved(false);
@@ -1000,7 +1189,7 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 													className="research-topic-input"
 													rows={5}
 													maxLength={500}
-													placeholder={STRONG_TOPIC_EXAMPLES[0]}
+													placeholder={TOPIC_INPUT_PLACEHOLDER}
 													value={topic}
 													onChange={(e) => setTopic(e.target.value)}
 													autoFocus
@@ -1022,7 +1211,7 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 												<p className="research-source-picker-help">
 													Optional: select research notes for the agent to read. Selecting a note
 													sets Interest topic from Manuscript → Title. The agent uses the note’s
-													pages, drafts, data, figures, and findings to generate titles, abstracts,
+													Materials pages, drafts, data, and figures to generate titles, abstracts,
 													and the full paper.
 												</p>
 											</div>
@@ -1034,7 +1223,10 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 										) : sourceDocuments.length + sourceProjects.length === 0 ? (
 											<p className="research-source-picker-state">
 												No research notes yet.{" "}
-												<Link href="/research/note" className="research-source-picker-link">
+												<Link
+													href={isStudent ? "/student/research/note" : "/research/note"}
+													className="research-source-picker-link"
+												>
 													Open Research Note
 												</Link>{" "}
 												to create one, then return here to use it as grounded context.
@@ -1057,9 +1249,6 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 																		{[
 																			project.description?.trim() || null,
 																			`${project.progress}% complete`,
-																			project.counts.notes
-																				? `${project.counts.notes} findings`
-																				: null,
 																			project.counts.datasets
 																				? `${project.counts.datasets} datasets`
 																				: null,

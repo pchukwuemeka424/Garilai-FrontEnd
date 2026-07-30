@@ -4,6 +4,7 @@ import type { Draft, OutputType } from '@/components/research-note/storage/types
 import { generateDraft } from '@/components/research-note/ai/drafting'
 import type { AISettings } from '@/components/research-note/ai/settings'
 import { debounce } from '@/components/research-note/lib/debounce'
+import { withGenerationTrace } from '@/components/research-note/features/effort/effortMetrics'
 
 const slot = (outputType: OutputType, section: string | null) =>
   `${outputType}::${section ?? ''}`
@@ -11,7 +12,8 @@ const slot = (outputType: OutputType, section: string | null) =>
 /**
  * A project's AI drafts. Generation goes through the active provider; user edits
  * are persisted with `humanEdited: true` so a later regeneration can be guarded
- * (the UI confirms before overwriting an edited draft).
+ * (the UI confirms before overwriting an edited draft). AI runs also store a
+ * generationTrace + aiBaselineContent for effort / attribution reports.
  */
 export function useDrafts(projectId: string, _settings: AISettings) {
   const [drafts, setDrafts] = useState<Draft[]>([])
@@ -58,7 +60,6 @@ export function useDrafts(projectId: string, _settings: AISettings) {
     setDrafts((prev) => {
       const idx = prev.findIndex((d) => d.id === saved.id)
       if (idx === -1) {
-        // Prefer one draft per slot — replace any duplicate slot by section.
         const slotIdx = prev.findIndex(
           (d) => d.outputType === saved.outputType && d.section === saved.section,
         )
@@ -72,7 +73,6 @@ export function useDrafts(projectId: string, _settings: AISettings) {
       return next
     })
 
-  // Debounced persistence of manual edits (marks the draft human-edited).
   const pending = useRef<Map<string, { outputType: OutputType; section: string | null; content: string }>>(new Map())
   const flush = useMemo(
     () =>
@@ -101,15 +101,13 @@ export function useDrafts(projectId: string, _settings: AISettings) {
     async (
       outputType: OutputType,
       section: string | null,
-      options?: { existingContent?: string | null },
+      options?: { existingContent?: string | null; preferPageId?: string | null },
     ) => {
       setError(null)
       setLastLiteratureCount(null)
       setLastReferencesSync(null)
       setBusySlot(slot(outputType, section))
       try {
-        // Flush pending edits so refine uses the latest typed content.
-        // Drop any pending References writes — sync owns that section.
         pending.current.delete(slot('publication', 'References'))
         flush.flush()
         const result = await generateDraft(
@@ -117,15 +115,12 @@ export function useDrafts(projectId: string, _settings: AISettings) {
           outputType,
           section,
           options?.existingContent,
+          { preferPageId: options?.preferPageId },
         )
-        const saved = await saveDraft(projectId, outputType, section, {
-          content: result.content,
-          humanEdited: false,
-          provider: result.provider,
-          model: result.model,
-        })
+        const existing = await getDraftFor(projectId, outputType, section)
+        const patch = withGenerationTrace(existing, result.generationTrace, result.content)
+        const saved = await saveDraft(projectId, outputType, section, patch)
         upsertLocal(saved)
-        // Reload so Publication → References picks up synced bibliography entries.
         const list = await listDrafts(projectId)
         setDrafts(list)
         setLastLiteratureCount(result.literatureCount)
@@ -147,7 +142,6 @@ export function useDrafts(projectId: string, _settings: AISettings) {
     [projectId, flush],
   )
 
-  /** Save AI-produced content (e.g. journal reformat) as a fresh, non-edited draft. */
   const putAiDraft = useCallback(
     async (
       outputType: OutputType,
@@ -156,18 +150,29 @@ export function useDrafts(projectId: string, _settings: AISettings) {
       provider: string,
       model: string,
     ) => {
+      const existing = await getDraftFor(projectId, outputType, section)
       const saved = await saveDraft(projectId, outputType, section, {
         content,
         humanEdited: false,
         provider,
         model,
+        aiBaselineContent: content,
+        generationTrace: existing?.generationTrace ?? {
+          generatedAt: new Date().toISOString(),
+          agentId: `${outputType}:${section ?? 'doc'}`,
+          provider,
+          model,
+          mode: 'create',
+          literatureCount: 0,
+          channelsUsed: [],
+          materials: [],
+        },
       })
       upsertLocal(saved)
     },
     [projectId],
   )
 
-  /** Create an empty draft the user can write themselves. */
   const addBlank = useCallback(
     async (outputType: OutputType, section: string | null) => {
       setError(null)
@@ -208,8 +213,6 @@ export function useDrafts(projectId: string, _settings: AISettings) {
 
   const editDraft = useCallback(
     (outputType: OutputType, section: string | null, content: string) => {
-      // Publication → References is auto-synced from cited sources. Ignore
-      // TipTap flushes (often empty <p></p>) so they cannot wipe the bibliography.
       if (outputType === 'publication' && section === 'References') {
         const existing = draftsRef.current.find(
           (d) => d.outputType === outputType && d.section === section,
@@ -225,13 +228,11 @@ export function useDrafts(projectId: string, _settings: AISettings) {
       }
       const key = slot(outputType, section)
       pending.current.set(key, { outputType, section, content })
-      // Optimistic local update so the textarea stays responsive.
       setDrafts((prev) => {
         const idx = prev.findIndex(
           (d) => d.outputType === outputType && d.section === section,
         )
         if (idx === -1) {
-          // Keep UI content without waiting for addBlank; persist will create/update.
           return [
             ...prev,
             {
@@ -257,5 +258,20 @@ export function useDrafts(projectId: string, _settings: AISettings) {
     [flush, projectId],
   )
 
-  return { drafts, loading, busySlot, error, lastLiteratureCount, lastReferencesSync, getDraft, generate, addBlank, editDraft, putAiDraft, slot, reload, flushPending }
+  return {
+    drafts,
+    loading,
+    busySlot,
+    error,
+    lastLiteratureCount,
+    lastReferencesSync,
+    getDraft,
+    generate,
+    addBlank,
+    editDraft,
+    putAiDraft,
+    slot,
+    reload,
+    flushPending,
+  }
 }

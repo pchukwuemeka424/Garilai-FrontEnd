@@ -36,7 +36,14 @@ export type UserRecord = {
 	cohort: string | null;
 	lastActiveAt: string | null;
 	createdAt: string;
+	updatedAt?: string;
 	tokenQuota?: StudentTokenQuota | null;
+	/** Per-user allowance override; null uses university/platform default. */
+	tokenAllowance?: number | null;
+	suspensionReason?: string | null;
+	invitedBy?: string | null;
+	invitedAt?: string | null;
+	complianceFlags?: string[];
 };
 
 export type SessionSummary = {
@@ -82,7 +89,10 @@ export type CreateUserInput = {
 	password?: string;
 };
 
-export type UpdateUserInput = Partial<CreateUserInput>;
+export type UpdateUserInput = Partial<Omit<CreateUserInput, "universityId">> & {
+	universityId?: string | null;
+	suspensionReason?: string | null;
+};
 
 export const USER_ROLE_OPTIONS: Array<{ label: string; value: UserRole }> = [
 	{ label: "Super Administrator", value: "admin" },

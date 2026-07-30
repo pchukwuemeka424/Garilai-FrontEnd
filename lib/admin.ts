@@ -32,6 +32,9 @@ export type AdminTokenRecord = {
 	faculty?: string | null;
 	department?: string | null;
 	programme?: string | null;
+	universityId?: string | null;
+	institution?: string | null;
+	tokenAllowance?: number | null;
 	tokenQuota: StudentTokenQuota | null;
 };
 
@@ -46,7 +49,11 @@ export type TokenAdminStats = {
 	estimatedCost?: number;
 };
 
-export type UpdateTokenInput = { reset?: boolean; tokensUsed?: number };
+export type UpdateTokenInput = {
+	reset?: boolean;
+	tokensUsed?: number;
+	tokenAllowance?: number | null;
+};
 
 export type AdminBackupTable = {
 	key: string;

@@ -25,6 +25,10 @@ import {
 import { resolveSectionAgent } from './registry'
 import { formatSectionChecklist } from './sectionChecklists'
 import { pickMaterial, type AgentBundle, type SectionAgent } from './types'
+import {
+  listMaterialInventory,
+  materialsUsedForGeneration,
+} from '@/components/research-note/features/effort/materialInventory'
 
 /** Sections that never receive in-text citations or research-API content. */
 const NO_CITATION_SECTIONS = new Set(['Title', 'Abstract', 'Keywords'])
@@ -234,6 +238,7 @@ export async function orchestrateSectionDraft(
   outputType: OutputType,
   section: string | null,
   existingContent?: string | null,
+  options?: { preferPageId?: string | null },
 ): Promise<{ ctx: ProjectContext; bundle: AgentBundle }> {
   const agent = resolveSectionAgent(outputType, section)
   const normalizedExisting = existingContent?.trim()
@@ -244,6 +249,7 @@ export async function orchestrateSectionDraft(
   const [ctx, filled] = await Promise.all([
     assembleProjectContext(projectId, {
       excludeDraft: { outputType, section },
+      preferPageId: options?.preferPageId,
     }),
     outputType === 'publication' && section
       ? getFilledPublicationSections(projectId, section)
@@ -254,11 +260,7 @@ export async function orchestrateSectionDraft(
   const laterSections = filled.later
 
   const prioritized = pickMaterial(ctx.agents, agent.reads)
-  // Publication sections must not fall back to full notebook Materials (notes).
-  const prioritizedMaterial =
-    outputType === 'publication'
-      ? prioritized
-      : prioritized || ctx.material
+  const prioritizedMaterial = prioritized || ctx.material
 
   const needsLit =
     agent.useResearchApi ||
@@ -278,6 +280,16 @@ export async function orchestrateSectionDraft(
       )
     : { text: '', count: 0, query: '', sources: [] as CiteSource[] }
 
+  const inventory = await listMaterialInventory(projectId)
+  const usage = materialsUsedForGeneration({
+    inventory,
+    agents: ctx.agents,
+    reads: agent.reads,
+    hasTemplate: Boolean(ctx.template.trim()),
+    literatureCount: lit.count,
+    citeTitles: lit.sources.map((s) => s.title).filter(Boolean),
+  })
+
   return {
     ctx,
     bundle: {
@@ -290,6 +302,8 @@ export async function orchestrateSectionDraft(
       literature: lit.text,
       literatureCount: lit.count,
       citeSources: lit.sources,
+      channelsUsed: usage.channelsUsed,
+      materialsUsed: usage.materials,
     },
   }
 }
@@ -396,7 +410,7 @@ export function buildAgentPrompt(
     hasLiterature
       ? `CRITICAL CITATION RULE: Copy cite strings from the CITATION BANK into the prose. Minimum ${minCites} distinct bank citations required for this section.`
       : '',
-    'Do NOT use notebook Materials (notes pages) as source content for this section.',
+    'Prefer notebook Materials (notes pages) when present — they are the researcher’s captured readings and ideas.',
     'When Data and/or Figures are present in Connected project evidence, Title and Abstract MUST reflect that study content (topic variables from columns/figures; Abstract key findings from the data).',
     'Results MUST cite available Figures by name and report values from Data tables only.',
     'Ground every claim in the write-ups, data/figures/lab log when provided, and listed literature. Do not invent data, results, or citations.',

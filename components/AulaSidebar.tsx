@@ -14,6 +14,7 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import type { AuthUser } from "@/lib/auth";
 import { AULA_ADMIN_ITEM, AULA_NAV_GROUPS, AULA_QUICK_ACCESS, type AulaNavItem } from "@/lib/aula-nav";
+import { researchTokenAllowance } from "@/lib/student-tokens";
 
 type Props = {
 	user: AuthUser;
@@ -50,6 +51,7 @@ export function AulaSidebar({ user, id, className, onNavigate }: Props) {
 	}
 
 	const roleBadge = user.role === "admin" ? "Admin" : "Lecturer";
+	const showTokens = Boolean(user.tokenQuota || researchTokenAllowance(user.role));
 
 	const handleLogout = () => {
 		onNavigate?.();
@@ -85,11 +87,11 @@ export function AulaSidebar({ user, id, className, onNavigate }: Props) {
 				<div className="sb-actions">
 					<SidebarSignOut onLogout={handleLogout} />
 				</div>
-
-				<SidebarProfile user={user}>
-					{user.role === "lecturer" && <StudentTokenQuotaBar quota={user.tokenQuota} role={user.role} />}
-				</SidebarProfile>
 			</div>
+
+			<SidebarProfile user={user}>
+				{showTokens && <StudentTokenQuotaBar quota={user.tokenQuota} role={user.role} />}
+			</SidebarProfile>
 		</aside>
 	);
 }

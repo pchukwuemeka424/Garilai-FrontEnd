@@ -12,6 +12,8 @@ export type SavedResearchDto = SavedResearchPaper & {
 	sessionId?: string | null;
 	workflow?: string;
 	tokenUsage?: TokenUsage;
+	aiBaselineContent?: string | null;
+	humanEdited?: boolean;
 };
 
 export type OutputListEntry = {
@@ -30,6 +32,9 @@ function mapPaper(dto: SavedResearchDto): SavedResearchPaper {
 		topic: dto.topic,
 		title: dto.title,
 		content: dto.content,
+		aiBaselineContent: dto.aiBaselineContent ?? null,
+		humanEdited: Boolean(dto.humanEdited),
+		sources: dto.sources ?? null,
 		...(dto.tokenUsage ? { tokenUsage: dto.tokenUsage } : {}),
 		createdAt: dto.createdAt,
 		updatedAt: dto.updatedAt,
@@ -102,6 +107,7 @@ export async function persistResearchToApi(input: {
 	sessionId?: string | null;
 	workflow?: string;
 	tokenUsage?: TokenUsage;
+	sources?: import("@/lib/research-assets-api").ResearchSourceSelection | null;
 }): Promise<SavedResearchPaper | null> {
 	try {
 		const res = await fetch(apiUrl("/api/research/saved"), {

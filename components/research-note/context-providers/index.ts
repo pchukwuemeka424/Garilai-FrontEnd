@@ -44,6 +44,8 @@ export interface AgentMaterialSlices {
 export interface AssembleOptions {
   /** Exclude the draft slot being generated so it is not fed back into itself. */
   excludeDraft?: { outputType: OutputType; section: string | null }
+  /** Prefer this Materials page when assembling notes (Draft from note). */
+  preferPageId?: string | null
 }
 
 function trimBudget(parts: string[], budget: number): string {
@@ -67,7 +69,7 @@ export async function assembleProjectContext(
   const [project, notes, data, figures, labLog, references, drafts, template] =
     await Promise.all([
       getProject(projectId),
-      getNotesContext(projectId),
+      getNotesContext(projectId, { preferPageId: options?.preferPageId }),
       getDataContext(projectId),
       getFiguresContext(projectId),
       getLabLogContext(projectId),

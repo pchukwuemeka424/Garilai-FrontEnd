@@ -171,3 +171,30 @@ export function roleLabel(role: string): string {
 	};
 	return labels[role] ?? role;
 }
+
+/** Human-readable access summary for admin console roles. */
+export function roleAccessSummary(role: string): string[] {
+	if (role === "admin" || role === "governance_admin") {
+		return ["Full university governance console", "Users, tokens, audit, policies, reports"];
+	}
+	const perms = DEFAULT_ROLE_PERMISSIONS[role];
+	if (!perms) return ["Limited console access"];
+	const features = Object.keys(perms);
+	if (features.length === 0) return ["Limited console access"];
+	return features.map((feature) => {
+		const actions = perms[feature as GovernanceFeature] ?? [];
+		return `${feature.replace(/_/g, " ")} (${actions.join(", ")})`;
+	});
+}
+
+export const SUPER_ADMIN_CREATE_ROLES = [
+	{ value: "admin" as const, label: "Super Administrator", scope: "platform" as const },
+	{ value: "governance_admin" as const, label: "Governance Administrator", scope: "university" as const },
+	{ value: "faculty_admin" as const, label: "Faculty Administrator", scope: "university" as const },
+	{ value: "department_admin" as const, label: "Department Administrator", scope: "university" as const },
+	{ value: "compliance_officer" as const, label: "Compliance Officer", scope: "university" as const },
+	{ value: "data_protection_officer" as const, label: "Data Protection Officer", scope: "university" as const },
+	{ value: "research_integrity_officer" as const, label: "Research Integrity Officer", scope: "university" as const },
+	{ value: "auditor" as const, label: "Auditor", scope: "university" as const },
+];
+

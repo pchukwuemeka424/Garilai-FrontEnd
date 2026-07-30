@@ -10,6 +10,7 @@ import { buildResearchPaperPrompt } from "@/lib/research-generate";
 import type { ResearchIdea } from "@/lib/research-ideas";
 import { peekOutlinePageContext, resolveOutlinePageContext } from "@/lib/research-outline-context";
 import { loadSavedOutline, saveResearchOutline } from "@/lib/research-outline-storage";
+import { stagePaperSources } from "@/lib/research-paper-sources";
 import type { StudentTokenQuota } from "@/lib/student-tokens";
 
 /** Lightweight framing from the idea card — not an LLM outline. */
@@ -35,6 +36,8 @@ export async function prepareResearchPaperPrompt(
 ): Promise<string | null> {
 	const context = resolveOutlinePageContext(key) ?? peekOutlinePageContext(key);
 	if (!context) return null;
+
+	stagePaperSources(context.sources);
 
 	const datasetIds = context.sources?.datasetIds ?? [];
 	const projectIds = context.sources?.projectIds ?? [];

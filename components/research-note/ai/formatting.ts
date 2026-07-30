@@ -9,50 +9,12 @@ import {
   listLabEntries,
   listPages,
 } from '@/components/research-note/storage/repositories'
-import { getTemplateContext } from '@/components/research-note/context-providers'
 import {
   datasetSummary,
   datasetToTable,
   docToPlainText,
 } from '@/components/research-note/context-providers/extractors'
 import { draftContentToMarkdown } from '@/components/research-note/lib/markdown'
-import { sanitizeDashes } from './drafting'
-import { generate } from './client'
-
-/**
- * Journal-submission formatter. Uses the project OpenRouter LLM to restructure
- * a manuscript into a target journal's sections and style.
- */
-export async function reformatForJournal(
-  projectId: string,
-  manuscript: string,
-  journal: string,
-): Promise<{ text: string; provider: string; model: string }> {
-  const template = await getTemplateContext(projectId)
-  const system = [
-    'You are an expert academic copy-editor preparing a manuscript for journal submission.',
-    `Reformat the manuscript to match the standard structure and style of "${journal || 'a general academic journal'}".`,
-    'Do not add a References or bibliography section. Preserve substantive content and results; adjust section ordering, headings, and formatting to fit the target. Output Markdown.',
-    'Do not use em dashes (—) or en dashes (–). Use commas, colons, parentheses, or hyphens (-) instead.',
-  ].join(' ')
-
-  const user = [
-    template
-      ? `## Target style exemplar (imitate its structure only)\n${template}\n`
-      : '',
-    '## Manuscript to reformat\n',
-    manuscript,
-  ]
-    .filter(Boolean)
-    .join('\n')
-
-  const result = await generate({
-    system,
-    messages: [{ role: 'user', content: user }],
-    maxTokens: 4096,
-  })
-  return { ...result, text: sanitizeDashes(result.text) }
-}
 
 /** Concatenate the drafted Publication sections into one manuscript (Markdown). */
 export async function assemblePublicationManuscript(
@@ -124,7 +86,8 @@ export async function assembleAllCaptured(
     for (let i = 0; i < assets.length; i++) {
       const a = assets[i]!
       const when = a.createdAt.slice(0, 10)
-      const caption = `Figure ${i + 1}: ${a.name || 'Untitled'} (added ${when})`
+      const label = a.caption?.trim() || a.name || 'Untitled'
+      const caption = `Figure ${i + 1}: ${label} (added ${when})`
       if (a.mime.startsWith('image/') && a.blob.size > 0 && a.blob.size <= 6_000_000) {
         try {
           const dataUrl = await blobToDataUrl(a.blob)

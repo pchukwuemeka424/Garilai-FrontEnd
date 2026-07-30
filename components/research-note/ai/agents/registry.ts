@@ -15,24 +15,24 @@ const ALL_MATERIALS: MaterialSource[] = [
 ]
 
 const PUBLICATION_READS: Record<string, MaterialSource[]> = {
-  // Notebook Materials (notes) are excluded from all publication sections.
-  // Title / Abstract / Keywords must still see Data + Figures so they reflect the study.
-  Title: ['data', 'figures', 'labLog', 'drafts'],
-  Abstract: ['data', 'figures', 'labLog', 'references', 'drafts'],
-  Keywords: ['data', 'figures', 'references', 'drafts'],
-  Introduction: ['data', 'figures', 'references', 'labLog', 'drafts'],
-  'Literature Review': ['references', 'drafts'],
-  'Materials & Methods': ['labLog', 'data', 'figures', 'references', 'drafts'],
-  Results: ['data', 'figures', 'labLog', 'references', 'drafts'],
-  Discussion: ['data', 'figures', 'references', 'labLog', 'drafts'],
-  Conclusion: ['data', 'figures', 'references', 'drafts'],
-  References: ['drafts', 'references'],
-  Acknowledgements: ['drafts'],
-  Supplementary: ['data', 'figures', 'labLog', 'drafts'],
+  // Materials notes feed literature-heavy and framing sections.
+  Title: ['notes', 'data', 'figures', 'labLog', 'drafts'],
+  Abstract: ['notes', 'data', 'figures', 'labLog', 'references', 'drafts'],
+  Keywords: ['notes', 'data', 'figures', 'references', 'drafts'],
+  Introduction: ['notes', 'data', 'figures', 'references', 'labLog', 'drafts'],
+  'Literature Review': ['notes', 'references', 'drafts'],
+  'Materials & Methods': ['notes', 'labLog', 'data', 'figures', 'references', 'drafts'],
+  Results: ['notes', 'data', 'figures', 'labLog', 'references', 'drafts'],
+  Discussion: ['notes', 'data', 'figures', 'references', 'labLog', 'drafts'],
+  Conclusion: ['notes', 'data', 'figures', 'references', 'drafts'],
+  References: ['drafts', 'references', 'notes'],
+  Acknowledgements: ['drafts', 'notes'],
+  Supplementary: ['notes', 'data', 'figures', 'labLog', 'drafts'],
 }
 
-/** Fallback reads for unknown publication sections — never includes notes/Materials. */
+/** Fallback reads for unknown publication sections. */
 const PUBLICATION_FALLBACK_READS: MaterialSource[] = [
+  'notes',
   'data',
   'figures',
   'labLog',

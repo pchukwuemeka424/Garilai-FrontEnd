@@ -1,13 +1,15 @@
 # features/ — feature modules
 
-One folder per feature area (spec §7). Each keeps its own components, hooks, and
-logic co-located:
+One folder per Research Note feature area:
 
-- `dashboard/` — project cards
-- `notebook/` — OneNote-style notes editor (Phase 1)
-- `spreadsheet/` — grid + stats + plots (Phase 2)
-- `references/` — Mendeley-style library (Phase 2)
-- `ai-output/` — the drafting engine tabs (Phase 3)
-- `export/` — docx/pptx/xlsx/pdf/LaTeX (Phase 4)
-- `sync/` — explicit sync + time-travel history (Phase 5)
-- `collab/` — invites, access levels, comments (Phase 6)
+- `dashboard/` — project library
+- `notebook/` — Materials (OneNote-style notes, templates, tags, PDF/image drop)
+- `data/` — spreadsheets, stats, charts
+- `references/` — DOI library + citation styles (wired into notebook nav)
+- `eln/` — append-only lab log
+- `progress/` — progress reports from notebook activity
+- `ai-output/` — Manuscript drafting + AI generate from Materials
+- `export/` — PDF / docx / etc.
+- `search/` — Cmd+K project and in-notebook search
+- `sync/` — cloud notebook snapshot save
+- `collab/` — comments (share/roles still owner-only)

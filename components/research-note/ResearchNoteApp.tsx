@@ -32,12 +32,15 @@ export type ResearchNoteAuthor = {
 
 type Props = {
 	author: ResearchNoteAuthor;
+	/** Lecturer `/research/note` or student `/student/research/note`. */
+	basePath?: string;
 };
 
-export function ResearchNoteApp({ author }: Props) {
+export function ResearchNoteApp({ author, basePath = "/research/note" }: Props) {
 	const router = useRouter();
 	const searchParams = useSearchParams();
 	const projectFromUrl = searchParams.get("project")?.trim() || "";
+	const pageFromUrl = searchParams.get("page")?.trim() || "";
 	const [view, setView] = useState<View>(() =>
 		projectFromUrl ? { kind: "project", projectId: projectFromUrl } : { kind: "dashboard" },
 	);
@@ -71,18 +74,25 @@ export function ResearchNoteApp({ author }: Props) {
 		return () => window.removeEventListener("keydown", onKey);
 	}, []);
 
-	const openProject = (projectId: string) => {
+	const openProject = (projectId: string, pageId?: string) => {
 		setView({ kind: "project", projectId });
-		router.replace(`/research/note?project=${encodeURIComponent(projectId)}`, { scroll: false });
+		const qs = new URLSearchParams({ project: projectId });
+		if (pageId) qs.set("page", pageId);
+		router.replace(`${basePath}?${qs.toString()}`, { scroll: false });
 	};
 
 	const backToDashboard = () => {
 		setView({ kind: "dashboard" });
-		router.replace("/research/note", { scroll: false });
+		router.replace(basePath, { scroll: false });
 	};
 
 	const modals = (
-		<SearchModal open={showSearch} onClose={() => setShowSearch(false)} onOpenProject={openProject} />
+		<SearchModal
+			open={showSearch}
+			onClose={() => setShowSearch(false)}
+			onOpenProject={openProject}
+			projectId={view.kind === "project" ? view.projectId : undefined}
+		/>
 	);
 
 	let body: ReactNode;
@@ -102,6 +112,7 @@ export function ResearchNoteApp({ author }: Props) {
 						settings={ai.settings}
 						author={noteUser.name}
 						onBack={backToDashboard}
+						initialPageId={pageFromUrl || undefined}
 					/>
 				</Suspense>
 				{modals}

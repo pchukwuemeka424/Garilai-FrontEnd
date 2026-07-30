@@ -41,7 +41,11 @@ function formatDateTime(iso: string): string {
 }
 
 /** Notebook library home — aligned with GARIL research pages. */
-export function Dashboard({ onOpenProject }: { onOpenProject: (projectId: string) => void }) {
+export function Dashboard({
+	onOpenProject,
+}: {
+	onOpenProject: (projectId: string, pageId?: string) => void;
+}) {
 	const { projects, loading, error, create, remove } = useProjects();
 	const [query, setQuery] = useState("");
 	const [showNew, setShowNew] = useState(false);

@@ -6,6 +6,7 @@ import {
   exportDraft,
   type ExportFormat,
 } from '@/components/research-note/features/export/exporters'
+import { EffortReportPanel } from '@/components/research-note/features/effort/EffortReportPanel'
 import { DraftDocumentEditor } from '@/components/research-note/features/ai-output/DraftDocumentEditor'
 import {
   composeProgressNarrative,
@@ -139,8 +140,9 @@ export function ProgressReportsWorkspace({
           <LightbulbIcon className="rn-workspace-guide-icon" />
           <p>
             Progress is calculated live from Materials, Data, Figures, Lab Log,
-            Manuscript sections, and your milestones. Update status and blockers, then compose a
-            narrative for supervisors.
+            Manuscript sections, and your milestones. Effort & attribution scores
+            your uploads and edits — download the report anytime, even if you have
+            not uploaded or edited yet.
           </p>
           <button
             type="button"
@@ -521,6 +523,11 @@ export function ProgressReportsWorkspace({
               </ul>
             )}
           </section>
+
+          <EffortReportPanel
+            projectId={projectId}
+            refreshKey={(draft?.updatedAt ?? '') + String(snapshot.percent)}
+          />
 
           <section className="rn-progress-card rn-progress-narrative">
             <div className="rn-progress-section-head">

@@ -10,9 +10,11 @@ type Props = {
 
 export function StudentTokenQuotaBar({ quota, role }: Props) {
 	const allowance = quota?.allowance ?? researchTokenAllowance(role) ?? 0;
+	if (allowance <= 0) return null;
+
 	const used = quota?.used ?? 0;
-	const remaining = quota?.remaining ?? allowance;
-	const percentUsed = allowance > 0 ? Math.min(100, Math.round((used / allowance) * 100)) : 0;
+	const remaining = quota?.remaining ?? Math.max(0, allowance - used);
+	const percentUsed = Math.min(100, Math.round((used / allowance) * 100));
 	const depleted = remaining <= 0;
 
 	return (
@@ -38,7 +40,7 @@ export function StudentTokenQuotaBar({ quota, role }: Props) {
 			</p>
 			{depleted && (
 				<p className="stu-token-quota-warning">
-					{role === "lecturer"
+					{role === "lecturer" || role === "researcher"
 						? "Token limit reached. Contact support for more."
 						: "Token limit reached. Contact your instructor for more."}
 				</p>

@@ -1,4 +1,8 @@
-import type { OutputType } from '@/components/research-note/storage/types'
+import type {
+  MaterialChannel,
+  MaterialUsageItem,
+  OutputType,
+} from '@/components/research-note/storage/types'
 import type { AgentMaterialSlices } from '@/components/research-note/context-providers'
 
 /** Material sources that section agents can subscribe to. */
@@ -57,6 +61,9 @@ export interface AgentBundle {
   literatureCount: number
   /** Structured cite sources for verification / citation fix-up. */
   citeSources: import('./citationBank').CiteSource[]
+  /** Notebook materials (and literature) injected into this generation. */
+  channelsUsed: MaterialChannel[]
+  materialsUsed: MaterialUsageItem[]
 }
 
 export function pickMaterial(

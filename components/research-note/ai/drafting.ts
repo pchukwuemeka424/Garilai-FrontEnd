@@ -1,5 +1,5 @@
 import { PUBLICATION_SECTIONS } from '@/components/research-note/config/branding'
-import type { OutputType } from '@/components/research-note/storage/types'
+import type { GenerationTrace, OutputType } from '@/components/research-note/storage/types'
 import {
   buildAgentPrompt,
   buildCitationFixPrompt,
@@ -26,6 +26,8 @@ export interface GeneratedDraft {
   referencesAdded: number
   referencesUpdated: number
   referencesTotal: number
+  /** Provenance of materials injected into the agent prompt. */
+  generationTrace: GenerationTrace
 }
 
 /** Strip em/en dashes from model output (prefer commas or hyphens). */
@@ -128,6 +130,7 @@ export async function generateDraft(
   outputType: OutputType,
   section: string | null,
   existingContent?: string | null,
+  options?: { preferPageId?: string | null },
 ): Promise<GeneratedDraft> {
   if (outputType !== 'publication' || !section) {
     throw new Error('Generate draft is available per Manuscript section only.')
@@ -143,6 +146,7 @@ export async function generateDraft(
     outputType,
     section,
     existingContent,
+    { preferPageId: options?.preferPageId },
   )
   const { system, user } = buildAgentPrompt(ctx, bundle)
   const maxTokens =
@@ -201,5 +205,15 @@ export async function generateDraft(
     referencesAdded,
     referencesUpdated,
     referencesTotal,
+    generationTrace: {
+      generatedAt: new Date().toISOString(),
+      agentId: bundle.target.id,
+      provider,
+      model,
+      mode: bundle.mode,
+      literatureCount: bundle.literatureCount,
+      channelsUsed: bundle.channelsUsed,
+      materials: bundle.materialsUsed,
+    },
   }
 }

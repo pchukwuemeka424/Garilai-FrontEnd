@@ -18,6 +18,7 @@ export const AI_DRAFT_TABS = {
   data: 'Data',
   images: 'Figures',
   eln: 'Lab Log',
+  references: 'References',
   progressReports: 'Progress Reports',
   publication: 'Manuscript',
 } as const
@@ -30,6 +31,7 @@ export const AI_DRAFT_HINTS: Record<AiDraftTabKey, string> = {
   data: 'Import spreadsheets, run stats, plot charts',
   images: 'Store figures, photos, and plots',
   eln: 'Timestamped experiment and lab records',
+  references: 'Import DOIs and manage citations for the manuscript',
   progressReports: 'Progress %, milestones, logs, and next steps',
   publication: 'Write the full paper section by section',
 }
@@ -42,10 +44,12 @@ export const AI_DRAFT_GUIDES: Record<AiDraftTabKey, string> = {
   images:
     'Upload images or drag them in. Figures from Data charts and Lab Log pastes also appear here for reuse in write-ups.',
   eln: 'Log what you did and observed. Entries are append-only once saved, so your Methods and Results stay reproducible.',
+  references:
+    'Add sources by DOI or manually. Set your citation style here — Manuscript in-text cites and the bibliography stay aligned.',
   progressReports:
-    'Live progress %, work done, Lab Log digest, milestones, and blockers — compose a narrative for supervisors from notebook activity.',
+    'Live progress %, effort & attribution scores, Lab Log digest, milestones, and blockers — download an effort report anytime (even with no uploads or edits).',
   publication:
-    'Work section by section (Title → References). Set your reference style once — in-text cites and the bibliography stay aligned.',
+    'Work section by section. Generate or refine with AI to ground drafts in your Materials; edit before export to raise your effort score. Use Figure and Cite on body sections.',
 }
 
 /** Nav groups for the redesigned workspace sidebar. */
@@ -53,7 +57,7 @@ export const AI_DRAFT_NAV_GROUPS: { id: string; label: string; keys: AiDraftTabK
   {
     id: 'capture',
     label: '',
-    keys: ['notes', 'data', 'images', 'eln'],
+    keys: ['notes', 'data', 'images', 'eln', 'references'],
   },
   {
     id: 'write',

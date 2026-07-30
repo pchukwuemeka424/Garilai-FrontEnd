@@ -79,8 +79,18 @@ export function useNotebook(projectId: string) {
   }, [])
 
   const addPage = useCallback(
-    async (sectionId: string, title = 'Untitled page') => {
-      const page = await createPage({ sectionId, projectId, title })
+    async (
+      sectionId: string,
+      title = 'Untitled page',
+      options?: { content?: RichTextDoc | null; tags?: string[] },
+    ) => {
+      const page = await createPage({
+        sectionId,
+        projectId,
+        title,
+        content: options?.content,
+        tags: options?.tags,
+      })
       setPages((prev) => [...prev, page].sort(byPosition))
       setActivePageId(page.id)
       return page
@@ -90,6 +100,12 @@ export function useNotebook(projectId: string) {
 
   const renamePage = useCallback(async (id: string, title: string) => {
     const updated = await updatePage(id, { title })
+    setPages((prev) => prev.map((p) => (p.id === id ? updated : p)))
+  }, [])
+
+  const setPageTags = useCallback(async (id: string, tags: string[]) => {
+    const cleaned = [...new Set(tags.map((t) => t.trim().toLowerCase()).filter(Boolean))]
+    const updated = await updatePage(id, { tags: cleaned.length ? cleaned : [] })
     setPages((prev) => prev.map((p) => (p.id === id ? updated : p)))
   }, [])
 
@@ -122,6 +138,7 @@ export function useNotebook(projectId: string) {
     removeSection,
     addPage,
     renamePage,
+    setPageTags,
     removePage,
     savePageContent,
   }

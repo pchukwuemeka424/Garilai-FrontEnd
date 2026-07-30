@@ -201,3 +201,17 @@ export const ImportIcon = ({ className }: IconProps) => (
     <path d="M5 18h14" />
   </svg>
 )
+
+export const BookIcon = ({ className }: IconProps) => (
+  <svg className={base(className)} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+  </svg>
+)
+
+export const SparklesIcon = ({ className }: IconProps) => (
+  <svg className={base(className)} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5L12 3z" />
+    <path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z" />
+  </svg>
+)

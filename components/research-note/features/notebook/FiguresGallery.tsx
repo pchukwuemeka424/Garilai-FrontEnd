@@ -3,6 +3,7 @@ import {
   createAsset,
   deleteAsset,
   listAssets,
+  updateAsset,
 } from '@/components/research-note/storage/repositories'
 import { relativeTime } from '@/components/research-note/lib/format'
 import { PlusIcon, TrashIcon, ImageIcon } from '@/components/research-note/components/icons'
@@ -29,6 +30,7 @@ export function FiguresGallery({
   const [dragOver, setDragOver] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [savedHint, setSavedHint] = useState<string | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const urlsRef = useRef<string[]>([])
   const cloud = useCloudSave()
@@ -37,11 +39,13 @@ export function FiguresGallery({
     urlsRef.current.forEach(URL.revokeObjectURL)
     urlsRef.current = []
     const assets = await listAssets(projectId)
-    const mapped = assets.map((asset) => {
-      const url = URL.createObjectURL(asset.blob)
-      urlsRef.current.push(url)
-      return { asset, url }
-    })
+    const mapped = assets
+      .filter((a) => a.mime.startsWith('image/'))
+      .map((asset) => {
+        const url = URL.createObjectURL(asset.blob)
+        urlsRef.current.push(url)
+        return { asset, url }
+      })
     setItems(mapped)
   }, [projectId])
 
@@ -105,6 +109,21 @@ export function FiguresGallery({
     await refresh()
   }
 
+  const saveCaption = async (id: string, caption: string) => {
+    await updateAsset(id, { caption: caption.trim() || undefined })
+    setItems((prev) =>
+      prev.map((item) =>
+        item.asset.id === id
+          ? { ...item, asset: { ...item.asset, caption: caption.trim() || undefined } }
+          : item,
+      ),
+    )
+    setEditingId(null)
+    await cloud.saveNow()
+    setSavedHint('Caption saved.')
+    window.setTimeout(() => setSavedHint(null), 2000)
+  }
+
   if (loading) {
     return (
       <div className="flex flex-1 items-center justify-center text-sm text-[var(--color-muted)]">
@@ -124,7 +143,7 @@ export function FiguresGallery({
             <div>
               <h2 className="text-sm font-semibold">Figures</h2>
               <p className="text-xs text-[var(--color-muted)]">
-                Upload images for this notebook. Charts saved from Data and pastes from Lab Log also appear here.
+                Upload images, edit captions, then insert them from Manuscript (Results / Discussion).
               </p>
             </div>
           </div>
@@ -198,7 +217,7 @@ export function FiguresGallery({
           <h2 className="text-lg font-semibold">No figures yet</h2>
           <p className="mt-1 max-w-sm text-sm text-[var(--color-muted)]">
             {canWrite
-              ? 'Upload images here, or drag and drop them onto this area. You can also insert figures inside a note from the editor toolbar.'
+              ? 'Upload images here, or drag and drop them onto this area. Charts from Data also appear here.'
               : 'Figures added to this project will appear here.'}
           </p>
           {canWrite && (
@@ -211,15 +230,6 @@ export function FiguresGallery({
               >
                 <PlusIcon /> {uploading ? 'Uploading…' : 'Upload figure'}
               </button>
-              {onOpenNotes && (
-                <button
-                  type="button"
-                  onClick={onOpenNotes}
-                  className="rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm hover:bg-[var(--color-surface)]"
-                >
-                  Create a note
-                </button>
-              )}
             </div>
           )}
         </div>
@@ -250,25 +260,42 @@ export function FiguresGallery({
               >
                 <img
                   src={url}
-                  alt={asset.name}
+                  alt={asset.caption || asset.name}
                   className="aspect-video w-full object-cover"
                 />
-                <figcaption className="flex items-center gap-1 truncate px-3 py-2 text-xs text-[var(--color-muted)]">
-                  <span className="min-w-0 flex-1 truncate">
-                    <span className="font-medium text-[var(--color-ink)]">
+                <figcaption className="space-y-1.5 px-3 py-2 text-xs text-[var(--color-muted)]">
+                  <div className="flex items-center gap-1">
+                    <span className="min-w-0 flex-1 truncate font-medium text-[var(--color-ink)]">
                       Fig. {i + 1}
-                    </span>{' '}
-                    · {asset.name || 'image'} · {relativeTime(asset.createdAt)}
-                  </span>
-                  {canWrite && (
+                    </span>
+                    {canWrite && (
+                      <button
+                        type="button"
+                        title="Remove figure"
+                        aria-label={`Remove ${asset.name || 'figure'}`}
+                        onClick={() => void onRemove(asset.id, asset.name)}
+                        className="shrink-0 rounded p-1 text-[var(--color-muted)] opacity-0 hover:bg-[var(--color-surface)] hover:text-red-600 group-hover:opacity-100"
+                      >
+                        <TrashIcon className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                  {editingId === asset.id && canWrite ? (
+                    <CaptionEditor
+                      initial={asset.caption || asset.name || ''}
+                      onCancel={() => setEditingId(null)}
+                      onSave={(value) => void saveCaption(asset.id, value)}
+                    />
+                  ) : (
                     <button
                       type="button"
-                      title="Remove figure"
-                      aria-label={`Remove ${asset.name || 'figure'}`}
-                      onClick={() => void onRemove(asset.id, asset.name)}
-                      className="shrink-0 rounded p-1 text-[var(--color-muted)] opacity-0 hover:bg-[var(--color-surface)] hover:text-red-600 group-hover:opacity-100"
+                      disabled={!canWrite}
+                      className="block w-full truncate text-left hover:text-[var(--color-ink)] disabled:cursor-default"
+                      onClick={() => canWrite && setEditingId(asset.id)}
+                      title={canWrite ? 'Edit caption' : undefined}
                     >
-                      <TrashIcon className="h-3.5 w-3.5" />
+                      {asset.caption?.trim() || asset.name || 'Add caption…'}
+                      <span className="ml-1 opacity-70">· {relativeTime(asset.createdAt)}</span>
                     </button>
                   )}
                 </figcaption>
@@ -277,6 +304,49 @@ export function FiguresGallery({
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+function CaptionEditor({
+  initial,
+  onCancel,
+  onSave,
+}: {
+  initial: string
+  onCancel: () => void
+  onSave: (value: string) => void
+}) {
+  const [value, setValue] = useState(initial)
+  return (
+    <div className="space-y-1">
+      <input
+        autoFocus
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') onSave(value)
+          if (e.key === 'Escape') onCancel()
+        }}
+        className="w-full rounded border border-[var(--color-border)] bg-[var(--color-canvas)] px-1.5 py-1 text-xs text-[var(--color-ink)] outline-none focus:border-[var(--color-brand)]"
+        placeholder="Figure caption"
+      />
+      <div className="flex gap-1">
+        <button
+          type="button"
+          className="rounded px-1.5 py-0.5 text-[0.65rem] font-medium text-[var(--color-brand)] hover:bg-[var(--color-surface)]"
+          onClick={() => onSave(value)}
+        >
+          Save
+        </button>
+        <button
+          type="button"
+          className="rounded px-1.5 py-0.5 text-[0.65rem] hover:bg-[var(--color-surface)]"
+          onClick={onCancel}
+        >
+          Cancel
+        </button>
+      </div>
     </div>
   )
 }

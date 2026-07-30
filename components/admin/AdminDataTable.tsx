@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 
+import { AdminSelect } from "@/components/admin/AdminSelect";
 import type { AdminTablePagination } from "@/hooks/useAdminTable";
 
 export type AdminTableColumn<T> = {
@@ -90,18 +91,17 @@ function AdminTablePaginationBar({ pagination }: { pagination: AdminTablePaginat
 				<span className="admin-table-range">{rangeLabel}</span>
 				<label className="admin-table-page-size">
 					<span className="admin-table-page-size-label">Rows</span>
-					<select
-						className="topic-input admin-table-page-size-select"
-						value={pageSize}
-						onChange={(e) => onPageSizeChange(Number(e.target.value))}
+					<AdminSelect
+						compact
+						value={String(pageSize)}
+						onChange={(v) => onPageSizeChange(Number(v))}
 						aria-label="Rows per page"
-					>
-						{pageSizeOptions.map((size) => (
-							<option key={size} value={size}>
-								{size}
-							</option>
-						))}
-					</select>
+						searchThreshold={99}
+						options={pageSizeOptions.map((size) => ({
+							value: String(size),
+							label: String(size),
+						}))}
+					/>
 				</label>
 			</div>
 
@@ -197,7 +197,7 @@ export function AdminDataTable<T>({
 							<SearchIcon />
 							<input
 								type="search"
-								className="topic-input admin-datatable-search-input"
+								className="admin-input admin-datatable-search-input"
 								placeholder={searchPlaceholder}
 								value={search ?? ""}
 								onChange={(e) => onSearchChange(e.target.value)}

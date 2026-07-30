@@ -24,7 +24,10 @@ export function tokenAllowanceLabel(role: string): string {
 	return "N/A";
 }
 
-type TokenUser = Pick<AdminTokenRecord, "id" | "name" | "role" | "tokenQuota">;
+type TokenUser = Pick<
+	AdminTokenRecord,
+	"id" | "name" | "role" | "tokenQuota" | "tokenAllowance"
+>;
 
 type Props = {
 	user: TokenUser;
@@ -34,6 +37,11 @@ type Props = {
 
 export function AdminTokenEditModal({ user, onClose, onSaved }: Props) {
 	const [tokensUsed, setTokensUsed] = useState(String(user.tokenQuota?.used ?? 0));
+	const [allowance, setAllowance] = useState(
+		user.tokenAllowance != null
+			? String(user.tokenAllowance)
+			: String(user.tokenQuota?.allowance ?? ""),
+	);
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
@@ -42,11 +50,16 @@ export function AdminTokenEditModal({ user, onClose, onSaved }: Props) {
 		setSaving(true);
 		setError(null);
 		try {
-			const parsed = Number.parseInt(tokensUsed, 10);
-			if (!Number.isFinite(parsed) || parsed < 0) {
-				throw new Error("Enter a valid non-negative number.");
+			const parsedUsed = Number.parseInt(tokensUsed, 10);
+			if (!Number.isFinite(parsedUsed) || parsedUsed < 0) {
+				throw new Error("Enter a valid non-negative tokens-used number.");
 			}
-			await updateAdminTokens(user.id, { tokensUsed: parsed });
+			const parsedAllowance = Number.parseInt(allowance, 10);
+			if (!Number.isFinite(parsedAllowance) || parsedAllowance <= 0) {
+				throw new Error("Enter a valid positive allowance.");
+			}
+			await updateAdminTokens(user.id, { tokensUsed: parsedUsed });
+			await updateAdminTokens(user.id, { tokenAllowance: parsedAllowance });
 			await onSaved();
 			onClose();
 		} catch (err) {
@@ -62,6 +75,27 @@ export function AdminTokenEditModal({ user, onClose, onSaved }: Props) {
 		setError(null);
 		try {
 			await updateAdminTokens(user.id, { reset: true });
+			await onSaved();
+			onClose();
+		} catch (err) {
+			setError(err instanceof Error ? err.message : String(err));
+		} finally {
+			setSaving(false);
+		}
+	};
+
+	const clearCustomAllowance = async () => {
+		if (
+			!window.confirm(
+				`Clear personal allowance for ${user.name}? They will use the university or platform default.`,
+			)
+		) {
+			return;
+		}
+		setSaving(true);
+		setError(null);
+		try {
+			await updateAdminTokens(user.id, { tokenAllowance: null });
 			await onSaved();
 			onClose();
 		} catch (err) {
@@ -105,10 +139,25 @@ export function AdminTokenEditModal({ user, onClose, onSaved }: Props) {
 					</button>
 				</div>
 				<form className="dash-form" onSubmit={handleSubmit}>
-					<p className="muted">Role allowance: {tokenAllowanceLabel(user.role)}</p>
+					<p className="muted">
+						Platform default for role: {tokenAllowanceLabel(user.role)}
+						{user.tokenAllowance != null ? " · Personal override active" : ""}
+					</p>
 					<p className="muted">
 						Remaining: {formatTokenCount(user.tokenQuota.remaining)} tokens
 					</p>
+					<label className="field-label" htmlFor="token-allowance">
+						Allowance
+					</label>
+					<input
+						id="token-allowance"
+						type="number"
+						min={1}
+						className="topic-input"
+						value={allowance}
+						onChange={(e) => setAllowance(e.target.value)}
+						required
+					/>
 					<label className="field-label" htmlFor="tokens-used">
 						Tokens used
 					</label>
@@ -124,7 +173,15 @@ export function AdminTokenEditModal({ user, onClose, onSaved }: Props) {
 					{error && <p className="error-text">{error}</p>}
 					<div className="dash-form-actions">
 						<button type="button" className="ghost-btn" onClick={handleReset} disabled={saving}>
-							Reset to 0
+							Reset used to 0
+						</button>
+						<button
+							type="button"
+							className="ghost-btn"
+							onClick={() => void clearCustomAllowance()}
+							disabled={saving}
+						>
+							Clear personal allowance
 						</button>
 						<button type="button" className="ghost-btn" onClick={onClose}>
 							Cancel

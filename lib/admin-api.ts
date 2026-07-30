@@ -55,8 +55,14 @@ async function adminJson<T>(path: string, init?: RequestInit): Promise<T> {
 		...init,
 		headers: { ...authHeaders(), ...init?.headers },
 	});
-	const data = (await res.json()) as T & { error?: string };
-	if (!res.ok) throw new Error(data.error ?? "Request failed.");
+	const data = (await res.json()) as T & { error?: string; message?: string };
+	if (!res.ok) {
+		const msg = data.message || data.error || "Request failed.";
+		// Fastify's generic 404 uses error:"Not Found"; prefer message when present.
+		throw new Error(
+			data.error === "Not Found" && data.message ? data.message : data.error ?? msg,
+		);
+	}
 	return data;
 }
 
@@ -135,6 +141,11 @@ export async function fetchAdminUsers(): Promise<UserRecord[]> {
 	return data.users;
 }
 
+export async function fetchAdminUser(id: string): Promise<UserRecord> {
+	const data = await adminJson<{ user: UserRecord }>(`/api/admin/users/${encodeURIComponent(id)}`);
+	return data.user;
+}
+
 export async function fetchAdminConsoleAdmins(): Promise<UserRecord[]> {
 	const data = await adminJson<{ users: UserRecord[] }>("/api/admin/admins");
 	return data.users;
@@ -145,12 +156,20 @@ export type UniversityRecord = {
 	catalogueId: string;
 	name: string;
 	slug: string;
+	country?: string;
 	status: "active" | "inactive";
 	userCount: number;
 	adminCount: number;
+	defaultStudentTokens?: number | null;
+	defaultLecturerTokens?: number | null;
 	onboardedAt: string | null;
 	createdAt: string;
 	updatedAt: string;
+};
+
+export type UniversityDetailRecord = UniversityRecord & {
+	studentCount: number;
+	lecturerCount: number;
 };
 
 export async function fetchAdminUniversities(): Promise<UniversityRecord[]> {
@@ -158,29 +177,84 @@ export async function fetchAdminUniversities(): Promise<UniversityRecord[]> {
 	return data.universities;
 }
 
+export async function fetchAdminUniversity(idOrSlug: string): Promise<UniversityDetailRecord> {
+	const key = idOrSlug.trim();
+	try {
+		const data = await adminJson<{ university: UniversityDetailRecord }>(
+			`/api/admin/universities/${encodeURIComponent(key)}`,
+		);
+		return data.university;
+	} catch (primaryError) {
+		// Fallback when detail route is unavailable (stale backend) or lookup key is a slug.
+		const universities = await fetchAdminUniversities();
+		const match = universities.find(
+			(u) => u.id === key || u.slug === key || u.catalogueId === key,
+		);
+		if (!match) {
+			throw primaryError instanceof Error
+				? primaryError
+				: new Error("University not found.");
+		}
+		return {
+			...match,
+			studentCount: 0,
+			lecturerCount: 0,
+		};
+	}
+}
+
 export async function onboardAdminUniversity(input: {
 	catalogueId: string;
 	name: string;
+	country?: string;
 	status?: "active" | "inactive";
 }): Promise<UniversityRecord> {
 	const data = await adminJson<{ university: UniversityRecord }>("/api/admin/universities", {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(input),
+		body: JSON.stringify({ country: "NG", ...input }),
 	});
 	return data.university;
 }
 
 export async function updateAdminUniversity(
 	id: string,
-	input: Partial<{ name: string; status: "active" | "inactive" }>,
+	input: Partial<{
+		name: string;
+		status: "active" | "inactive";
+		defaultStudentTokens: number | null;
+		defaultLecturerTokens: number | null;
+	}>,
 ): Promise<UniversityRecord> {
-	const data = await adminJson<{ university: UniversityRecord }>(`/api/admin/universities/${id}`, {
-		method: "PATCH",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(input),
-	});
+	const data = await adminJson<{ university: UniversityRecord }>(
+		`/api/admin/universities/${encodeURIComponent(id)}`,
+		{
+			method: "PATCH",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(input),
+		},
+	);
 	return data.university;
+}
+
+export async function deleteAdminUniversity(
+	id: string,
+	confirmName: string,
+): Promise<{
+	university: UniversityRecord | null;
+	hardDeleted: boolean;
+	suspendedUsers: number;
+}> {
+	const data = await adminJson<{
+		university: UniversityRecord | null;
+		hardDeleted: boolean;
+		suspendedUsers: number;
+	}>(`/api/admin/universities/${encodeURIComponent(id)}/offboard`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ confirmName }),
+	});
+	return data;
 }
 
 export async function createAdminUser(input: CreateUserInput & { password?: string }): Promise<UserRecord> {
@@ -216,11 +290,12 @@ export async function resetAdminUserPassword(id: string, password: string): Prom
 export async function bulkAdminUserStatus(
 	ids: string[],
 	status: "active" | "inactive" | "suspended",
+	suspensionReason?: string,
 ): Promise<number> {
 	const data = await adminJson<{ updated: number }>("/api/admin/users/bulk-status", {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ ids, status }),
+		body: JSON.stringify({ ids, status, suspensionReason }),
 	});
 	return data.updated;
 }
@@ -977,4 +1052,205 @@ export async function updateAdminDeletionRequest(
 		},
 	);
 	return data.deletionRequest;
+}
+
+export type AdminResearchOwner = {
+	id: string | null;
+	name: string;
+	email: string;
+	role: string | null;
+	universityId: string | null;
+	institution: string | null;
+};
+
+export type AdminResearchStats = {
+	papers: number;
+	notebooks: number;
+	documents: number;
+	datasets: number;
+	uploads: number;
+	notebooksWithSync: number;
+};
+
+export type AdminResearchPaperRecord = {
+	id: string;
+	title: string;
+	topic: string;
+	workflow: string;
+	humanEdited: boolean;
+	contentLength: number;
+	tokenUsage: number | null;
+	owner: AdminResearchOwner;
+	createdAt: string;
+	updatedAt: string;
+};
+
+export type AdminResearchPaperDetail = AdminResearchPaperRecord & {
+	content: string;
+	aiBaselineContent: string | null;
+	sources: {
+		documentIds: string[];
+		datasetIds: string[];
+		noteIds: string[];
+		projectIds: string[];
+	};
+};
+
+export type AdminResearchNotebookRecord = {
+	id: string;
+	title: string;
+	description: string;
+	projectType: string;
+	status: string;
+	progress: number;
+	favorite: boolean;
+	hasNotebook: boolean;
+	notebookBytes: number;
+	pageCount: number;
+	draftCount: number;
+	sectionCount: number;
+	documentCount: number;
+	datasetCount: number;
+	noteCount: number;
+	owner: AdminResearchOwner;
+	startedAt: string | null;
+	createdAt: string;
+	updatedAt: string;
+};
+
+export type AdminResearchNotebookDetail = AdminResearchNotebookRecord & {
+	sections: Array<{ id: string; title: string; contentLength: number }>;
+	notebookSummary: {
+		pages: Array<{ id: string; title: string }>;
+		drafts: Array<{ id: string; title: string }>;
+		datasets: Array<{ id: string; title: string }>;
+		references: number;
+		assets: number;
+	} | null;
+};
+
+export type AdminResearchUploadKind = "document" | "dataset";
+
+export type AdminResearchUploadRecord = {
+	id: string;
+	kind: AdminResearchUploadKind;
+	title: string;
+	fileName: string;
+	fileMime: string;
+	sizeLabel: string;
+	fileSizeBytes: number;
+	hasFile: boolean;
+	storage: "minio" | "mongo" | "none";
+	projectId: string | null;
+	projectTitle: string | null;
+	visibility: string | null;
+	format: string | null;
+	owner: AdminResearchOwner;
+	createdAt: string;
+	updatedAt: string;
+};
+
+function researchQuery(params?: { universityId?: string; limit?: number; kind?: string }): string {
+	const q = new URLSearchParams();
+	if (params?.universityId) q.set("universityId", params.universityId);
+	if (params?.limit) q.set("limit", String(params.limit));
+	if (params?.kind) q.set("kind", params.kind);
+	const s = q.toString();
+	return s ? `?${s}` : "";
+}
+
+export async function fetchAdminResearchStats(universityId?: string): Promise<AdminResearchStats> {
+	const data = await adminJson<{ stats: AdminResearchStats }>(
+		`/api/admin/research/stats${researchQuery({ universityId })}`,
+	);
+	return data.stats;
+}
+
+export async function fetchAdminResearchPapers(params?: {
+	universityId?: string;
+	limit?: number;
+}): Promise<AdminResearchPaperRecord[]> {
+	const data = await adminJson<{ papers: AdminResearchPaperRecord[] }>(
+		`/api/admin/research/papers${researchQuery(params)}`,
+	);
+	return data.papers ?? [];
+}
+
+export async function fetchAdminResearchPaper(id: string): Promise<AdminResearchPaperDetail> {
+	const data = await adminJson<{ paper: AdminResearchPaperDetail }>(
+		`/api/admin/research/papers/${id}`,
+	);
+	return data.paper;
+}
+
+export async function deleteAdminResearchPaper(id: string): Promise<void> {
+	await adminJson(`/api/admin/research/papers/${id}`, { method: "DELETE" });
+}
+
+export async function bulkDeleteAdminResearchPapers(ids: string[]): Promise<number> {
+	const data = await adminJson<{ deleted: number }>("/api/admin/research/papers/bulk-delete", {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ ids }),
+	});
+	return data.deleted;
+}
+
+export async function fetchAdminResearchNotebooks(params?: {
+	universityId?: string;
+	limit?: number;
+}): Promise<AdminResearchNotebookRecord[]> {
+	const data = await adminJson<{ notebooks: AdminResearchNotebookRecord[] }>(
+		`/api/admin/research/notebooks${researchQuery(params)}`,
+	);
+	return data.notebooks ?? [];
+}
+
+export async function fetchAdminResearchNotebook(id: string): Promise<AdminResearchNotebookDetail> {
+	const data = await adminJson<{ notebook: AdminResearchNotebookDetail }>(
+		`/api/admin/research/notebooks/${id}`,
+	);
+	return data.notebook;
+}
+
+export async function deleteAdminResearchNotebook(id: string): Promise<void> {
+	await adminJson(`/api/admin/research/notebooks/${id}`, { method: "DELETE" });
+}
+
+export async function bulkDeleteAdminResearchNotebooks(ids: string[]): Promise<number> {
+	const data = await adminJson<{ deleted: number }>("/api/admin/research/notebooks/bulk-delete", {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ ids }),
+	});
+	return data.deleted;
+}
+
+export async function fetchAdminResearchUploads(params?: {
+	universityId?: string;
+	limit?: number;
+	kind?: AdminResearchUploadKind | "all";
+}): Promise<AdminResearchUploadRecord[]> {
+	const data = await adminJson<{ uploads: AdminResearchUploadRecord[] }>(
+		`/api/admin/research/uploads${researchQuery(params)}`,
+	);
+	return data.uploads ?? [];
+}
+
+export async function deleteAdminResearchUpload(
+	kind: AdminResearchUploadKind,
+	id: string,
+): Promise<void> {
+	await adminJson(`/api/admin/research/uploads/${kind}/${id}`, { method: "DELETE" });
+}
+
+export async function bulkDeleteAdminResearchUploads(
+	items: Array<{ id: string; kind: AdminResearchUploadKind }>,
+): Promise<number> {
+	const data = await adminJson<{ deleted: number }>("/api/admin/research/uploads/bulk-delete", {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ items }),
+	});
+	return data.deleted;
 }

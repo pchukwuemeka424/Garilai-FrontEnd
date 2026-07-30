@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useReferences } from '@/components/research-note/state/useReferences'
 import { useCitationStyle } from '@/components/research-note/state/useCitationStyle'
 import { Modal } from '@/components/research-note/components/Modal'
 import { TrashIcon } from '@/components/research-note/components/icons'
-import type { ReferenceType } from '@/components/research-note/storage/types'
+import type { Reference, ReferenceType } from '@/components/research-note/storage/types'
 import { fetchByDoi, type ParsedReference } from './crossref'
 import {
   formatCitation,
@@ -12,14 +12,22 @@ import {
 
 const plain = (s: string) => s.replace(/\*/g, '')
 
-/** The References tab: Mendeley-style library with DOI import + citation styles. */
+const REF_TYPES: { id: ReferenceType; label: string }[] = [
+  { id: 'article', label: 'Article' },
+  { id: 'book', label: 'Book' },
+  { id: 'webpage', label: 'Webpage' },
+  { id: 'other', label: 'Other' },
+]
+
+/** The References tab: library with DOI import, edit, and citation styles. */
 export function ReferencesWorkspace({ projectId }: { projectId: string }) {
-  const { references, loading, add, remove } = useReferences(projectId)
+  const { references, loading, add, update, remove } = useReferences(projectId)
   const citation = useCitationStyle(projectId)
   const [doi, setDoi] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showManual, setShowManual] = useState(false)
+  const [editing, setEditing] = useState<Reference | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
 
   const style = citation.style
@@ -50,7 +58,6 @@ export function ReferencesWorkspace({ projectId }: { projectId: string }) {
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-5 overflow-y-auto p-6">
-      {/* Add bar */}
       <div className="space-y-2">
         <div className="flex flex-wrap gap-2">
           <input
@@ -72,7 +79,10 @@ export function ReferencesWorkspace({ projectId }: { projectId: string }) {
           </button>
           <button
             type="button"
-            onClick={() => setShowManual(true)}
+            onClick={() => {
+              setEditing(null)
+              setShowManual(true)
+            }}
             className="rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm hover:bg-[var(--color-surface)]"
           >
             Add manually
@@ -82,7 +92,6 @@ export function ReferencesWorkspace({ projectId }: { projectId: string }) {
         {citation.error && <p className="text-sm text-red-600">{citation.error}</p>}
       </div>
 
-      {/* Library header */}
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-sm font-semibold text-[var(--color-muted)]">
           {references.length} reference{references.length === 1 ? '' : 's'}
@@ -94,7 +103,6 @@ export function ReferencesWorkspace({ projectId }: { projectId: string }) {
             disabled={citation.applying || !citation.loaded}
             onChange={(e) => void onStyleChange(e.target.value as CitationStyle)}
             className="max-w-[16rem] rounded-md border border-[var(--color-border)] bg-[var(--color-canvas)] px-2 py-1 text-sm outline-none focus:border-[var(--color-brand)] disabled:opacity-50"
-            title="Same styles as Reference Formatter — also updates Manuscript drafts and References bibliography"
           >
             {citation.styleGroups.map((group) => (
               <optgroup key={group.id} label={group.label}>
@@ -113,16 +121,15 @@ export function ReferencesWorkspace({ projectId }: { projectId: string }) {
       </div>
 
       <p className="text-xs text-[var(--color-muted)]">
-        Changing style uses the same {citation.styles.length}+ styles as Reference Formatter and reformats your library preview plus the Manuscript (in-text cites + References section).
+        Style changes update this preview and the Manuscript bibliography. Use Cite in Manuscript to
+        insert in-text citations.
       </p>
 
-      {/* Library list */}
       {loading ? (
         <p className="text-sm text-[var(--color-muted)]">Loading library…</p>
       ) : references.length === 0 ? (
         <div className="rounded-xl border border-dashed border-[var(--color-border)] p-10 text-center text-sm text-[var(--color-muted)]">
-          Your library is empty. Add a reference by DOI above, or enter one
-          manually.
+          Your library is empty. Add a reference by DOI above, or enter one manually.
         </div>
       ) : (
         <ul className="space-y-2">
@@ -134,7 +141,7 @@ export function ReferencesWorkspace({ projectId }: { projectId: string }) {
                 className="group rounded-xl border border-[var(--color-border)] bg-[var(--color-canvas)] p-4"
               >
                 <p className="text-sm leading-relaxed">{formatted}</p>
-                <div className="mt-2 flex items-center gap-3 text-xs text-[var(--color-muted)]">
+                <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-[var(--color-muted)]">
                   <span className="rounded bg-[var(--color-surface)] px-1.5 py-0.5 uppercase">
                     {ref.type}
                   </span>
@@ -150,8 +157,18 @@ export function ReferencesWorkspace({ projectId }: { projectId: string }) {
                   )}
                   <button
                     type="button"
-                    onClick={() => void copy(ref.id, formatted)}
+                    onClick={() => {
+                      setEditing(ref)
+                      setShowManual(true)
+                    }}
                     className="ml-auto rounded px-2 py-0.5 hover:bg-[var(--color-surface)] hover:text-[var(--color-ink)]"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void copy(ref.id, formatted)}
+                    className="rounded px-2 py-0.5 hover:bg-[var(--color-surface)] hover:text-[var(--color-ink)]"
                   >
                     {copiedId === ref.id ? 'Copied ✓' : 'Copy'}
                   </button>
@@ -173,24 +190,32 @@ export function ReferencesWorkspace({ projectId }: { projectId: string }) {
         </ul>
       )}
 
-      <ManualReferenceModal
+      <ReferenceFormModal
         open={showManual}
-        onClose={() => setShowManual(false)}
-        onSave={async (parsed) => {
-          await add(parsed)
+        initial={editing}
+        onClose={() => {
           setShowManual(false)
+          setEditing(null)
+        }}
+        onSave={async (parsed) => {
+          if (editing) await update(editing.id, parsed)
+          else await add(parsed)
+          setShowManual(false)
+          setEditing(null)
         }}
       />
     </div>
   )
 }
 
-function ManualReferenceModal({
+function ReferenceFormModal({
   open,
+  initial,
   onClose,
   onSave,
 }: {
   open: boolean
+  initial: Reference | null
   onClose: () => void
   onSave: (ref: ParsedReference) => void | Promise<void>
 }) {
@@ -202,11 +227,45 @@ function ManualReferenceModal({
     volume: '',
     issue: '',
     pages: '',
+    publisher: '',
     doi: '',
     url: '',
     type: 'article' as ReferenceType,
   })
   const set = (k: keyof typeof f, v: string) => setF((prev) => ({ ...prev, [k]: v }))
+
+  useEffect(() => {
+    if (!open) return
+    if (initial) {
+      setF({
+        title: initial.title,
+        authors: initial.authors.join('; '),
+        year: initial.year ?? '',
+        containerTitle: initial.containerTitle ?? '',
+        volume: initial.volume ?? '',
+        issue: initial.issue ?? '',
+        pages: initial.pages ?? '',
+        publisher: initial.publisher ?? '',
+        doi: initial.doi ?? '',
+        url: initial.url ?? '',
+        type: initial.type,
+      })
+    } else {
+      setF({
+        title: '',
+        authors: '',
+        year: '',
+        containerTitle: '',
+        volume: '',
+        issue: '',
+        pages: '',
+        publisher: '',
+        doi: '',
+        url: '',
+        type: 'article',
+      })
+    }
+  }, [open, initial])
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -224,24 +283,17 @@ function ManualReferenceModal({
       volume: f.volume.trim() || null,
       issue: f.issue.trim() || null,
       pages: f.pages.trim() || null,
-      publisher: null,
+      publisher: f.publisher.trim() || null,
       doi: f.doi.trim() || null,
       url: f.url.trim() || null,
-      abstract: null,
-      source: 'manual',
+      abstract: initial?.abstract ?? null,
+      source: initial?.source ?? 'manual',
     })
-    setF({ title: '', authors: '', year: '', containerTitle: '', volume: '', issue: '', pages: '', doi: '', url: '', type: 'article' })
   }
 
-  const field = (
-    key: keyof typeof f,
-    label: string,
-    placeholder = '',
-  ) => (
+  const field = (key: keyof typeof f, label: string, placeholder = '') => (
     <div>
-      <label className="mb-1 block text-xs font-medium text-[var(--color-muted)]">
-        {label}
-      </label>
+      <label className="mb-1 block text-xs font-medium text-[var(--color-muted)]">{label}</label>
       <input
         value={f[key]}
         onChange={(e) => set(key, e.target.value)}
@@ -252,8 +304,22 @@ function ManualReferenceModal({
   )
 
   return (
-    <Modal open={open} onClose={onClose} title="Add reference manually">
+    <Modal open={open} onClose={onClose} title={initial ? 'Edit reference' : 'Add reference manually'}>
       <form onSubmit={submit} className="space-y-3">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-[var(--color-muted)]">Type</label>
+          <select
+            value={f.type}
+            onChange={(e) => set('type', e.target.value)}
+            className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-canvas)] px-3 py-1.5 text-sm outline-none focus:border-[var(--color-brand)]"
+          >
+            {REF_TYPES.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+        </div>
         {field('title', 'Title *', 'Article or book title')}
         {field('authors', 'Authors', 'Family, Given; Family, Given')}
         <div className="grid grid-cols-2 gap-3">
@@ -262,6 +328,7 @@ function ManualReferenceModal({
           {field('volume', 'Volume')}
           {field('issue', 'Issue')}
           {field('pages', 'Pages')}
+          {field('publisher', 'Publisher')}
           {field('doi', 'DOI')}
         </div>
         {field('url', 'URL')}
@@ -278,7 +345,7 @@ function ManualReferenceModal({
             disabled={!f.title.trim()}
             className="rounded-lg bg-[var(--color-brand)] px-4 py-2 text-sm font-medium text-[var(--color-brand-ink)] disabled:opacity-40"
           >
-            Add
+            {initial ? 'Save' : 'Add'}
           </button>
         </div>
       </form>

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { AulaLayout } from "@/components/AulaLayout";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { EffortReportModal } from "@/components/research/EffortReportModal";
 import { ResearchDocEditor } from "@/components/research/ResearchDocEditor";
 import { ResearchPaperMarkdown } from "@/components/research/ResearchPaperMarkdown";
 import { StudentLayout } from "@/components/StudentLayout";
@@ -25,7 +26,20 @@ import {
 	type SavedResearchPaper,
 } from "@/lib/chat-research-storage";
 import { htmlToOutlineText, markdownToDocHtml } from "@/lib/research-ideas";
+import { fetchNotebook } from "@/lib/research-assets-api";
+import {
+	bandLabel,
+	computePaperEffort,
+	downloadPaperEffortReport,
+	emptyMaterialCounts,
+	materialCountsFromNotebook,
+	materialCountsFromSources,
+	mergeMaterialCounts,
+	type PaperMaterialCounts,
+} from "@/lib/research-paper-effort";
+import { peekPaperSources } from "@/lib/research-paper-sources";
 import { formatResearchPaperReferences } from "@/lib/research-paper-references";
+import { loadResearchWizardDraft } from "@/lib/research-wizard-draft";
 import { savedResearchListPath } from "@/lib/saved-research-routes";
 
 type ViewMode = "preview" | "edit";
@@ -64,6 +78,9 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 	const [error, setError] = useState<string | null>(null);
 	const [pendingDelete, setPendingDelete] = useState(false);
 	const [deleting, setDeleting] = useState(false);
+	const [exportingEffort, setExportingEffort] = useState(false);
+	const [showEffortReport, setShowEffortReport] = useState(false);
+	const [materials, setMaterials] = useState<PaperMaterialCounts>(emptyMaterialCounts());
 
 	const researchPath = isStudent ? "/student/research" : "/research";
 	const savedListPath = savedResearchListPath(variant);
@@ -93,6 +110,69 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 			setLoading(false);
 		});
 	}, [id]);
+
+	useEffect(() => {
+		let alive = true;
+		const run = async () => {
+			const wizard = loadResearchWizardDraft(isStudent ? "student" : "lecturer", user?.id);
+			const staged = peekPaperSources();
+			const sources =
+				paper?.sources ??
+				staged ??
+				wizard?.selectedSources ??
+				null;
+
+			let counts = materialCountsFromSources(sources);
+			const projectIds = sources?.projectIds ?? [];
+			if (projectIds.length > 0) {
+				const notebooks = await Promise.all(
+					projectIds.map((projectId) =>
+						fetchNotebook(projectId)
+							.then((res) => materialCountsFromNotebook(res.notebookData))
+							.catch(() => emptyMaterialCounts()),
+					),
+				);
+				counts = mergeMaterialCounts(counts, ...notebooks);
+				// Avoid double-counting projects from both sources + notebooks
+				counts.projects = projectIds.length;
+			}
+			if (alive) setMaterials(counts);
+		};
+		void run();
+		return () => {
+			alive = false;
+		};
+	}, [paper?.sources, paper?.id, isStudent, user?.id]);
+
+	const liveContent = useMemo(() => {
+		if (mode === "edit") {
+			const fromHtml = htmlToOutlineText(editorHtml);
+			return fromHtml.trim() ? fromHtml : content;
+		}
+		return content;
+	}, [mode, editorHtml, content]);
+
+	const effort = useMemo(
+		() =>
+			computePaperEffort({
+				content: liveContent,
+				aiBaselineContent: paper?.aiBaselineContent ?? paper?.content ?? null,
+				humanEdited: paper?.humanEdited || dirty,
+				topic,
+				materials,
+			}),
+		[liveContent, paper?.aiBaselineContent, paper?.content, paper?.humanEdited, dirty, topic, materials],
+	);
+
+	const authorProfile = useMemo(
+		() => ({
+			name: user?.name ?? null,
+			email: user?.email ?? null,
+			department: user?.department ?? null,
+			institution: user?.institution ?? null,
+		}),
+		[user?.name, user?.email, user?.department, user?.institution],
+	);
 
 	const formattedContent = useMemo(
 		() => (content.trim() ? formatResearchPaperReferences(content) : ""),
@@ -151,6 +231,26 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 			paperMeta,
 		);
 	}, [content, displayTitle, editorHtml, id, paper?.createdAt, paper?.updatedAt, paperMeta, topic]);
+
+	const handleDownloadEffort = useCallback(async () => {
+		if (exportingEffort) return;
+		setExportingEffort(true);
+		try {
+			await downloadPaperEffortReport(
+				{
+					title: displayTitle,
+					topic,
+					effort,
+					author: authorProfile,
+				},
+				"pdf",
+			);
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Could not download effort report.");
+		} finally {
+			setExportingEffort(false);
+		}
+	}, [authorProfile, displayTitle, effort, exportingEffort, topic]);
 
 	const handleDelete = useCallback(async () => {
 		if (!id) return;
@@ -211,6 +311,7 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 					<p className="saved-research-meta">
 						Last updated {formatWhen(paper.updatedAt)}
 						{dirty ? " · Unsaved changes" : ""}
+						{` · Overall input score ${effort.userEffortScore}/100`}
 					</p>
 				</div>
 				<div className="saved-research-head-actions">
@@ -251,6 +352,24 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 						<IconDownload size={16} />
 						Download PDF
 					</button>
+					<button
+						type="button"
+						className={btnClass}
+						onClick={() => setShowEffortReport(true)}
+						title="View overall score of user’s input"
+					>
+						View report
+					</button>
+					<button
+						type="button"
+						className={btnClass}
+						onClick={() => void handleDownloadEffort()}
+						disabled={exportingEffort}
+						title="Download user effort & AI attribution report"
+					>
+						<IconDownload size={16} />
+						{exportingEffort ? "Preparing…" : "Effort report"}
+					</button>
 					<Link href={`${workspacePath}?topic=${encodeURIComponent(topic)}`} className={btnClass}>
 						AI workspace
 					</Link>
@@ -271,6 +390,46 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 					{error}
 				</div>
 			)}
+
+			<section className="saved-research-effort saved-research-effort-compact" aria-labelledby="saved-research-effort-title">
+				<div className="saved-research-effort-overall">
+					<div
+						className="saved-research-effort-ring"
+						style={{ ["--p" as string]: String(effort.userEffortScore) }}
+						aria-label={`Overall score of user’s input: ${effort.userEffortScore} out of 100`}
+					>
+						<span className="saved-research-effort-ring-value">{effort.userEffortScore}</span>
+						<span className="saved-research-effort-ring-max">/ 100</span>
+					</div>
+					<div className="saved-research-effort-overall-copy">
+						<h2 id="saved-research-effort-title" className="saved-research-effort-overall-label">
+							Overall score of user’s input
+						</h2>
+						<p className="saved-research-effort-overall-band">{bandLabel(effort.userBand)}</p>
+						<p className="saved-research-effort-overall-formula">
+							Open the full report for uploads, edits, graphs/labs, and researcher details.
+						</p>
+					</div>
+					<div className="saved-research-effort-head-actions">
+						<button
+							type="button"
+							className={btnPrimaryClass}
+							onClick={() => setShowEffortReport(true)}
+						>
+							View report
+						</button>
+						<button
+							type="button"
+							className={btnClass}
+							onClick={() => void handleDownloadEffort()}
+							disabled={exportingEffort}
+						>
+							<IconDownload size={16} />
+							{exportingEffort ? "Preparing…" : "Download report"}
+						</button>
+					</div>
+				</div>
+			</section>
 
 			<div className={`saved-research-card${mode === "edit" ? " saved-research-card-doc" : ""}`}>
 				{mode === "edit" ? (
@@ -310,6 +469,18 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 				)}
 			</div>
 
+			<EffortReportModal
+				open={showEffortReport}
+				onClose={() => setShowEffortReport(false)}
+				title={displayTitle}
+				topic={topic}
+				effort={effort}
+				author={authorProfile}
+				onDownload={() => void handleDownloadEffort()}
+				downloading={exportingEffort}
+				variant={variant}
+			/>
+
 			<ConfirmDialog
 				open={pendingDelete}
 				title="Delete saved research?"
@@ -333,5 +504,5 @@ export function SavedResearchPaperPage({ variant = "lecturer" }: Props) {
 		return <StudentLayout>{page}</StudentLayout>;
 	}
 
-	return <AulaLayout showRightPanel={false}>{page}</AulaLayout>;
+	return <AulaLayout>{page}</AulaLayout>;
 }

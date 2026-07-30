@@ -17,6 +17,9 @@ export const STRONG_TOPIC_EXAMPLES = [
 export const TOPIC_INPUT_HINT =
 	"Describe your interest area — themes are fine as a starting point. Our multi-agent pipeline will identify discipline, variables, population, context, and research gaps before formulating publishable study titles.";
 
+export const TOPIC_INPUT_PLACEHOLDER =
+	"e.g. How generative AI tools affect undergraduate writing assessment in universities";
+
 export const TOPIC_QUALITY_RULES = `STRICT RULES — generate publishable academic study titles, NOT broad themes.
 
 DO NOT output vague titles such as:

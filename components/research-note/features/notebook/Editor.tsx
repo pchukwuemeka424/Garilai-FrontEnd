@@ -27,6 +27,14 @@ export function imageFilesFrom(dt: DataTransfer | null | undefined): File[] {
   return Array.from(dt.files ?? []).filter((f) => f.type.startsWith('image/'))
 }
 
+/** Extract PDF files from a drag DataTransfer. */
+export function pdfFilesFrom(dt: DataTransfer | null | undefined): File[] {
+  if (!dt) return []
+  return Array.from(dt.files ?? []).filter(
+    (f) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name),
+  )
+}
+
 export function Editor({
   pageId,
   projectId,
@@ -126,6 +134,49 @@ function EditorInner({
       .run()
   }
 
+  /** Store a PDF as an asset and insert a labelled attachment paragraph. */
+  const insertPdfFile = async (file: File) => {
+    if (!editorRef.current) return
+    const asset = await createAsset({
+      projectId,
+      name: file.name || 'attached.pdf',
+      mime: file.type || 'application/pdf',
+      blob: file,
+    })
+    const label = file.name || 'Attached PDF'
+    editorRef.current
+      .chain()
+      .focus()
+      .insertContent([
+        {
+          type: 'blockquote',
+          content: [
+            {
+              type: 'paragraph',
+              content: [
+                {
+                  type: 'text',
+                  marks: [{ type: 'bold' }],
+                  text: `📎 PDF attached: ${label}`,
+                },
+              ],
+            },
+            {
+              type: 'paragraph',
+              content: [
+                {
+                  type: 'text',
+                  text: `Stored in notebook assets (${asset.id.slice(0, 8)}…). Add quotes and notes below.`,
+                },
+              ],
+            },
+          ],
+        },
+        { type: 'paragraph' },
+      ])
+      .run()
+  }
+
   const editor = useEditor({
     extensions: [StarterKit, AssetImage.configure({ inline: false })],
     content: (initialContent as JSONContent | null) ?? '',
@@ -140,13 +191,16 @@ function EditorInner({
         files.forEach((f) => void insertImageFile(f))
         return true
       },
-      // Drag-and-drop image files into the note.
+      // Drag-and-drop image or PDF files into the note.
       handleDrop: (_view, event) => {
         if (!editable) return false
-        const files = imageFilesFrom((event as DragEvent).dataTransfer)
-        if (files.length === 0) return false
+        const dt = (event as DragEvent).dataTransfer
+        const images = imageFilesFrom(dt)
+        const pdfs = pdfFilesFrom(dt)
+        if (images.length === 0 && pdfs.length === 0) return false
         event.preventDefault()
-        files.forEach((f) => void insertImageFile(f))
+        images.forEach((f) => void insertImageFile(f))
+        pdfs.forEach((f) => void insertPdfFile(f))
         return true
       },
     },
@@ -177,6 +231,10 @@ function EditorInner({
     const file = e.target.files?.[0]
     e.target.value = '' // allow re-picking the same file
     if (!file || !editor) return
+    if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
+      await insertPdfFile(file)
+      return
+    }
     const asset = await createAsset({
       projectId,
       name: file.name,
@@ -200,7 +258,7 @@ function EditorInner({
       <input
         ref={fileRef}
         type="file"
-        accept="image/*"
+        accept="image/*,application/pdf,.pdf"
         className="hidden"
         onChange={onFile}
       />

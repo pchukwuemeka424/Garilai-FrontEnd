@@ -12,6 +12,7 @@ import { getProject } from '@/components/research-note/storage/repositories'
 import { debounce } from '@/components/research-note/lib/debounce'
 import {
   ArrowLeftIcon,
+  BookIcon,
   CloseIcon,
   CommentIcon,
   DownloadIcon,
@@ -25,14 +26,21 @@ import {
   NotebookIcon,
   PlusIcon,
   ProgressIcon,
+  ReportIcon,
   SaveIcon,
   TableIcon,
+  TemplateIcon,
 } from '@/components/research-note/components/icons'
 import type { Page, RichTextDoc } from '@/components/research-note/storage/types'
 import { Editor, type EditorApi } from './Editor'
 import { SectionRail } from './SectionRail'
 import { FiguresGallery } from './FiguresGallery'
 import { exportDocToDocx, importDocxToHtml, isDocx } from './docxIO'
+import {
+  NOTE_TEMPLATES,
+  getNoteTemplate,
+  type NoteTemplateId,
+} from './noteTemplates'
 import type { AISettings } from '@/components/research-note/ai/settings'
 import { useCloudNotebook } from '@/components/research-note/state/useCloudNotebook'
 import { CommentsModal } from '@/components/research-note/features/collab/CommentsModal'
@@ -41,6 +49,7 @@ import { ELNPanel } from '@/components/research-note/features/eln/ELNPanel'
 import { CloudSaveProvider } from '@/components/research-note/features/sync/CloudSave'
 import { assembleAllCaptured } from '@/components/research-note/ai/formatting'
 import { exportDraft } from '@/components/research-note/features/export/exporters'
+import { downloadEffortReport } from '@/components/research-note/features/effort/EffortReportPanel'
 
 const DataWorkspace = lazy(() =>
   import('@/components/research-note/features/data/DataWorkspace').then((m) => ({ default: m.DataWorkspace })),
@@ -55,40 +64,77 @@ const ProgressReportsWorkspace = lazy(() =>
     default: m.ProgressReportsWorkspace,
   })),
 )
+const ReferencesWorkspace = lazy(() =>
+  import('@/components/research-note/features/references/ReferencesWorkspace').then((m) => ({
+    default: m.ReferencesWorkspace,
+  })),
+)
 
 const TAB_ICONS: Record<AiDraftTabKey, ComponentType<{ className?: string }>> = {
   notes: NotebookIcon,
   data: TableIcon,
   images: ImageIcon,
   eln: FlaskIcon,
+  references: BookIcon,
   progressReports: ProgressIcon,
   publication: ManuscriptIcon,
 }
 
+const GUIDE_DISMISS_KEY = 'rn-guide-dismissed'
+
+function loadGuideDismissed(): Partial<Record<AiDraftTabKey, boolean>> {
+  try {
+    const raw = localStorage.getItem(GUIDE_DISMISS_KEY)
+    if (!raw) return {}
+    return JSON.parse(raw) as Partial<Record<AiDraftTabKey, boolean>>
+  } catch {
+    return {}
+  }
+}
+
 /**
- * Single AI Drafts workspace: Materials (notes), data, figures, lab log, and drafts.
+ * Single AI Drafts workspace: Materials (notes), data, figures, lab log, references, and drafts.
  */
 export function NotebookView({
   projectId,
   settings,
   author,
   onBack,
+  initialPageId,
 }: {
   projectId: string
   settings: AISettings
   author: string
   onBack: () => void
+  initialPageId?: string
 }) {
   const [draftTab, setDraftTab] = useState<AiDraftTabKey>('notes')
   const [pendingNewNote, setPendingNewNote] = useState(0)
+  const [pendingTemplate, setPendingTemplate] = useState<NoteTemplateId | null>(null)
   const [exportingCaptured, setExportingCaptured] = useState(false)
+  const [exportingEffort, setExportingEffort] = useState(false)
   const [capturedError, setCapturedError] = useState<string | null>(null)
-  const [guideDismissed, setGuideDismissed] = useState<Partial<Record<AiDraftTabKey, boolean>>>({})
+  const [guideDismissed, setGuideDismissed] = useState<Partial<Record<AiDraftTabKey, boolean>>>(
+    () => loadGuideDismissed(),
+  )
+  const [focusPageId, setFocusPageId] = useState<string | null>(initialPageId ?? null)
   const cloud = useCloudNotebook(projectId)
 
   const canWrite = canEdit('owner')
   const TabIcon = TAB_ICONS[draftTab]
   const showGuide = !guideDismissed[draftTab]
+
+  const dismissGuide = (key: AiDraftTabKey) => {
+    setGuideDismissed((prev) => {
+      const next = { ...prev, [key]: true }
+      try {
+        localStorage.setItem(GUIDE_DISMISS_KEY, JSON.stringify(next))
+      } catch {
+        /* ignore quota */
+      }
+      return next
+    })
+  }
 
   const requestNewNote = () => {
     setDraftTab('notes')
@@ -115,6 +161,22 @@ export function NotebookView({
       )
     } finally {
       setExportingCaptured(false)
+    }
+  }
+
+  const onDownloadEffortReport = async () => {
+    if (exportingEffort) return
+    setExportingEffort(true)
+    setCapturedError(null)
+    try {
+      await cloud.saveNow()
+      await downloadEffortReport(projectId, 'pdf')
+    } catch (err) {
+      setCapturedError(
+        err instanceof Error ? err.message : 'Could not download effort report.',
+      )
+    } finally {
+      setExportingEffort(false)
     }
   }
 
@@ -209,6 +271,16 @@ export function NotebookView({
           ))}
           <button
             type="button"
+            onClick={() => void onDownloadEffortReport()}
+            disabled={exportingEffort}
+            className="rn-workspace-topnav-download"
+            title="Download effort & attribution report (always available, even with no uploads or edits)"
+          >
+            <ReportIcon className="h-3.5 w-3.5" aria-hidden />
+            <span>{exportingEffort ? 'Preparing…' : 'Effort Report'}</span>
+          </button>
+          <button
+            type="button"
             onClick={() => void onGenerateAllCapturedPdf()}
             disabled={exportingCaptured}
             className="rn-workspace-topnav-download"
@@ -232,14 +304,20 @@ export function NotebookView({
                 </div>
               </div>
               {draftTab === 'notes' && canWrite && (
-                <button
-                  type="button"
-                  onClick={requestNewNote}
-                  className="rn-workspace-btn rn-workspace-btn-primary"
-                >
-                  <PlusIcon className="h-4 w-4" />
-                  New note
-                </button>
+                <div className="rn-workspace-panel-actions">
+                  <NewNoteMenu onPick={(id) => {
+                    setDraftTab('notes')
+                    setPendingTemplate(id)
+                  }} />
+                  <button
+                    type="button"
+                    onClick={requestNewNote}
+                    className="rn-workspace-btn rn-workspace-btn-primary"
+                  >
+                    <PlusIcon className="h-4 w-4" />
+                    New note
+                  </button>
+                </div>
               )}
             </div>
 
@@ -251,9 +329,7 @@ export function NotebookView({
                   type="button"
                   className="rn-workspace-guide-dismiss"
                   aria-label="Dismiss tip"
-                  onClick={() =>
-                    setGuideDismissed((prev) => ({ ...prev, [draftTab]: true }))
-                  }
+                  onClick={() => dismissGuide(draftTab)}
                 >
                   <CloseIcon className="h-3.5 w-3.5" />
                 </button>
@@ -267,6 +343,10 @@ export function NotebookView({
                   canWrite={canWrite}
                   author={author}
                   pendingNewNote={pendingNewNote}
+                  pendingTemplate={pendingTemplate}
+                  onTemplateConsumed={() => setPendingTemplate(null)}
+                  initialPageId={focusPageId}
+                  onInitialPageConsumed={() => setFocusPageId(null)}
                 />
               ) : draftTab === 'data' ? (
                 <LazyTab>
@@ -280,6 +360,10 @@ export function NotebookView({
                 />
               ) : draftTab === 'eln' ? (
                 <ELNPanel projectId={projectId} canWrite={canWrite} author={author} />
+              ) : draftTab === 'references' ? (
+                <LazyTab>
+                  <ReferencesWorkspace projectId={projectId} />
+                </LazyTab>
               ) : draftTab === 'progressReports' ? (
                 <LazyTab>
                   <ProgressReportsWorkspace
@@ -342,18 +426,28 @@ function NotesTab({
   canWrite,
   author,
   pendingNewNote = 0,
+  pendingTemplate = null,
+  onTemplateConsumed,
+  initialPageId,
+  onInitialPageConsumed,
 }: {
   projectId: string
   canWrite: boolean
   author: string
   /** Incremented by parent to request creating a new note page. */
   pendingNewNote?: number
+  pendingTemplate?: NoteTemplateId | null
+  onTemplateConsumed?: () => void
+  initialPageId?: string | null
+  onInitialPageConsumed?: () => void
 }) {
   const nb = useNotebook(projectId)
   const editorApiRef = useRef<EditorApi | null>(null)
   const docxInputRef = useRef<HTMLInputElement>(null)
   const [showComments, setShowComments] = useState(false)
+  const [tagDraft, setTagDraft] = useState('')
   const lastPending = useRef(0)
+  const lastTemplate = useRef<NoteTemplateId | null>(null)
 
   const handleSave = useMemo(
     () => (pageId: string, doc: RichTextDoc) => {
@@ -362,28 +456,50 @@ function NotesTab({
     [nb.savePageContent], // eslint-disable-line react-hooks/exhaustive-deps
   )
 
+  const ensureSection = async () => {
+    if (nb.sections.length > 0) return nb.sections[0]!
+    return nb.addSection('Notes')
+  }
+
   const quickStart = async () => {
-    const section = await nb.addSection('Notes')
+    const section = await ensureSection()
     await nb.addPage(section.id, 'Untitled page')
   }
 
-  const addNote = async () => {
+  const addNote = async (templateId: NoteTemplateId = 'blank') => {
     if (!canWrite || nb.loading) return
-    if (nb.sections.length === 0) {
-      await quickStart()
-      return
-    }
-    const sectionId = nb.activePage?.sectionId ?? nb.sections[0]!.id
-    await nb.addPage(sectionId, 'Untitled page')
+    const template = getNoteTemplate(templateId)
+    const section = await ensureSection()
+    await nb.addPage(section.id, template.title, {
+      content: template.content,
+      tags: template.tags,
+    })
   }
 
   useEffect(() => {
     if (!pendingNewNote || pendingNewNote === lastPending.current) return
     if (nb.loading) return
     lastPending.current = pendingNewNote
-    void addNote()
+    void addNote('blank')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingNewNote, nb.loading])
+
+  useEffect(() => {
+    if (!pendingTemplate || pendingTemplate === lastTemplate.current) return
+    if (nb.loading) return
+    lastTemplate.current = pendingTemplate
+    void addNote(pendingTemplate).then(() => onTemplateConsumed?.())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingTemplate, nb.loading])
+
+  useEffect(() => {
+    if (!initialPageId || nb.loading) return
+    if (nb.pages.some((p) => p.id === initialPageId)) {
+      nb.setActivePageId(initialPageId)
+      onInitialPageConsumed?.()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialPageId, nb.loading, nb.pages])
 
   const onImportDocx = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -408,6 +524,16 @@ function NotesTab({
     if (!page) return
     const json = editorApiRef.current?.getJSON() ?? page.content
     await exportDocToDocx(json, page.title || 'document')
+  }
+
+  const addTag = () => {
+    const page = nb.activePage
+    if (!page || !canWrite) return
+    const next = tagDraft.trim().toLowerCase()
+    if (!next) return
+    const tags = [...new Set([...(page.tags ?? []), next])]
+    void nb.setPageTags(page.id, tags)
+    setTagDraft('')
   }
 
   if (nb.loading) {
@@ -480,6 +606,46 @@ function NotesTab({
                 </button>
               </div>
             </div>
+            <div className="rn-notes-tags">
+              {(nb.activePage.tags ?? []).map((tag) => (
+                <span key={tag} className="rn-notes-tag">
+                  {tag}
+                  {canWrite && (
+                    <button
+                      type="button"
+                      aria-label={`Remove tag ${tag}`}
+                      onClick={() =>
+                        void nb.setPageTags(
+                          nb.activePage!.id,
+                          (nb.activePage!.tags ?? []).filter((t) => t !== tag),
+                        )
+                      }
+                    >
+                      ×
+                    </button>
+                  )}
+                </span>
+              ))}
+              {canWrite && (
+                <form
+                  className="rn-notes-tag-form"
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    addTag()
+                  }}
+                >
+                  <input
+                    value={tagDraft}
+                    onChange={(e) => setTagDraft(e.target.value)}
+                    placeholder="Add tag…"
+                    aria-label="Add tag"
+                  />
+                </form>
+              )}
+            </div>
+            <p className="rn-notes-drop-hint">
+              Tip: drop images or PDFs into the note to attach them.
+            </p>
             <div className="rn-notes-editor-body">
               <Editor
                 key={nb.activePage.id}
@@ -502,7 +668,11 @@ function NotesTab({
             />
           </>
         ) : nb.sections.length === 0 ? (
-          <NotebookEmptyState onQuickStart={() => void quickStart()} />
+          <NotebookEmptyState
+            canWrite={canWrite}
+            onQuickStart={() => void quickStart()}
+            onTemplate={(id) => void addNote(id)}
+          />
         ) : (
           <div className="rn-notes-empty-select">
             <InfoIcon className="h-5 w-5" />
@@ -551,7 +721,50 @@ function PageTitle({
   )
 }
 
-function NotebookEmptyState({ onQuickStart }: { onQuickStart: () => void }) {
+function NewNoteMenu({ onPick }: { onPick: (id: NoteTemplateId) => void }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="rn-notes-template-menu">
+      <button
+        type="button"
+        className="rn-workspace-btn rn-workspace-btn-ghost"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+      >
+        <TemplateIcon className="h-4 w-4" />
+        Templates
+      </button>
+      {open && (
+        <div className="rn-notes-template-dropdown" role="menu">
+          {NOTE_TEMPLATES.filter((t) => t.id !== 'blank').map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                onPick(t.id)
+                setOpen(false)
+              }}
+            >
+              <strong>{t.label}</strong>
+              <span>{t.description}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function NotebookEmptyState({
+  onQuickStart,
+  onTemplate,
+  canWrite,
+}: {
+  onQuickStart: () => void
+  onTemplate: (id: NoteTemplateId) => void
+  canWrite: boolean
+}) {
   return (
     <div className="rn-empty-panel">
       <div className="rn-empty-panel-icon" aria-hidden>
@@ -564,13 +777,29 @@ function NotebookEmptyState({ onQuickStart }: { onQuickStart: () => void }) {
       </p>
       <ol className="rn-empty-steps">
         <li>Add a note for each source or theme</li>
-        <li>Paste quotes and annotate as you go</li>
-        <li>Move to Data, Figures, or Lab Log when you have evidence</li>
+        <li>Paste quotes, drop images/PDFs, and tag as you go</li>
+        <li>Use those materials when writing the Manuscript</li>
       </ol>
-      <button type="button" onClick={onQuickStart} className="rn-workspace-btn rn-workspace-btn-primary">
-        <PlusIcon className="h-4 w-4" />
-        Create first note
-      </button>
+      {canWrite && (
+        <>
+          <button type="button" onClick={onQuickStart} className="rn-workspace-btn rn-workspace-btn-primary">
+            <PlusIcon className="h-4 w-4" />
+            Create first note
+          </button>
+          <div className="rn-empty-templates">
+            {NOTE_TEMPLATES.filter((t) => t.id !== 'blank').map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                className="rn-workspace-btn rn-workspace-btn-ghost"
+                onClick={() => onTemplate(t.id)}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   )
 }

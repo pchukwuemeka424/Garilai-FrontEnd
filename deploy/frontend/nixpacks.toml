@@ -1,0 +1,19 @@
+# Coolify / Nixpacks — frontend static export (repo root as base)
+# Prefer Dockerfile (nginx). Nixpacks serves with `npx serve`.
+
+providers = ["node"]
+
+[variables]
+NODE_ENV = "production"
+NIXPACKS_NODE_VERSION = "22"
+# Set in Coolify UI — public URL of the backend resource
+# NEXT_PUBLIC_FEYNMAN_BACKEND = "https://api.your.domain"
+
+[phases.install]
+cmds = ["npm ci"]
+
+[phases.build]
+cmds = ["npm run build"]
+
+[start]
+cmd = "npx --yes serve@14 out -l ${PORT:-3000}"

@@ -50,6 +50,8 @@ export interface Page {
   title: string
   /** ProseMirror doc JSON; null until first edited. */
   content: RichTextDoc | null
+  /** Optional labels for filtering (e.g. literature, methods, idea). */
+  tags?: string[]
   /** Set when the page was imported from a .docx, for round-trip export naming. */
   sourceFileName?: string
   position: number
@@ -123,6 +125,42 @@ export type OutputType =
   | 'progressReports'
   | 'publication'
 
+/** Notebook material channels agents can read when drafting. */
+export type MaterialChannel =
+  | 'notes'
+  | 'data'
+  | 'figures'
+  | 'labLog'
+  | 'references'
+  | 'drafts'
+  | 'templates'
+  | 'literature'
+
+/** One notebook item (or literature hit) injected into an agent prompt. */
+export interface MaterialUsageItem {
+  channel: MaterialChannel
+  id: string
+  title: string
+  /** Approximate characters contributed to the prompt (0 for metadata-only). */
+  chars?: number
+}
+
+/**
+ * Snapshot of how an agent used notebook materials for one generation.
+ * Persisted on the draft so users can audit AI grounding after the fact.
+ */
+export interface GenerationTrace {
+  generatedAt: ISODateString
+  agentId: string
+  provider: string | null
+  model: string | null
+  mode: 'create' | 'refine'
+  literatureCount: number
+  /** Agent `reads` channels that had non-empty content. */
+  channelsUsed: MaterialChannel[]
+  materials: MaterialUsageItem[]
+}
+
 /**
  * An AI-generated draft. Publication drafts are per-section (`section` set);
  * the others have `section: null`. `humanEdited` protects a draft from being
@@ -140,6 +178,15 @@ export interface Draft {
   /** Provenance of the last generation. */
   provider: string | null
   model: string | null
+  /**
+   * Content as last written by AI (before subsequent human edits).
+   * Used to score user edit effort vs the AI baseline.
+   */
+  aiBaselineContent?: string | null
+  /** How the last AI generation used uploaded materials. */
+  generationTrace?: GenerationTrace | null
+  /** Recent generation traces (newest last), capped in saveDraft. */
+  generationHistory?: GenerationTrace[]
   createdAt: ISODateString
   updatedAt: ISODateString
 }
@@ -247,6 +294,8 @@ export interface Asset {
   name: string
   mime: string
   blob: Blob
+  /** Scholarly caption (distinct from file name). */
+  caption?: string
   createdAt: ISODateString
 }
 

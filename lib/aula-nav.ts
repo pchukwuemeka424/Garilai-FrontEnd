@@ -35,9 +35,9 @@ export const AULA_QUICK_ACCESS: QuickAccessTool[] = [
 	},
 	{
 		id: "references",
-		label: "Reference Formatter",
+		label: "References",
 		href: "/references",
-		description: "Turn raw source details into a clean institutional reference list.",
+		description: "Format citations and validate bibliographies before submission.",
 		iconColor: "green",
 	},
 	{
@@ -92,7 +92,7 @@ export type AulaTopbarContext = {
 };
 
 const AULA_TOPBAR_DEFAULT: AulaTopbarContext = {
-	title: "Lecture Studio",
+	title: "Dashboard",
 	tagline: "Teaching and research workspace for higher institutions",
 	cta: { label: "New Lecture", href: "/lesson-planner" },
 };
@@ -171,7 +171,7 @@ function topbarCtaForItem(item: AulaTopbarNavItem): AulaTopbarContext["cta"] {
 		case "research-note":
 			return { label: "New Research Note", href: "/research/note" };
 		case "references":
-			return { label: "Format Reference", href: "/references" };
+			return { label: "References", href: "/references" };
 		default:
 			return AULA_TOPBAR_DEFAULT.cta;
 	}

@@ -39,10 +39,17 @@ const nextConfig: NextConfig = {
 		return config;
 	},
 	async rewrites() {
+		const prettyUniversityDetail = {
+			source: "/super-admin/universities/:slug((?!detail$)[^/]+)",
+			destination: "/super-admin/universities/detail?slug=:slug",
+		};
+
 		if (process.env.NODE_ENV !== "development") {
+			// Static export ignores rewrites at runtime; Fastify serves the SPA fallback instead.
 			return [];
 		}
 		return [
+			prettyUniversityDetail,
 			{
 				source: "/api/:path*",
 				destination: `${DEV_BACKEND}/api/:path*`,

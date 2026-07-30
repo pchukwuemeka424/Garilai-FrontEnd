@@ -27,9 +27,9 @@ export const STUDENT_NAV_ITEMS: StudentNavItem[] = [
 	},
 	{
 		id: "references",
-		label: "Reference Formatter",
+		label: "References",
 		href: "/references",
-		description: "Format citations in your institution's style.",
+		description: "Format and validate citations before submission.",
 	},
 ];
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   OUTPUT_TABS,
   PUBLICATION_SECTION_GUIDES,
@@ -16,20 +16,27 @@ import {
   draftContentToMarkdown,
   draftContentToPlainText,
 } from '@/components/research-note/lib/markdown'
-import { DraftDocumentEditor } from './DraftDocumentEditor'
+import {
+  DraftDocumentEditor,
+  type DraftDocumentEditorHandle,
+} from './DraftDocumentEditor'
+import { InsertFigureModal } from './InsertFigureModal'
+import { InsertCiteModal } from './InsertCiteModal'
 import { assemblePublicationManuscript } from '@/components/research-note/ai/formatting'
+import { syncPublicationReferences } from '@/components/research-note/ai/agents/syncPublicationReferences'
+import { getAsset } from '@/components/research-note/storage/repositories'
 import {
   EXPORT_LABELS,
   exportDraft,
   type ExportFormat,
 } from '@/components/research-note/features/export/exporters'
 import { TemplatesModal } from './TemplatesModal'
-import { CommentsModal } from '@/components/research-note/features/collab/CommentsModal'
 import { WorkspaceSaveButton } from '@/components/research-note/features/sync/CloudSave'
 import {
+  BookIcon,
   CloseIcon,
-  CommentIcon,
   ExportIcon,
+  ImageIcon,
   InfoIcon,
   LightbulbIcon,
   ManuscriptIcon,
@@ -39,13 +46,45 @@ import {
 const OUTPUT_KEYS = Object.keys(OUTPUT_TABS) as OutputTabKey[]
 const EXPORT_FORMATS = Object.keys(EXPORT_LABELS) as ExportFormat[]
 
-/** The OUTPUT workspace: Word-style section drafts + reference-style reformat + export. */
+const FIGURE_SECTIONS = new Set([
+  'Materials & Methods',
+  'Results',
+  'Discussion',
+  'Supplementary',
+])
+
+const CITE_SECTIONS = new Set([
+  'Introduction',
+  'Literature Review',
+  'Materials & Methods',
+  'Results',
+  'Discussion',
+  'Conclusion',
+])
+
+const BODY_STYLE_SECTIONS = new Set([
+  'Introduction',
+  'Literature Review',
+  'Materials & Methods',
+  'Results',
+  'Discussion',
+  'Conclusion',
+  'References',
+  'Acknowledgements',
+  'Supplementary',
+  'Abstract',
+])
+
+function wordCount(text: string): number {
+  return text.trim() ? text.trim().split(/\s+/).length : 0
+}
+
+/** Manuscript workspace: section drafts, insert tools, citation style, export. */
 export function OutputWorkspace({
   projectId,
   settings,
   canWrite,
-  author,
-  /** When set, parent owns the draft-type tabs (AI Drafts header). */
+  author: _author,
   outputType: controlledOutput,
 }: {
   projectId: string
@@ -56,6 +95,7 @@ export function OutputWorkspace({
 }) {
   const drafts = useDrafts(projectId, settings)
   const citation = useCitationStyle(projectId)
+  const editorRef = useRef<DraftDocumentEditorHandle | null>(null)
   const [internalOutput, setInternalOutput] = useState<OutputType>('publication')
   const activeOutput = controlledOutput ?? internalOutput
   const setActiveOutput = setInternalOutput
@@ -64,9 +104,9 @@ export function OutputWorkspace({
   const [formatError, setFormatError] = useState<string | null>(null)
   const [showTemplates, setShowTemplates] = useState(false)
   const [showExport, setShowExport] = useState(false)
-  const [showComments, setShowComments] = useState(false)
+  const [showFigurePicker, setShowFigurePicker] = useState(false)
+  const [showCitePicker, setShowCitePicker] = useState(false)
   const [guideOpen, setGuideOpen] = useState(true)
-  /** Bumped after AI generate/reformat so the Word editor remounts with new content. */
   const [editorEpoch, setEditorEpoch] = useState(0)
 
   const isPublication = activeOutput === 'publication'
@@ -77,9 +117,24 @@ export function OutputWorkspace({
   const isReferencesSection = isAutoManagedPublicationSection(section)
   const sectionGuide =
     isPublication && section ? PUBLICATION_SECTION_GUIDES[section] : null
+  const showCiteTools = Boolean(section && CITE_SECTIONS.has(section))
+  const showFigureTools = Boolean(section && FIGURE_SECTIONS.has(section))
+  const showStyleTools = Boolean(section && BODY_STYLE_SECTIONS.has(section))
+  const showTemplatesBtn = Boolean(
+    canWrite && section && !isPlainField && section !== 'References',
+  )
 
-  // Ensure a draft row exists so Title/Keywords inputs and Word sections can save.
-  // Do not gate the editor on this — waiting caused section-switch flicker.
+  const filledCount = useMemo(() => {
+    if (!isPublication) return 0
+    return PUBLICATION_SECTIONS.filter((sec) =>
+      Boolean(draftContentToPlainText(drafts.getDraft(activeOutput, sec)?.content ?? '').trim()),
+    ).length
+  }, [isPublication, drafts, activeOutput])
+
+  const plainText = draft ? draftContentToPlainText(draft.content) : ''
+  const abstractWords = section === 'Abstract' ? wordCount(plainText) : 0
+  const titleChars = section === 'Title' ? plainText.trim().length : 0
+
   useEffect(() => {
     if (!canWrite || drafts.loading) return
     if (drafts.getDraft(activeOutput, section)) return
@@ -95,7 +150,6 @@ export function OutputWorkspace({
     setEditorEpoch((n) => n + 1)
   }
 
-  /** Reformat = apply reference style only (never rewrite section content with AI). */
   const onReformat = async () => {
     if (!canWrite || !isPublication || citation.applying) return
     setFormatError(null)
@@ -117,6 +171,39 @@ export function OutputWorkspace({
     const manuscript = await assemblePublicationManuscript(projectId)
     if (manuscript.trim()) {
       await exportDraft(format, 'Manuscript', draftContentToMarkdown(manuscript))
+    }
+  }
+
+  const onInsertFigure = async (args: {
+    asset: { id: string; name: string }
+    src: string
+    caption: string
+  }) => {
+    let src = args.src
+    try {
+      const fresh = await getAsset(args.asset.id)
+      if (fresh) src = URL.createObjectURL(fresh.blob)
+    } catch {
+      /* fall back to modal src */
+    }
+    editorRef.current?.insertFigure({
+      src,
+      assetId: args.asset.id,
+      alt: args.asset.name || 'Figure',
+      caption: args.caption,
+    })
+  }
+
+  const onInsertCite = async (args: {
+    text: string
+    source: import('@/components/research-note/ai/agents/citationBank').CiteSource
+  }) => {
+    editorRef.current?.insertText(args.text)
+    try {
+      await syncPublicationReferences(projectId, [args.source], 'manual', 'insert-cite', citation.style)
+      await drafts.reload()
+    } catch (err) {
+      setFormatError(err instanceof Error ? err.message : 'Could not update References section.')
     }
   }
 
@@ -142,11 +229,13 @@ export function OutputWorkspace({
           <aside className="rn-output-sections" aria-label="Manuscript sections">
             <div className="rn-output-sections-head">
               <ManuscriptIcon className="h-4 w-4" />
-              <span>Sections</span>
+              <div>
+                <span>Outline</span>
+                <p>
+                  {filledCount}/{PUBLICATION_SECTIONS.length} filled
+                </p>
+              </div>
             </div>
-            <p className="rn-output-sections-hint">
-              Write in order. References update when you change citation style.
-            </p>
             <ol className="rn-output-section-list">
               {PUBLICATION_SECTIONS.map((sec, index) => {
                 const active = sec === activeSection
@@ -177,131 +266,169 @@ export function OutputWorkspace({
         )}
 
         <div className="rn-output-stage">
-          {isPublication && (
-            <div className="rn-output-toolbar">
-              <label className="rn-output-style-field">
-                <span>Reference style</span>
-                <select
-                  value={citation.style}
-                  disabled={!canWrite || citation.applying || !citation.loaded}
-                  onChange={(e) => void onCitationStyleChange(e.target.value as CitationStyle)}
-                  title="Same styles as Reference Formatter — updates in-text citations and References across the manuscript"
-                >
-                  {citation.styleGroups.map((group) => (
-                    <optgroup key={group.id} label={group.label}>
-                      {group.styles.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.label}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
-              </label>
-              <button
-                type="button"
-                onClick={() => void onReformat()}
-                disabled={!canWrite || citation.applying || !citation.loaded}
-                className="rn-workspace-btn rn-workspace-btn-ghost"
-                title="Apply the selected reference style to in-text citations and the References section only"
-              >
-                {citation.applying ? 'Updating…' : 'Reformat cites'}
-              </button>
-              {canWrite && (
-                <button
-                  type="button"
-                  onClick={() => setShowTemplates(true)}
-                  className="rn-workspace-btn rn-workspace-btn-ghost rn-output-toolbar-push"
-                >
-                  <TemplateIcon className="h-3.5 w-3.5" />
-                  Templates
-                </button>
-              )}
-            </div>
-          )}
-
-          <div className="rn-output-docbar">
-            <div className="rn-output-docbar-copy">
-              <h3>
-                {OUTPUT_TABS[activeOutput as OutputTabKey] ?? activeOutput}
-                {section ? ` · ${section}` : ''}
-              </h3>
-              {isPublication && sectionGuide && (
-                <p className="rn-output-docbar-hint">Follow the tip below, then write in the editor.</p>
-              )}
-            </div>
-            <div className="rn-output-docbar-actions">
-              {canWrite && (
-                <WorkspaceSaveButton
-                  label={
-                    activeOutput === 'progressReports'
-                      ? 'Save progress report'
-                      : 'Save draft'
-                  }
-                  onBeforeSave={() => drafts.flushPending()}
-                  className="rn-workspace-btn rn-workspace-btn-ghost"
-                />
-              )}
-              {isReferencesSection && (
-                <span className="rn-output-auto-badge">
-                  <InfoIcon className="h-3.5 w-3.5" />
-                  Auto-updated
-                </span>
-              )}
-              <div className="rn-output-export">
-                <button
-                  type="button"
-                  onClick={() => setShowExport((v) => !v)}
-                  disabled={!draft?.content && !isPublication}
-                  className="rn-workspace-btn rn-workspace-btn-ghost"
-                >
-                  <ExportIcon className="h-3.5 w-3.5" />
-                  Export
-                </button>
-                {showExport && (
-                  <div
-                    className="rn-output-export-menu"
-                    onMouseLeave={() => setShowExport(false)}
+          <div className="rn-output-chrome">
+            <div className="rn-output-docbar">
+              <div className="rn-output-docbar-copy">
+                <p className="rn-output-eyebrow">Manuscript</p>
+                <h3>{section ?? OUTPUT_TABS[activeOutput as OutputTabKey] ?? activeOutput}</h3>
+              </div>
+              <div className="rn-output-docbar-actions">
+                {canWrite &&
+                  isPublication &&
+                  section &&
+                  !isAutoManagedPublicationSection(section) && (
+                    <button
+                      type="button"
+                      className="rn-workspace-btn rn-workspace-btn-primary"
+                      disabled={Boolean(drafts.busySlot)}
+                      onClick={() => {
+                        const existing = drafts.getDraft(activeOutput, section)
+                        if (
+                          existing?.humanEdited &&
+                          draftContentToPlainText(existing.content).trim() &&
+                          !window.confirm(
+                            'This section was edited by you. Generate anyway and replace the current text? Your edits will be overwritten.',
+                          )
+                        ) {
+                          return
+                        }
+                        void drafts.generate(activeOutput, section, {
+                          existingContent: existing?.content ?? null,
+                        })
+                      }}
+                    >
+                      {drafts.busySlot === drafts.slot(activeOutput, section)
+                        ? 'Generating…'
+                        : draftContentToPlainText(draft?.content ?? '').trim()
+                          ? 'Refine with AI'
+                          : 'Generate with AI'}
+                    </button>
+                  )}
+                {canWrite && showFigureTools && (
+                  <button
+                    type="button"
+                    className="rn-workspace-btn rn-workspace-btn-ghost"
+                    onClick={() => setShowFigurePicker(true)}
                   >
-                    <p className="rn-output-export-label">This section</p>
-                    {EXPORT_FORMATS.map((f) => (
-                      <button
-                        key={f}
-                        type="button"
-                        disabled={!draft?.content}
-                        onClick={() => void onExport(f)}
-                      >
-                        {EXPORT_LABELS[f]}
-                      </button>
-                    ))}
-                    {isPublication && (
-                      <>
-                        <p className="rn-output-export-label rn-output-export-label-split">
-                          Full manuscript
-                        </p>
-                        {EXPORT_FORMATS.map((f) => (
-                          <button
-                            key={`m-${f}`}
-                            type="button"
-                            onClick={() => void onExportManuscript(f)}
-                          >
-                            {EXPORT_LABELS[f]}
-                          </button>
+                    <ImageIcon className="h-3.5 w-3.5" />
+                    Figure
+                  </button>
+                )}
+                {canWrite && showCiteTools && (
+                  <button
+                    type="button"
+                    className="rn-workspace-btn rn-workspace-btn-ghost"
+                    onClick={() => setShowCitePicker(true)}
+                  >
+                    <BookIcon className="h-3.5 w-3.5" />
+                    Cite
+                  </button>
+                )}
+                {canWrite && (
+                  <WorkspaceSaveButton
+                    label="Save"
+                    onBeforeSave={() => drafts.flushPending()}
+                    className="rn-workspace-btn rn-workspace-btn-ghost"
+                  />
+                )}
+                {isReferencesSection && (
+                  <span className="rn-output-auto-badge">
+                    <InfoIcon className="h-3.5 w-3.5" />
+                    Auto-updated
+                  </span>
+                )}
+                <div className="rn-output-export">
+                  <button
+                    type="button"
+                    onClick={() => setShowExport((v) => !v)}
+                    disabled={!draft?.content && !isPublication}
+                    className="rn-workspace-btn rn-workspace-btn-ghost"
+                  >
+                    <ExportIcon className="h-3.5 w-3.5" />
+                    Export
+                  </button>
+                  {showExport && (
+                    <div
+                      className="rn-output-export-menu"
+                      onMouseLeave={() => setShowExport(false)}
+                    >
+                      <p className="rn-output-export-label">This section</p>
+                      {EXPORT_FORMATS.map((f) => (
+                        <button
+                          key={f}
+                          type="button"
+                          disabled={!draft?.content}
+                          onClick={() => void onExport(f)}
+                        >
+                          {EXPORT_LABELS[f]}
+                        </button>
+                      ))}
+                      {isPublication && (
+                        <>
+                          <p className="rn-output-export-label rn-output-export-label-split">
+                            Full manuscript
+                          </p>
+                          {EXPORT_FORMATS.map((f) => (
+                            <button
+                              key={`m-${f}`}
+                              type="button"
+                              onClick={() => void onExportManuscript(f)}
+                            >
+                              {EXPORT_LABELS[f]}
+                            </button>
+                          ))}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {isPublication && showStyleTools && (
+              <div className="rn-output-toolbar">
+                <label className="rn-output-style-field">
+                  <span>Style</span>
+                  <select
+                    value={citation.style}
+                    disabled={!canWrite || citation.applying || !citation.loaded}
+                    onChange={(e) => void onCitationStyleChange(e.target.value as CitationStyle)}
+                    title="Updates in-text citations and the References section"
+                  >
+                    {citation.styleGroups.map((group) => (
+                      <optgroup key={group.id} label={group.label}>
+                        {group.styles.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.label}
+                          </option>
                         ))}
-                      </>
-                    )}
-                  </div>
+                      </optgroup>
+                    ))}
+                  </select>
+                </label>
+                {showCiteTools && (
+                  <button
+                    type="button"
+                    onClick={() => void onReformat()}
+                    disabled={!canWrite || citation.applying || !citation.loaded}
+                    className="rn-workspace-btn rn-workspace-btn-ghost"
+                    title="Apply the selected reference style to in-text citations and References"
+                  >
+                    {citation.applying ? 'Updating…' : 'Reformat cites'}
+                  </button>
+                )}
+                {showTemplatesBtn && (
+                  <button
+                    type="button"
+                    onClick={() => setShowTemplates(true)}
+                    className="rn-workspace-btn rn-workspace-btn-ghost rn-output-toolbar-push"
+                  >
+                    <TemplateIcon className="h-3.5 w-3.5" />
+                    Templates
+                  </button>
                 )}
               </div>
-              <button
-                type="button"
-                onClick={() => setShowComments(true)}
-                className="rn-workspace-btn rn-workspace-btn-ghost"
-              >
-                <CommentIcon className="h-3.5 w-3.5" />
-                Comments
-              </button>
-            </div>
+            )}
           </div>
 
           {(drafts.error || formatError || citation.error) && (
@@ -312,14 +439,38 @@ export function OutputWorkspace({
 
           {!drafts.error &&
             !formatError &&
+            drafts.lastLiteratureCount != null &&
+            drafts.lastLiteratureCount > 0 && (
+              <p className="rn-output-gen-meta" role="status">
+                Grounded with {drafts.lastLiteratureCount} literature source
+                {drafts.lastLiteratureCount === 1 ? '' : 's'}
+                {drafts.lastReferencesSync
+                  ? ` · References updated (${drafts.lastReferencesSync.total} total)`
+                  : ''}
+                . See Progress Reports → Effort & attribution for material usage.
+              </p>
+            )}
+
+          {draft?.generationTrace && draft.generationTrace.materials.length > 0 && (
+            <p className="rn-output-gen-meta" role="status">
+              Last AI run used {draft.generationTrace.materials.length} material
+              {draft.generationTrace.materials.length === 1 ? '' : 's'} via agent{' '}
+              {draft.generationTrace.agentId}
+              {draft.humanEdited ? ' · you have edited since' : ''}.
+            </p>
+          )}
+
+          {!drafts.error &&
+            !formatError &&
             !citation.error &&
             citation.lastApply &&
-            isPublication && (
+            isPublication &&
+            showCiteTools && (
               <p className="rn-output-status">
-                Reference style set to {citation.styleLabel}
+                Style · {citation.styleLabel}
                 {citation.lastApply.references > 0
-                  ? ` — updated ${citation.lastApply.draftsUpdated} section${citation.lastApply.draftsUpdated === 1 ? '' : 's'} (${citation.lastApply.references} references).`
-                  : ' — will apply to References as you cite sources.'}
+                  ? ` · ${citation.lastApply.references} references synced`
+                  : ''}
               </p>
             )}
 
@@ -351,25 +502,35 @@ export function OutputWorkspace({
             ) : isPlainField ? (
               <PlainFieldPanel
                 label={activeSection}
-                hint={sectionGuide ?? undefined}
                 placeholder={
                   activeSection === 'Title'
                     ? 'e.g. Artificial Intelligence in Nigerian Higher Education'
                     : 'e.g. artificial intelligence, higher education, Nigeria, pedagogy'
                 }
-                value={draft ? draftContentToPlainText(draft.content) : ''}
+                value={plainText}
                 canWrite={canWrite}
+                titleChars={titleChars}
                 onChange={(value) => {
                   drafts.editDraft(activeOutput, section, value)
                 }}
               />
             ) : canWrite || draft ? (
-              <DraftDocumentEditor
-                key={`${slotKey}::${editorEpoch}`}
-                content={draft?.content ?? ''}
-                onChange={(html) => drafts.editDraft(activeOutput, section, html)}
-                editable={canWrite && !isReferencesSection}
-              />
+              <>
+                {section === 'Abstract' && (
+                  <p className="rn-output-wordcount" aria-live="polite">
+                    {abstractWords} word{abstractWords === 1 ? '' : 's'}
+                    {abstractWords > 300 ? ' · long for most journals (aim 150–300)' : ''}
+                    {abstractWords > 0 && abstractWords < 150 ? ' · often short of 150–300' : ''}
+                  </p>
+                )}
+                <DraftDocumentEditor
+                  key={`${slotKey}::${editorEpoch}`}
+                  ref={editorRef}
+                  content={draft?.content ?? ''}
+                  onChange={(html) => drafts.editDraft(activeOutput, section, html)}
+                  editable={canWrite && !isReferencesSection}
+                />
+              </>
             ) : (
               <div className="rn-notes-empty-select">
                 <InfoIcon className="h-5 w-5" />
@@ -381,14 +542,18 @@ export function OutputWorkspace({
       </div>
 
       <TemplatesModal projectId={projectId} open={showTemplates} onClose={() => setShowTemplates(false)} />
-      <CommentsModal
-        open={showComments}
-        onClose={() => setShowComments(false)}
+      <InsertFigureModal
+        open={showFigurePicker}
         projectId={projectId}
-        targetKind="draft"
-        targetId={slotKey}
-        targetLabel={`${OUTPUT_TABS[activeOutput as OutputTabKey] ?? activeOutput}${section ? ` — ${section}` : ''}`}
-        author={author}
+        onClose={() => setShowFigurePicker(false)}
+        onInsert={(args) => void onInsertFigure(args)}
+      />
+      <InsertCiteModal
+        open={showCitePicker}
+        projectId={projectId}
+        style={citation.style}
+        onClose={() => setShowCitePicker(false)}
+        onInsert={(args) => void onInsertCite(args)}
       />
     </div>
   )
@@ -396,17 +561,17 @@ export function OutputWorkspace({
 
 function PlainFieldPanel({
   label,
-  hint,
   placeholder,
   value,
   canWrite,
+  titleChars,
   onChange,
 }: {
   label: string
-  hint?: string
   placeholder: string
   value: string
   canWrite: boolean
+  titleChars: number
   onChange: (value: string) => void
 }) {
   const isTitle = label === 'Title'
@@ -415,7 +580,6 @@ function PlainFieldPanel({
       <div className="rn-plain-field-card">
         <label htmlFor="plain-draft-field">
           <span className="rn-plain-field-label">{label}</span>
-          {hint && <span className="rn-plain-field-sub">{hint}</span>}
         </label>
         {isTitle ? (
           <textarea
@@ -447,9 +611,8 @@ function PlainFieldPanel({
           />
         )}
         <p className="rn-plain-field-meta">
-          {canWrite
-            ? 'Changes save with the notebook. Use Save draft in the bar above when you want to sync now.'
-            : 'This field is view-only.'}
+          {canWrite ? 'Autosaves with the notebook.' : 'This field is view-only.'}
+          {isTitle && titleChars > 0 ? ` · ${titleChars} characters` : ''}
         </p>
       </div>
     </div>

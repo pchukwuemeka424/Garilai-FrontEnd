@@ -6,6 +6,7 @@ import { studentHasResearchTokens } from "@/components/StudentTokenQuota";
 import { IconEdit } from "@/components/ui/ButtonIcon";
 import { useAuth } from "@/hooks/useAuth";
 import { stageOutlinePageContext } from "@/lib/research-outline-context";
+import { stagePaperSources } from "@/lib/research-paper-sources";
 import { researchOutlinePagePath } from "@/lib/research-outline-routes";
 import { researchGeneratePagePath } from "@/lib/research-generate-routes";
 import { loadSavedOutline, saveResearchOutline } from "@/lib/research-outline-storage";
@@ -94,6 +95,7 @@ export function ResearchIdeaCard({
 			sources,
 			returnTo,
 		});
+		stagePaperSources(sources);
 		router.push(researchOutlinePagePath(key, studentUI ? "student" : "lecturer"));
 	}, [idea, discipline, topic, scope, sources, canEditOutline, hasIdeaDocument, hasTokens, router, studentUI]);
 
@@ -123,6 +125,7 @@ export function ResearchIdeaCard({
 				sources,
 				returnTo,
 			});
+			stagePaperSources(sources);
 			router.push(researchGeneratePagePath(key, studentUI ? "student" : "lecturer"));
 		},
 		[idea, discipline, topic, scope, sources, hasTokens, router, studentUI],
