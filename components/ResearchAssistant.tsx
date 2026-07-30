@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 
-import { CitationStyleSelect } from "@/components/aula/CitationStyleSelect";
 import { DisciplineSelect } from "@/components/aula/DisciplineSelect";
 import { ResearchScopeSelect } from "@/components/aula/ResearchScopeSelect";
 import { NavIcon } from "@/components/aula/NavIcon";
@@ -14,13 +13,11 @@ import { StudentResearchHistory } from "@/components/research/StudentResearchHis
 import {
 	IconAward,
 	IconBook,
-	IconBookmark,
 	IconBriefcase,
 	IconChevronLeft,
 	IconChevronRight,
 	IconClock,
 	IconCopy,
-	IconDashboard,
 	IconDownload,
 	IconEdit,
 	IconFileText,
@@ -42,8 +39,7 @@ import { StudentLayout } from "@/components/StudentLayout";
 import { studentHasResearchTokens } from "@/components/StudentTokenQuota";
 import { useAuth } from "@/hooks/useAuth";
 import { useFeynmanSocket } from "@/hooks/useFeynmanSocket";
-import { saveChatCitationStyle } from "@/lib/chat-research-citations";
-import { getStyleLabel, type CitationStyle } from "@/lib/citation-styles";
+import { DEFAULT_CITATION_STYLE, type CitationStyle } from "@/lib/citation-styles";
 import {
 	fetchDocuments,
 	fetchNotebook,
@@ -144,14 +140,13 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 	const [discipline, setDiscipline] = useState("");
 	const [topic, setTopic] = useState("");
 	const [scope, setScope] = useState<ResearchScope | "">("");
-	const [citationStyle, setCitationStyle] = useState<CitationStyle | "">("");
+	const [citationStyle, setCitationStyle] = useState<CitationStyle | "">(DEFAULT_CITATION_STYLE);
 	const [focusFilter, setFocusFilter] = useState<IdeaType | "all">("all");
 	const [localIdeas, setLocalIdeas] = useState<ResearchIdea[] | null>(null);
 	const [hasGenerated, setHasGenerated] = useState(false);
 	const [topicTouched, setTopicTouched] = useState(false);
 	const [scopeTouched, setScopeTouched] = useState(false);
 	const [disciplineTouched, setDisciplineTouched] = useState(false);
-	const [citationTouched, setCitationTouched] = useState(false);
 	const [savedIdeas, setSavedIdeas] = useState<SavedIdea[]>([]);
 	const [recentSessions, setRecentSessions] = useState<ResearchSession[]>([]);
 	const [savedPapers, setSavedPapers] = useState<SavedResearchPaper[]>([]);
@@ -190,7 +185,7 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 			setDiscipline("");
 			setTopic(topicFromQuick);
 			setScope("");
-			setCitationStyle("");
+			setCitationStyle(DEFAULT_CITATION_STYLE);
 			setFocusFilter("all");
 			setLocalIdeas(null);
 			setHasGenerated(false);
@@ -228,7 +223,7 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 			setDiscipline(draft.discipline);
 			setTopic(topicFromQuick || draft.topic);
 			setScope(draft.scope);
-			setCitationStyle(draft.citationStyle);
+			setCitationStyle(draft.citationStyle || DEFAULT_CITATION_STYLE);
 			setFocusFilter(draft.focusFilter);
 			setLocalIdeas(draft.localIdeas);
 			setHasGenerated(draft.hasGenerated);
@@ -437,7 +432,6 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 	const topicError = topicTouched && !topic.trim();
 	const scopeError = scopeTouched && !scope;
 	const disciplineError = disciplineTouched && !discipline;
-	const citationError = citationTouched && !citationStyle;
 	const disciplineLabel = discipline ? getDisciplineLabel(discipline) : "";
 
 	const savedIdeaKeys = useMemo(
@@ -455,7 +449,7 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 			setTopicTouched(true);
 			return false;
 		}
-		if (!discipline || !scope || !citationStyle) return false;
+		if (!discipline || !scope) return false;
 		if (!hasTokens) return false;
 
 		setHasGenerated(true);
@@ -571,13 +565,12 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 		setDiscipline("");
 		setTopic("");
 		setScope("");
-		setCitationStyle("");
+		setCitationStyle(DEFAULT_CITATION_STYLE);
 		setLocalIdeas(null);
 		setHasGenerated(false);
 		setTopicTouched(false);
 		setScopeTouched(false);
 		setDisciplineTouched(false);
-		setCitationTouched(false);
 		setFocusFilter("all");
 		setShowSaved(false);
 		setShowHistory(false);
@@ -667,8 +660,7 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 		if (step === 1) {
 			setDisciplineTouched(true);
 			setScopeTouched(true);
-			setCitationTouched(true);
-			if (!discipline || !scope || !citationStyle) return;
+			if (!discipline || !scope) return;
 			setStep(2);
 			return;
 		}
@@ -699,9 +691,9 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 		setTopicTouched(true);
 		setDisciplineTouched(true);
 		setScopeTouched(true);
-		setCitationTouched(true);
 		const trimmedTopic = topic.trim();
-		if (!trimmedTopic || !discipline || !scope || !citationStyle || !hasTokens) return;
+		const style = citationStyle || DEFAULT_CITATION_STYLE;
+		if (!trimmedTopic || !discipline || !scope || !hasTokens) return;
 
 		const idea: ResearchIdea = {
 			id: `direct-${discipline}-${scope}`,
@@ -724,7 +716,7 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 					discipline,
 					topic: trimmedTopic,
 					scope,
-					citationStyle,
+					citationStyle: style,
 					focusFilter,
 					localIdeas,
 					hasGenerated,
@@ -746,7 +738,7 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 		});
 		stagePendingResearchPaper({
 			key,
-			citationStyle,
+			citationStyle: style,
 			projectName: trimmedTopic,
 		});
 		router.push(researchPaperWorkspacePath(trimmedTopic, isStudent ? "student" : "lecturer", key));
@@ -938,8 +930,6 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 		return null;
 	};
 
-	const chatHref = variant === "student" ? "/student/dashboard" : "/research";
-
 	const page = (
 		<div className={variant === "student" ? "research-page research-page-student" : "research-page"}>
 				<header className="research-page-header">
@@ -957,21 +947,8 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 							</p>
 						</div>
 					</div>
-					<div className="research-page-actions">
-						<button
-							type="button"
-							className={`research-btn research-btn-outline research-btn-sm ${showSaved ? "research-btn-active" : ""}`}
-							onClick={() => {
-								setShowSaved(true);
-								setShowHistory(false);
-								setStep(3);
-							}}
-						>
-							<IconBookmark size={16} />
-							Saved
-							{savedIdeas.length > 0 && <span className="research-btn-count">{savedIdeas.length}</span>}
-						</button>
-						{variant === "student" && (
+					{variant === "student" && (
+						<div className="research-page-actions">
 							<button
 								type="button"
 								className={`research-btn research-btn-outline research-btn-sm ${showHistory ? "research-btn-active" : ""}`}
@@ -991,24 +968,8 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 									</span>
 								)}
 							</button>
-						)}
-						<Link href={isStudent ? "/student/research/note" : "/research/note"} className="research-btn research-btn-outline research-btn-sm">
-							Research Note
-						</Link>
-						<Link href={chatHref} className="research-btn research-btn-outline research-btn-sm">
-							{variant === "student" ? (
-								<>
-									<IconDashboard size={16} />
-									Dashboard
-								</>
-							) : (
-								<>
-									Full workspace
-									<IconChevronRight size={16} />
-								</>
-							)}
-						</Link>
-					</div>
+						</div>
+					)}
 				</header>
 
 				<div className="research-wizard">
@@ -1119,18 +1080,6 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 											selectClassName="research-form-select"
 										/>
 										{scopeError && <p className="error-text">Please select a research scope.</p>}
-										<div className="research-citation-style-wrap">
-											<CitationStyleSelect
-												id="research-reference-style"
-												value={citationStyle}
-												onChange={(style) => {
-													setCitationStyle(style);
-													setCitationTouched(true);
-													if (style) saveChatCitationStyle(style);
-												}}
-											/>
-											{citationError && <p className="error-text">Please select a reference style.</p>}
-										</div>
 									</div>
 								</div>
 							</>
@@ -1162,12 +1111,6 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 											<span className="research-summary-chip research-summary-chip-violet">
 												{SCOPE_ICONS[scope as ResearchScope]}
 												{SCOPE_OPTIONS.find((s) => s.id === scope)?.label}
-											</span>
-										) : null}
-										{citationStyle ? (
-											<span className="research-summary-chip research-summary-chip-teal">
-												<IconBook size={13} />
-												{getStyleLabel(citationStyle)}
 											</span>
 										) : null}
 									</div>

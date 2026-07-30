@@ -1,4 +1,5 @@
 import { getDisciplineLabel } from "@/lib/research-disciplines";
+import { canonicalizeSectionTitle } from "@/lib/research-paper-sections";
 import { TOPIC_QUALITY_RULES } from "@/lib/research-topic-guidance";
 
 export type IdeaType = "empirical" | "theoretical" | "interdisciplinary" | "applied";
@@ -833,7 +834,7 @@ export function markdownToDocHtml(markdown: string): string {
 			continue;
 		}
 		if (/^###\s+/.test(first) && lines.length === 1) {
-			html.push(`<h3>${escapeHtml(first.replace(/^###\s+/, ""))}</h3>`);
+			html.push(`<h2>${escapeHtml(first.replace(/^###\s+/, ""))}</h2>`);
 			continue;
 		}
 		// Bold-only section titles from the API (e.g. **1. Introduction**)
@@ -841,6 +842,68 @@ export function markdownToDocHtml(markdown: string): string {
 			html.push(`<h2>${escapeHtml(first.replace(/^\*\*|\*\*$/g, ""))}</h2>`);
 			continue;
 		}
+		// Plain IMRaD titles after editor round-trips drop **bold** (especially Abstract).
+		const plainSectionAlone = first.match(
+			/^(Abstract|Keywords|Study area|Introduction|Literature Review|Methodology|Results\s*\/\s*Analysis|Results and Analysis|Discussion|Conclusion|References)\s*:?\s*$/i,
+		);
+		if (plainSectionAlone && lines.length === 1) {
+			const canonical = canonicalizeSectionTitle(plainSectionAlone[1] ?? "");
+			if (canonical) {
+				html.push(`<h2>${escapeHtml(canonical)}</h2>`);
+				continue;
+			}
+		}
+
+		// Heading stuck to body in the same block (common after HTML round-trip):
+		//   **Abstract**\nparagraph…   or   ### Introduction\nparagraph…
+		const hashHeading = first.match(/^#{1,6}\s+(.+?)\s*$/);
+		const boldHeading = first.match(/^\*\*([^*]+)\*\*\s*:?\s*$/);
+		const stuckTitle = (hashHeading?.[1] ?? boldHeading?.[1] ?? "").trim();
+		if (stuckTitle && lines.length > 1) {
+			const bodyLines = lines.slice(1).map((l) => l.trim()).filter(Boolean);
+			html.push(`<h2>${escapeHtml(stuckTitle.replace(/:+$/, ""))}</h2>`);
+			if (bodyLines.length) {
+				html.push(`<p>${bodyLines.map((l) => inlineMarkdownToHtml(l)).join("<br>")}</p>`);
+			}
+			continue;
+		}
+		// Same-line heading + body: **Abstract:** text… / ### Abstract text… / Abstract: text…
+		const inlineHash = first.match(/^#{1,6}\s+(.+?)\s+(.+)$/);
+		const inlineBold = first.match(/^\*\*([^*]+)\*\*\s*:?\s+(.+)$/);
+		const inlinePlain = first.match(
+			/^(Abstract|Keywords|Study area|Introduction|Literature Review|Methodology|Results\s*\/\s*Analysis|Results and Analysis|Discussion|Conclusion|References)\s*:\s+(.+)$/i,
+		);
+		if (inlineHash || inlineBold || inlinePlain) {
+			const rawTitle = (inlineHash?.[1] ?? inlineBold?.[1] ?? inlinePlain?.[1] ?? "")
+				.replace(/:+$/, "")
+				.trim();
+			const title = canonicalizeSectionTitle(rawTitle) ?? rawTitle;
+			const rest = (inlineHash?.[2] ?? inlineBold?.[2] ?? inlinePlain?.[2] ?? "").trim();
+			const more = lines.slice(1).map((l) => l.trim()).filter(Boolean);
+			html.push(`<h2>${escapeHtml(title)}</h2>`);
+			const body = [rest, ...more].filter(Boolean);
+			if (body.length) {
+				html.push(`<p>${body.map((l) => inlineMarkdownToHtml(l)).join("<br>")}</p>`);
+			}
+			continue;
+		}
+
+		// Mid-block section headings (body then ## Keywords on later lines)
+		const midHeadingIdx = lines.findIndex((line, index) => {
+			if (index === 0) return false;
+			const t = line.trim();
+			return /^#{1,6}\s+\S/.test(t) || /^\*\*[^*]+\*\*\s*:?\s*$/.test(t);
+		});
+		if (midHeadingIdx > 0) {
+			const before = lines.slice(0, midHeadingIdx).map((l) => l.trim()).filter(Boolean);
+			if (before.length) {
+				html.push(`<p>${before.map((l) => inlineMarkdownToHtml(l)).join("<br>")}</p>`);
+			}
+			const afterBlock = lines.slice(midHeadingIdx).join("\n");
+			html.push(markdownToDocHtml(afterBlock));
+			continue;
+		}
+
 		if (lines.every((l) => /^\d+[.)]\s+/.test(l.trim()))) {
 			html.push(
 				`<ol>${lines
@@ -905,7 +968,8 @@ export function htmlToOutlineText(html: string): string {
 		)
 		.replace(/<table[^>]*>[\s\S]*?<\/table>/gi, (table) => `\n\n${tableToMarkdown(table)}\n\n`);
 	const withBreaks = protectedHtml
-		.replace(/<\/(h1|h2|h3|p|li|div)>/gi, "\n")
+		.replace(/<\/(h1|h2|h3)>/gi, "\n\n")
+		.replace(/<\/(p|li|div)>/gi, "\n")
 		.replace(/<(h1)[^>]*>/gi, "# ")
 		.replace(/<(h2)[^>]*>/gi, "## ")
 		.replace(/<(h3)[^>]*>/gi, "### ")

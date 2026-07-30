@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { AulaModal } from "@/components/aula/AulaModal";
 import { useAuth } from "@/hooks/useAuth";
+import { useSmoothProgress } from "@/hooks/useSmoothProgress";
 import {
 	fetchActiveResearchJob,
 	fetchResearchJobById,
@@ -149,6 +150,10 @@ export function ResearchJobWatcher() {
 			runningJob &&
 			(runningJob.status === "queued" || runningJob.status === "running"),
 	);
+	const chipPercent = useSmoothProgress(runningJob?.progress ?? 0, {
+		active: showChip,
+		complete: false,
+	});
 
 	return (
 		<>
@@ -156,8 +161,21 @@ export function ResearchJobWatcher() {
 				<div className="research-job-chip" role="status" aria-live="polite">
 					<span className="research-job-chip-dot" aria-hidden />
 					<span className="research-job-chip-label">Generating research…</span>
+					<span className="research-job-chip-percent" aria-label={`${chipPercent} percent complete`}>
+						{chipPercent}%
+					</span>
 					<span className="research-job-chip-topic" title={runningJob?.topic}>
 						{runningJob?.topic}
+					</span>
+					<span
+						className="research-job-chip-bar"
+						role="progressbar"
+						aria-valuemin={0}
+						aria-valuemax={100}
+						aria-valuenow={chipPercent}
+						aria-hidden
+					>
+						<span className="research-job-chip-bar-fill" style={{ width: `${chipPercent}%` }} />
 					</span>
 				</div>
 			) : null}

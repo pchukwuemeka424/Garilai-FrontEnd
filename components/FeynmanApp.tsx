@@ -30,6 +30,7 @@ import {
 	saveChatCitationStyle,
 } from "@/lib/chat-research-citations";
 import { formatResearchPaperReferences } from "@/lib/research-paper-references";
+import { promoteBoldSectionsForDisplay } from "@/lib/research-paper-sections";
 import { consumeChatPrefill } from "@/lib/research-ideas";
 import { prepareResearchPaperPrompt } from "@/lib/prepare-research-paper";
 import {
@@ -40,6 +41,7 @@ import {
 import { peekPaperSources } from "@/lib/research-paper-sources";
 import { peekOutlinePageContext, resolveOutlinePageContext } from "@/lib/research-outline-context";
 import { consumePendingResearchPaper } from "@/lib/research-paper-pending";
+import { consumePendingResearchRefine } from "@/lib/research-paper-refine";
 import { fetchSavedResearchById } from "@/lib/research-api";
 import { fetchResearchJobById, startResearchPaperJob } from "@/lib/research-jobs-api";
 import {
@@ -104,6 +106,7 @@ export function FeynmanApp({ layout = "aula" }: { layout?: "aula" | "student" })
 	const [openedPaperId, setOpenedPaperId] = useState<string | null>(null);
 	const [backgroundJobId, setBackgroundJobId] = useState<string | null>(null);
 	const [backgroundJobRunning, setBackgroundJobRunning] = useState(false);
+	const [backgroundJobProgress, setBackgroundJobProgress] = useState(0);
 	const [savedPapers, setSavedPapers] = useState<SavedResearchPaper[]>([]);
 	const [viewingSaved, setViewingSaved] = useState<SavedResearchPaper | null>(null);
 	const [saveNotice, setSaveNotice] = useState<string | null>(null);
@@ -268,7 +271,7 @@ export function FeynmanApp({ layout = "aula" }: { layout?: "aula" | "student" })
 		if (!content) return;
 		const topic = viewingSaved?.topic ?? paperTopic;
 		const title = extractPaperTitle(content, topic || "research-paper");
-		void downloadMarkdownAsPdf(content, title, {
+		void downloadMarkdownAsPdf(formatResearchPaperReferences(content), title, {
 			...paperMeta,
 			fallbackTopic: topic || paperMeta.fallbackTopic,
 		});
@@ -402,6 +405,46 @@ export function FeynmanApp({ layout = "aula" }: { layout?: "aula" | "student" })
 		if (authLoading || !user) return;
 		if (isBusy || backgroundJobRunning || hasAssistantPaper || viewingSaved) return;
 
+		const refine = consumePendingResearchRefine();
+		if (refine?.prompt?.trim()) {
+			autoGenerateRef.current = true;
+			pendingAutoGenerateRef.current = false;
+			researchFlowGenerationRef.current = true;
+			setResearchFlowActive(true);
+			setViewingSaved(null);
+			const displayTopic = refine.topic.trim();
+			if (displayTopic) setProjectName(displayTopic);
+			saveChatCitationStyle(refine.citationStyle);
+			setCitationStyle(refine.citationStyle);
+			setInput(refine.prompt);
+			setPaperPreparing(true);
+			setPaperPrepError(null);
+			setBackgroundJobProgress(2);
+
+			void startResearchPaperJob({
+				prompt: refine.prompt,
+				topic: displayTopic || undefined,
+			})
+				.then((job) => {
+					setTrackedResearchJob({ jobId: job.id, topic: job.topic });
+					setBackgroundJobId(job.id);
+					setBackgroundJobProgress(job.progress ?? 0);
+					setBackgroundJobRunning(true);
+				})
+				.catch((startError) => {
+					autoGenerateRef.current = false;
+					setResearchFlowActive(false);
+					researchFlowGenerationRef.current = false;
+					setPaperPrepError(
+						startError instanceof Error
+							? startError.message
+							: "Could not start research refinement.",
+					);
+				})
+				.finally(() => setPaperPreparing(false));
+			return;
+		}
+
 		const pending = consumePendingResearchPaper();
 		const paperKey = pending?.key ?? pendingPaperKeyRef.current;
 		pendingPaperKeyRef.current = null;
@@ -423,6 +466,7 @@ export function FeynmanApp({ layout = "aula" }: { layout?: "aula" | "student" })
 			}
 			setPaperPreparing(true);
 			setPaperPrepError(null);
+			setBackgroundJobProgress(2);
 
 			void prepareResearchPaperPrompt(paperKey, pending?.citationStyle ?? DEFAULT_CITATION_STYLE, {
 				onTokenQuota: setTokenQuota,
@@ -441,6 +485,7 @@ export function FeynmanApp({ layout = "aula" }: { layout?: "aula" | "student" })
 					});
 					setTrackedResearchJob({ jobId: job.id, topic: job.topic });
 					setBackgroundJobId(job.id);
+					setBackgroundJobProgress(job.progress ?? 0);
 					setBackgroundJobRunning(true);
 				})
 				.catch((prepError) => {
@@ -466,6 +511,7 @@ export function FeynmanApp({ layout = "aula" }: { layout?: "aula" | "student" })
 			.then((job) => {
 				setTrackedResearchJob({ jobId: job.id, topic: job.topic });
 				setBackgroundJobId(job.id);
+				setBackgroundJobProgress(job.progress ?? 0);
 				setBackgroundJobRunning(true);
 			})
 			.catch((startError) => {
@@ -487,6 +533,14 @@ export function FeynmanApp({ layout = "aula" }: { layout?: "aula" | "student" })
 		projectName,
 		setTokenQuota,
 	]);
+
+	useEffect(() => {
+		if (!paperPreparing || backgroundJobRunning) return;
+		const timer = window.setInterval(() => {
+			setBackgroundJobProgress((prev) => (prev < 10 ? prev + 1 : prev));
+		}, 900);
+		return () => window.clearInterval(timer);
+	}, [paperPreparing, backgroundJobRunning]);
 
 	useEffect(() => {
 		if (!backgroundJobId || !backgroundJobRunning) return;
@@ -539,7 +593,10 @@ export function FeynmanApp({ layout = "aula" }: { layout?: "aula" | "student" })
 			const job = await fetchResearchJobById(backgroundJobId);
 			if (cancelled || !job) return;
 
+			setBackgroundJobProgress(job.progress ?? 0);
+
 			if (job.status === "completed" && job.savedResearchId) {
+				setBackgroundJobProgress(100);
 				await finishWithPaper(job.savedResearchId, job.id);
 				return;
 			}
@@ -555,7 +612,7 @@ export function FeynmanApp({ layout = "aula" }: { layout?: "aula" | "student" })
 		};
 
 		void poll();
-		const timer = window.setInterval(() => void poll(), 3000);
+		const timer = window.setInterval(() => void poll(), 2000);
 		return () => {
 			cancelled = true;
 			window.clearInterval(timer);
@@ -578,6 +635,7 @@ export function FeynmanApp({ layout = "aula" }: { layout?: "aula" | "student" })
 			if (cancelled || !job) return;
 			if (!isTerminalResearchJobStatus(job.status)) {
 				setBackgroundJobId(job.id);
+				setBackgroundJobProgress(job.progress ?? 0);
 				setBackgroundJobRunning(true);
 				setResearchFlowActive(true);
 				setProjectName((prev) => prev || job.topic);
@@ -700,6 +758,8 @@ export function FeynmanApp({ layout = "aula" }: { layout?: "aula" | "student" })
 								projectName={loadingProjectName}
 								preparing={paperPreparing}
 								studentUI={isStudent}
+								progress={paperPreparing ? Math.max(backgroundJobProgress, 6) : backgroundJobProgress}
+								complete={paperOpenedInNewTab}
 							/>
 						</div>
 					) : paperOpenedInNewTab && isResearchPaperRoute ? (
@@ -885,7 +945,9 @@ export function FeynmanApp({ layout = "aula" }: { layout?: "aula" | "student" })
 							</button>
 						</header>
 						<div className="research-history-modal-body research-markdown-panel">
-							<ResearchPaperMarkdown content={formattedPaperContent} />
+							<ResearchPaperMarkdown
+								content={promoteBoldSectionsForDisplay(formattedPaperContent)}
+							/>
 						</div>
 						<footer className="research-history-modal-foot stu-paper-preview-foot">
 							<button type="button" className="stu-paper-btn" onClick={() => setPreviewOpen(false)}>

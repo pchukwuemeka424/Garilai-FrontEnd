@@ -3,7 +3,15 @@
 import { marked, type Token, type Tokens } from "marked";
 
 import { extractPaperTitle } from "@/lib/research-paper-title";
-import { canonicalizeSectionTitle } from "@/lib/research-paper-sections";
+import {
+	canonicalizeSectionTitle,
+	formatKeywordTerms,
+	promoteBoldSectionsForDisplay,
+} from "@/lib/research-paper-sections";
+import {
+	formatResearchPaperReferences,
+	splitReferenceEntries,
+} from "@/lib/research-paper-references";
 
 export type ResearchPaperMeta = {
 	author?: string | null;
@@ -36,10 +44,12 @@ const PAGE = {
 
 const SIZE = {
 	body: 11,
+	abstract: 10,
 	title: 17,
 	byline: 11,
 	affiliation: 10,
 	section: 12,
+	subsection: 11,
 	footer: 9,
 };
 
@@ -128,9 +138,12 @@ type PdfChartSpec = {
 
 type PdfBlock =
 	| {
-			kind: "title" | "section" | "body" | "byline" | "affiliation";
+			kind: "title" | "section" | "subsection" | "body" | "byline" | "affiliation" | "reference";
 			text: string;
 	  }
+	| { kind: "keywords"; text: string }
+	| { kind: "studyArea"; text: string }
+	| { kind: "abstractBody"; text: string }
 	| { kind: "rule" | "gap" }
 	| { kind: "table"; headers: string[]; rows: string[][] }
 	| { kind: "chart"; chart: PdfChartSpec }
@@ -218,7 +231,7 @@ export function collapseSpacedLetterRuns(text: string): string {
 
 /** Remove geographic "Abia State"-style phrases from PDF output. */
 export function stripGeographicStateNames(text: string): string {
-	let out = text
+	return text
 		.replace(NIGERIA_STATE_PATTERN, "")
 		.replace(/\(\s*[,;]?\s*\)/g, "")
 		.replace(/\s*,\s*,+/g, ",")
@@ -229,10 +242,6 @@ export function stripGeographicStateNames(text: string): string {
 		.replace(/^[,\s;]+|[,\s;]+$/g, "")
 		.replace(/\s{2,}/g, " ")
 		.trim();
-
-	// Drop labels left empty after stripping a location (e.g. "Study area: Abia State").
-	out = out.replace(/^study\s*area\s*:?\s*$/i, "").trim();
-	return out;
 }
 
 export function normalizePdfText(raw: string): string {
@@ -285,12 +294,23 @@ function isGenericTitle(text: string): boolean {
 	return GENERIC_TITLE_LABELS.has(text.toLowerCase().replace(/:$/, "").trim());
 }
 
-function flattenTokens(tokens: Token[] | undefined): string {
+function flattenTokens(
+	tokens: Token[] | undefined,
+	options?: { keepLinkUrls?: boolean },
+): string {
 	if (!tokens?.length) return "";
 	const parts: string[] = [];
 	const walk = (list: Token[]) => {
 		for (const t of list as Tokens.Generic[]) {
-			if (t.type === "strong" || t.type === "em" || t.type === "link" || t.type === "del") {
+			if (t.type === "link") {
+				const label = flattenTokens(t.tokens ?? [], options);
+				const href = typeof t.href === "string" ? t.href.trim() : "";
+				if (options?.keepLinkUrls && href) {
+					parts.push(label ? `${label}: ${href}` : href);
+				} else {
+					parts.push(label);
+				}
+			} else if (t.type === "strong" || t.type === "em" || t.type === "del") {
 				walk(t.tokens ?? []);
 			} else if (t.type === "text" || t.type === "escape" || t.type === "codespan") {
 				if (t.tokens?.length) walk(t.tokens);
@@ -307,6 +327,51 @@ function flattenTokens(tokens: Token[] | undefined): string {
 function isBoldOnlyParagraph(p: Tokens.Paragraph): boolean {
 	const inline = p.tokens ?? [];
 	return inline.length === 1 && inline[0]?.type === "strong";
+}
+
+/** When marked merges `**Abstract**\nbody` into one paragraph, split heading from body. */
+function splitLeadingSectionHeading(p: Tokens.Paragraph): { section: string; body: string } | null {
+	const inline = p.tokens ?? [];
+	if (inline.length < 2 || inline[0]?.type !== "strong") return null;
+	const headingText = flattenTokens([inline[0]!]).trim();
+	const section = sectionHeadingLabel(headingText);
+	if (!section) return null;
+	const body = flattenTokens(inline.slice(1)).replace(/^\s*[:.\-–—]\s*/, "").trim();
+	return { section, body };
+}
+
+/**
+ * Split `**Themes**\nbody` / `**Framework:** body` into a subsection heading + body.
+ * Avoids treating same-line inline emphasis (`**critical** findings…`) as a heading.
+ */
+function splitLeadingSubsectionHeading(
+	p: Tokens.Paragraph,
+): { heading: string; body: string } | null {
+	const inline = p.tokens ?? [];
+	if (!inline.length || inline[0]?.type !== "strong") return null;
+
+	const rawHeading = flattenTokens([inline[0]!]).trim();
+	const heading = rawHeading.replace(/:+\s*$/, "").trim();
+	if (!heading || heading.length > 80) return null;
+	if (sectionHeadingLabel(heading)) return null;
+
+	if (inline.length === 1) {
+		return { heading, body: "" };
+	}
+
+	const restRaw = inline
+		.slice(1)
+		.map((t) => {
+			const g = t as Tokens.Generic;
+			return typeof g.raw === "string" ? g.raw : typeof g.text === "string" ? g.text : "";
+		})
+		.join("");
+	const hasLineBreak = /^\s*\n/.test(restRaw);
+	const hadColon = /:\s*$/.test(rawHeading) || /^\s*:/.test(restRaw);
+	if (!hasLineBreak && !hadColon) return null;
+
+	const body = flattenTokens(inline.slice(1)).replace(/^\s*[:.\-–—]\s*/, "").trim();
+	return { heading, body };
 }
 
 function sectionHeadingLabel(text: string): string | null {
@@ -340,6 +405,9 @@ function shouldSkipMetadataLine(text: string, skipKeys: Set<string>, extractedTi
 	const cleaned = stripLeadingTitleLabel(text);
 	if (!cleaned) return true;
 
+	// Never drop canonical section headings (normalizePdfText must not erase these).
+	if (sectionHeadingLabel(cleaned)) return false;
+
 	const key = cleaned.toLowerCase();
 	if (skipKeys.has(key)) return true;
 	if (isGenericTitle(cleaned)) return true;
@@ -372,8 +440,17 @@ function buildBlocks(markdown: string, meta: ResearchPaperMeta): PdfBlock[] {
 	const pushBody = (text: string) => {
 		if (shouldSkipMetadataLine(text, skipKeys, extractedTitle)) return;
 		const cleaned = stripLeadingTitleLabel(text);
-		if (cleaned) blocks.push({ kind: "body", text: cleaned });
+		if (!cleaned) return;
+		if (inReferences) {
+			for (const entry of splitReferenceEntries(cleaned)) {
+				blocks.push({ kind: "reference", text: entry });
+			}
+			return;
+		}
+		blocks.push({ kind: "body", text: cleaned });
 	};
+
+	let inReferences = false;
 
 	for (const token of marked.lexer(markdown.trim())) {
 		if (token.type === "heading") {
@@ -382,9 +459,10 @@ function buildBlocks(markdown: string, meta: ResearchPaperMeta): PdfBlock[] {
 
 			const section = sectionHeadingLabel(text);
 			if (section) {
+				inReferences = /^references$/i.test(section);
 				blocks.push({ kind: "section", text: section });
 			} else {
-				pushBody(text);
+				blocks.push({ kind: "subsection", text: text.replace(/:+\s*$/, "").trim() });
 			}
 			continue;
 		}
@@ -411,16 +489,35 @@ function buildBlocks(markdown: string, meta: ResearchPaperMeta): PdfBlock[] {
 					continue;
 				}
 			}
-			const text = flattenTokens(p.tokens);
+			const text = flattenTokens(p.tokens, { keepLinkUrls: inReferences });
 			if (!text || shouldSkipMetadataLine(text, skipKeys, extractedTitle)) continue;
 
 			if (isBoldOnlyParagraph(p)) {
 				const section = sectionHeadingLabel(text);
 				if (section) {
+					inReferences = /^references$/i.test(section);
 					blocks.push({ kind: "section", text: section });
 					continue;
 				}
-				pushBody(text);
+				blocks.push({
+					kind: "subsection",
+					text: text.replace(/:+\s*$/, "").trim(),
+				});
+				continue;
+			}
+
+			const leading = splitLeadingSectionHeading(p);
+			if (leading) {
+				inReferences = /^references$/i.test(leading.section);
+				blocks.push({ kind: "section", text: leading.section });
+				if (leading.body) pushBody(leading.body);
+				continue;
+			}
+
+			const leadingSub = splitLeadingSubsectionHeading(p);
+			if (leadingSub) {
+				blocks.push({ kind: "subsection", text: leadingSub.heading });
+				if (leadingSub.body) pushBody(leadingSub.body);
 				continue;
 			}
 
@@ -432,7 +529,9 @@ function buildBlocks(markdown: string, meta: ResearchPaperMeta): PdfBlock[] {
 			const list = token as Tokens.List;
 			list.items.forEach((item, i) => {
 				const marker = list.ordered ? `${(Number(list.start) || 1) + i}.` : "•";
-				pushBody(`${marker} ${flattenTokens(inlineTokensOf(item.tokens))}`);
+				pushBody(
+					`${marker} ${flattenTokens(inlineTokensOf(item.tokens), { keepLinkUrls: inReferences })}`,
+				);
 			});
 			blocks.push({ kind: "gap" });
 			continue;
@@ -547,7 +646,95 @@ function buildBlocks(markdown: string, meta: ResearchPaperMeta): PdfBlock[] {
 		}
 	}
 
-	return pruneEmptyStudyAreaSections(blocks);
+	return pruneEmptyStudyAreaSections(coalesceFrontMatterBlocks(blocks));
+}
+
+/**
+ * Journal-style front matter: Keywords / Study area become labeled blocks
+ * (Springer-like: "Keywords term1 · term2"); Abstract keeps a section header
+ * then compact body. Skips gap tokens when pairing a heading with its following body.
+ */
+function coalesceFrontMatterBlocks(blocks: PdfBlock[]): PdfBlock[] {
+	const out: PdfBlock[] = [];
+	let inAbstract = false;
+
+	const nextContentIndex = (from: number) => {
+		let j = from;
+		while (j < blocks.length && blocks[j]?.kind === "gap") j += 1;
+		return j;
+	};
+
+	for (let i = 0; i < blocks.length; i++) {
+		const block = blocks[i]!;
+		if (block.kind === "section") {
+			const title = block.text.trim();
+
+			// Always keep Abstract as a visible section header (same weight as Introduction).
+			if (/^abstract$/i.test(title)) {
+				out.push({ kind: "section", text: "Abstract" });
+				const j = nextContentIndex(i + 1);
+				const next = blocks[j];
+				if (next?.kind === "body" && next.text.trim()) {
+					out.push({ kind: "abstractBody", text: next.text.trim() });
+					i = j;
+				}
+				inAbstract = false;
+				continue;
+			}
+
+			inAbstract = false;
+			if (/^keywords$/i.test(title)) {
+				const j = nextContentIndex(i + 1);
+				const next = blocks[j];
+				if (next?.kind === "body" && next.text.trim()) {
+					out.push({ kind: "keywords", text: formatKeywordTerms(next.text) });
+					i = j;
+					continue;
+				}
+			}
+			if (/^study\s*area$/i.test(title)) {
+				const j = nextContentIndex(i + 1);
+				const next = blocks[j];
+				if (next?.kind === "body" && next.text.trim()) {
+					out.push({ kind: "studyArea", text: next.text.trim() });
+					i = j;
+					continue;
+				}
+			}
+			out.push(block);
+			continue;
+		}
+		// Body that still looks like inline Keywords / Study area / Abstract
+		if (block.kind === "body") {
+			const abs = block.text.match(/^Abstract\s*:\s*(.+)$/i);
+			if (abs?.[1]?.trim()) {
+				out.push({ kind: "section", text: "Abstract" });
+				out.push({ kind: "abstractBody", text: abs[1].trim() });
+				inAbstract = false;
+				continue;
+			}
+			if (/^Abstract\s*:?\s*$/i.test(block.text.trim())) {
+				out.push({ kind: "section", text: "Abstract" });
+				inAbstract = true;
+				continue;
+			}
+			const kw = block.text.match(/^Keywords?\s*:?\s*(.+)$/i);
+			if (kw?.[1] && !/\bStudy\s+area\b/i.test(block.text)) {
+				inAbstract = false;
+				out.push({ kind: "keywords", text: formatKeywordTerms(kw[1]) });
+				continue;
+			}
+			if (inAbstract) {
+				out.push({ kind: "abstractBody", text: block.text });
+				continue;
+			}
+		}
+		if (block.kind === "keywords" || block.kind === "studyArea" || block.kind === "section") {
+			inAbstract = false;
+		}
+		out.push(block);
+	}
+	return out;
 }
 
 /** Drop a Study area heading when its body was only a geographic state name. */
@@ -556,16 +743,20 @@ function pruneEmptyStudyAreaSections(blocks: PdfBlock[]): PdfBlock[] {
 	for (let i = 0; i < blocks.length; i++) {
 		const block = blocks[i]!;
 		if (block.kind === "section" && /^study\s*area$/i.test(block.text.trim())) {
-			const next = blocks[i + 1];
+			let j = i + 1;
+			while (j < blocks.length && blocks[j]?.kind === "gap") j += 1;
+			const next = blocks[j];
 			const hasBody =
 				next &&
 				((next.kind === "body" && normalizePdfText(next.text).length > 0) ||
+					next.kind === "studyArea" ||
 					next.kind === "table" ||
 					next.kind === "chart" ||
 					next.kind === "image" ||
 					next.kind === "figure");
 			if (!hasBody) continue;
 		}
+		if (block.kind === "studyArea" && !normalizePdfText(block.text)) continue;
 		out.push(block);
 	}
 	return out;
@@ -630,7 +821,10 @@ export async function renderResearchPaperPdf(
 	content: string,
 	meta: ResearchPaperMeta = {},
 ): Promise<import("jspdf").jsPDF | null> {
-	const markdown = normalizeMarkdownForPdf(content);
+	// Promote **Abstract** → ## Abstract (same as edit preview) so marked emits heading tokens.
+	const markdown = normalizeMarkdownForPdf(
+		promoteBoldSectionsForDisplay(formatResearchPaperReferences(content)),
+	);
 	if (!markdown) return null;
 
 	const { jsPDF } = await import("jspdf");
@@ -654,6 +848,38 @@ export async function renderResearchPaperPdf(
 		}
 	};
 
+	const drawJustifiedLine = (
+		line: string,
+		x: number,
+		lineY: number,
+		width: number,
+		isLastLine: boolean,
+	) => {
+		const words = line.trim().split(/\s+/).filter(Boolean);
+		if (words.length <= 1 || isLastLine) {
+			doc.text(line, x, lineY);
+			return;
+		}
+
+		const wordsWidth = words.reduce((sum, word) => sum + doc.getTextWidth(word), 0);
+		const gaps = words.length - 1;
+		const naturalSpace = doc.getTextWidth(" ");
+		const extra = width - wordsWidth;
+		// Only stretch when the line is reasonably full; avoid huge gaps on short lines.
+		if (extra <= naturalSpace * gaps * 0.15 || extra / gaps > naturalSpace * 4) {
+			doc.text(line, x, lineY);
+			return;
+		}
+
+		const gapWidth = extra / gaps;
+		let cursor = x;
+		for (let i = 0; i < words.length; i++) {
+			const word = words[i]!;
+			doc.text(word, cursor, lineY);
+			cursor += doc.getTextWidth(word) + (i < gaps ? gapWidth : 0);
+		}
+	};
+
 	const drawLines = (
 		lines: string[],
 		size: number,
@@ -661,17 +887,18 @@ export async function renderResearchPaperPdf(
 		factor: number,
 		x: number,
 		color: [number, number, number] = COLOR.text,
-		_align: "left" | "justify" = "left",
+		align: "left" | "justify" = "left",
 		lineMaxWidth = maxWidth,
 	) => {
 		doc.setFont(FONT, face);
 		doc.setFontSize(size);
 		doc.setTextColor(...color);
 		const lh = lineHeight(size, factor);
+		const drawn: string[] = [];
 		for (const rawLine of lines) {
 			const line = normalizePdfText(rawLine);
 			if (!line) {
-				y += lh * 0.35;
+				drawn.push("");
 				continue;
 			}
 			doc.setFont(FONT, face);
@@ -681,14 +908,26 @@ export async function renderResearchPaperPdf(
 				doc.getTextWidth(line) > lineMaxWidth + 0.5
 					? wrapLines(doc, line, lineMaxWidth, FONT, face, size)
 					: [line];
-			for (const part of parts) {
-				ensure(lh);
-				doc.setFont(FONT, face);
-				doc.setFontSize(size);
-				doc.setTextColor(...color);
-				doc.text(part, x, y);
-				y += lh;
+			drawn.push(...parts);
+		}
+
+		for (let i = 0; i < drawn.length; i++) {
+			const part = drawn[i]!;
+			if (!part) {
+				y += lh * 0.35;
+				continue;
 			}
+			ensure(lh);
+			doc.setFont(FONT, face);
+			doc.setFontSize(size);
+			doc.setTextColor(...color);
+			if (align === "justify") {
+				const isLastLine = i === drawn.length - 1 || !drawn[i + 1];
+				drawJustifiedLine(part, x, y, lineMaxWidth, isLastLine);
+			} else {
+				doc.text(part, x, y);
+			}
+			y += lh;
 		}
 	};
 
@@ -703,6 +942,45 @@ export async function renderResearchPaperPdf(
 		const width = maxWidth - indent;
 		const lines = wrapLines(doc, text, width, FONT, face, size);
 		drawLines(lines, size, face, factor, PAGE.left + indent, COLOR.text, align, width);
+	};
+
+	/** Bibliography entry: first line flush left, wrapped lines hanging-indented, left-aligned. */
+	const drawReferenceEntry = (text: string) => {
+		const hang = 18;
+		const words = normalizePdfText(text).split(/\s+/).filter(Boolean);
+		if (!words.length) return;
+
+		const lh = lineHeight(SIZE.body, LEADING.body);
+		doc.setFont(FONT, "normal");
+		doc.setFontSize(SIZE.body);
+		doc.setTextColor(...COLOR.text);
+
+		let lineWords: string[] = [];
+		let lineIndex = 0;
+
+		const lineMaxWidth = () => (lineIndex === 0 ? maxWidth : maxWidth - hang);
+		const lineX = () => (lineIndex === 0 ? PAGE.left : PAGE.left + hang);
+
+		const flush = () => {
+			if (!lineWords.length) return;
+			ensure(lh);
+			doc.setFont(FONT, "normal");
+			doc.setFontSize(SIZE.body);
+			doc.setTextColor(...COLOR.text);
+			doc.text(lineWords.join(" "), lineX(), y);
+			y += lh;
+			lineWords = [];
+			lineIndex += 1;
+		};
+
+		for (const word of words) {
+			const trial = lineWords.length ? `${lineWords.join(" ")} ${word}` : word;
+			if (lineWords.length && doc.getTextWidth(trial) > lineMaxWidth() + 0.5) {
+				flush();
+			}
+			lineWords.push(word);
+		}
+		flush();
 	};
 
 	const drawCenter = (
@@ -957,6 +1235,34 @@ export async function renderResearchPaperPdf(
 		y += 12;
 	};
 
+	/** Springer-style labeled line: bold label + regular value on one line. */
+	const drawLabeledMeta = (label: string, value: string) => {
+		const clean = normalizePdfText(value);
+		if (!clean) return;
+		const lh = lineHeight(SIZE.body, LEADING.body);
+		doc.setFont(FONT, "bold");
+		doc.setFontSize(SIZE.body);
+		doc.setTextColor(...COLOR.text);
+		const labelText = `${label}  `;
+		const labelWidth = doc.getTextWidth(labelText);
+		const valueWidth = maxWidth - labelWidth;
+		const valueLines = wrapLines(doc, clean, Math.max(80, valueWidth), FONT, "normal", SIZE.body);
+		ensure(lh * Math.max(1, valueLines.length));
+		doc.setFont(FONT, "bold");
+		doc.setFontSize(SIZE.body);
+		doc.text(labelText, PAGE.left, y);
+		doc.setFont(FONT, "normal");
+		if (valueLines[0]) {
+			doc.text(valueLines[0], PAGE.left + labelWidth, y);
+		}
+		y += lh;
+		for (const line of valueLines.slice(1)) {
+			ensure(lh);
+			doc.text(line, PAGE.left + labelWidth, y);
+			y += lh;
+		}
+	};
+
 	const blocks = buildBlocks(markdown, meta);
 
 	for (const block of blocks) {
@@ -964,7 +1270,7 @@ export async function renderResearchPaperPdf(
 		switch (block.kind) {
 			case "title":
 				drawCenter(text, SIZE.title, "bold", LEADING.title);
-				y += 8;
+				y += 10;
 				break;
 			case "byline":
 				drawCenter(text, SIZE.byline, "normal", LEADING.body);
@@ -972,24 +1278,51 @@ export async function renderResearchPaperPdf(
 				break;
 			case "affiliation":
 				drawCenter(text, SIZE.affiliation, "italic", LEADING.body, COLOR.muted);
-				y += 8;
+				y += 10;
 				break;
 			case "rule":
 				ensure(16);
 				doc.setDrawColor(...COLOR.rule);
-				doc.setLineWidth(0.75);
+				doc.setLineWidth(0.6);
 				doc.line(PAGE.left, y, pageW - PAGE.right, y);
+				y += 16;
+				break;
+			case "section": {
+				// Same visual weight for Abstract as Introduction / other IMRaD headings.
 				y += 14;
-				break;
-			case "section":
-				y += 10;
 				drawLeft(text, SIZE.section, "bold", LEADING.section);
-				y += 4;
+				y += 8;
 				break;
-			case "body":
-				drawLeft(text, SIZE.body, "normal", LEADING.body, 0, "left");
+			}
+			case "subsection": {
+				y += 10;
+				drawLeft(text, SIZE.subsection, "bold", LEADING.section);
 				y += 6;
 				break;
+			}
+			case "abstractBody":
+				drawLeft(text, SIZE.body, "normal", LEADING.body, 0, "justify");
+				y += 8;
+				break;
+			case "keywords":
+				y += 6;
+				drawLabeledMeta("Keywords", formatKeywordTerms(text));
+				y += 8;
+				break;
+			case "studyArea":
+				y += 4;
+				drawLabeledMeta("Study area", text);
+				y += 12;
+				break;
+			case "body":
+				drawLeft(text, SIZE.body, "normal", LEADING.body, 0, "justify");
+				y += 8;
+				break;
+			case "reference": {
+				drawReferenceEntry(text);
+				y += 14;
+				break;
+			}
 			case "gap":
 				y += 8;
 				break;

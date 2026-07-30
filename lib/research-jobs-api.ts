@@ -9,6 +9,8 @@ export type ResearchJob = {
 	sessionId: string | null;
 	topic: string;
 	status: ResearchJobStatus;
+	/** 0–100 generation progress from the server. */
+	progress: number;
 	savedResearchId: string | null;
 	error: string | null;
 	createdAt: string;

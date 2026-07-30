@@ -172,13 +172,24 @@ function extractTitleAndJournal(body: string, sourceType: SourceType): {
 	let work = body;
 
 	if (sourceType === "website") {
-		const titleMatch = work.match(/^["']?(.+?)["']?\.?\s*(.+)?$/);
-		if (titleMatch) {
+		// Prefer first full sentence as title (avoid non-greedy single-letter matches).
+		const sentence = work.match(/^["']([^"']+)["']\.?\s*(.*)$/);
+		if (sentence) {
 			return {
-				title: titleMatch[1]!.replace(/^["']|["']$/g, "").trim(),
-				siteName: titleMatch[2]?.replace(/[.,]+$/, "").trim(),
+				title: sentence[1]!.trim(),
+				siteName: sentence[2]?.replace(/[.,]+$/, "").trim() || undefined,
 			};
 		}
+		const dotted = work.match(/^(.+?)\.\s+(.+)$/);
+		if (dotted && dotted[1]!.trim().length > 2) {
+			return {
+				title: dotted[1]!.trim(),
+				siteName: dotted[2]!.replace(/[.,]+$/, "").trim() || undefined,
+			};
+		}
+		return {
+			title: work.replace(/^["']|["']$/g, "").replace(/[.,]+$/, "").trim(),
+		};
 	}
 
 	if (sourceType === "chapter") {

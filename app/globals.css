@@ -19203,6 +19203,67 @@ a.sc-saved-card-title:hover {
   color: #b91c1c;
 }
 
+.saved-research-notice-warn {
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.saved-research-refs-issues {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-weight: 500;
+}
+
+.saved-research-refs-issues strong {
+  font-weight: 700;
+}
+
+.saved-research-refs-issues ul {
+  margin: 0;
+  padding-left: 1.15rem;
+}
+
+.saved-research-refs-issues p {
+  margin: 0.25rem 0 0;
+}
+
+.saved-research-citation-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  padding: 0.85rem 1rem;
+  border-radius: 14px;
+  border: 1px solid #dbe3ef;
+  background: #fff;
+}
+
+.saved-research-citation-bar-main {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.saved-research-citation-bar-main .ref-style-select-wrap {
+  margin-bottom: 0;
+  max-width: 28rem;
+}
+
+.saved-research-citation-bar-hint {
+  margin: 0.35rem 0 0;
+  font-size: 0.75rem;
+  color: var(--text-muted, #64748b);
+  font-weight: 500;
+}
+
+.saved-research-citation-bar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .saved-research-effort {
   display: flex;
   flex-direction: column;
@@ -19986,6 +20047,54 @@ a.sc-saved-card-title:hover {
   color: var(--text-secondary);
 }
 
+.research-paper-loading-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.research-paper-loading-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-top: 0.35rem;
+}
+
+.research-paper-loading-progress-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.research-paper-loading-progress-caption {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.research-paper-loading-progress-value {
+  font-size: 1.125rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.research-paper-loading-progress-track {
+  height: 0.5rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border, #d7dde8) 70%, transparent);
+  overflow: hidden;
+}
+
+.research-paper-loading-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent, #2563eb);
+  transition: width 0.35s ease;
+}
+
 .research-paper-loading-student .research-paper-loading-card {
   border: none;
   box-shadow: 0 10px 28px rgba(28, 45, 61, 0.1);
@@ -19994,6 +20103,10 @@ a.sc-saved-card-title:hover {
 .research-paper-loading-student .research-paper-loading-spinner {
   border-color: rgba(13, 148, 136, 0.2);
   border-top-color: #0d9488;
+}
+
+.research-paper-loading-student .research-paper-loading-progress-fill {
+  background: #0d9488;
 }
 
 .research-paper-complete-card {
@@ -23755,12 +23868,17 @@ a.sc-saved-card-title:hover {
   right: 1.25rem;
   bottom: 1.25rem;
   z-index: 1200;
-  display: flex;
+  display: grid;
+  grid-template-columns: auto auto auto minmax(0, 1fr);
+  grid-template-areas:
+    "dot label percent topic"
+    "bar bar bar bar";
   align-items: center;
-  gap: 0.55rem;
+  column-gap: 0.55rem;
+  row-gap: 0.4rem;
   max-width: min(22rem, calc(100vw - 2rem));
-  padding: 0.65rem 0.9rem;
-  border-radius: 999px;
+  padding: 0.65rem 0.9rem 0.55rem;
+  border-radius: 1rem;
   border: 1px solid color-mix(in srgb, var(--border, #d7dde8) 80%, transparent);
   background: color-mix(in srgb, var(--surface, #fff) 92%, transparent);
   box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
@@ -23770,6 +23888,7 @@ a.sc-saved-card-title:hover {
 }
 
 .research-job-chip-dot {
+  grid-area: dot;
   width: 0.55rem;
   height: 0.55rem;
   border-radius: 50%;
@@ -23779,15 +23898,42 @@ a.sc-saved-card-title:hover {
 }
 
 .research-job-chip-label {
+  grid-area: label;
   font-weight: 600;
   white-space: nowrap;
 }
 
+.research-job-chip-percent {
+  grid-area: percent;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent, #2563eb);
+  white-space: nowrap;
+}
+
 .research-job-chip-topic {
+  grid-area: topic;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   opacity: 0.72;
+}
+
+.research-job-chip-bar {
+  grid-area: bar;
+  display: block;
+  height: 0.28rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border, #d7dde8) 75%, transparent);
+  overflow: hidden;
+}
+
+.research-job-chip-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent, #2563eb);
+  transition: width 0.35s ease;
 }
 
 .research-job-popup-body {
@@ -23815,6 +23961,7 @@ a.sc-saved-card-title:hover {
     right: 1rem;
     bottom: 1rem;
     max-width: none;
+    grid-template-columns: auto auto auto minmax(0, 1fr);
   }
 
   .research-job-chip-topic {

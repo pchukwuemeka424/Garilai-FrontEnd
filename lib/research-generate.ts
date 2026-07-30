@@ -37,12 +37,18 @@ export function buildResearchPaperPrompt(input: {
 			? "Derive aims, methods, findings, and claims from the research note (and any study framing listed). Prefer the note over generic assumptions."
 			: "Follow the outline's research question, objectives, methodology, literature themes, expected contributions, and timeline.",
 		"Expand each section into substantive prose with in-text citations and a References section in the selected style.",
-		"Use this exact IMRaD order with bold-only headings on their own lines: **Title**, **Abstract**, **Keywords:** …, **Study area:** …, **Introduction**, **Literature Review**, **Methodology**, **Results / Analysis**, **Discussion**, **Conclusion**, **References**.",
+		"Use this exact IMRaD order with bold-only headings on their own lines: **Title**, **Abstract**, **Keywords**, **Study area**, **Introduction**, **Literature Review**, **Methodology**, **Results / Analysis**, **Discussion**, **Conclusion**, **References**.",
+		"After **Keywords**, put terms on the next line separated by middots (term1 · term2 · term3). After **Study area**, put the discipline on the next line. Never merge Keywords and Study area on one line.",
 		"Never skip **Abstract** or **Introduction**; do not merge them with other sections.",
+		"In-text citation floors (distinct author–year from the retrieval bank): Abstract 0 (no cites — never cite Abstract); Introduction 8–12; Literature Review 10–16; Methodology 4–8; Results / Analysis 3–6; Discussion 8–12; Conclusion 3–6 — scale down if fewer retrieved papers exist. Prefer grounded paraphrases over density padding.",
+		"Cite ONLY papers from the conversation literature retrieval / research API bank. Do not invent authors, years, or titles.",
+		"Paraphrase / synthesize bank evidence cards and abstracts into literature claims. Every cited sentence must be supported by the cited paper’s abstract — no decorative cites.",
+		"References list: exactly the bank papers cited in the body (matching each in-text cite). A References section that invents different sources is invalid.",
+		"Paper quality: state a clear research gap; synthesize literature thematically (not paper-by-paper); include explicit Limitations; use cautious language when evidence is thin; keep questions → methods → findings → discussion coherent.",
 		"Do not use hash (#) Markdown headings or horizontal rules (---, --).",
 		fromNote
-			? "For Literature Review, use only what is supported by the research note references/findings and standard scholarly practice — do not fabricate a long outline-driven literature plan."
-			: "Use sources from the outline's literature review and Sources for further reading where appropriate.",
+			? "For Literature Review, use only what is supported by the research note references/findings and bank evidence cards — do not fabricate a long outline-driven literature plan."
+			: "Use sources from the outline's literature review and Sources for further reading only when they also appear in the retrieval bank; paraphrase bank abstracts for in-text cites.",
 		"Create concise Markdown tables for useful comparisons, literature synthesis, methods, or results.",
 		"Every table must use valid GitHub-flavored Markdown: one pipe-delimited header row, an immediate separator row such as `| --- | --- |`, then pipe-delimited data rows. Never imitate a table with plain text and pipe characters.",
 		"Never create a section titled “Data Source and Variables” (or similar). Dataset samples belong only in Results / Analysis, capped at 5 rows.",

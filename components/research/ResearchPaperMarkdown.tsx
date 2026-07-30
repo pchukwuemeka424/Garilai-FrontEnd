@@ -318,6 +318,7 @@ function MarkdownSection({ content }: { content: string }) {
 						{children}
 					</a>
 				),
+				h2: ({ children }) => <h2 className="paper-section-heading">{children}</h2>,
 				h3: ({ children }) => <h3 className="paper-section-heading">{children}</h3>,
 			}}
 		>

@@ -79,8 +79,17 @@ export function applyAgentEvent(
 
 	if (agentEvent.type === "message_end" || agentEvent.type === "turn_end") {
 		const text = extractTextFromMessage(agentEvent.message);
-		if (text && !assistantDraftId) {
-			next.push({ id: crypto.randomUUID(), role: "assistant", content: text });
+		if (text) {
+			if (assistantDraftId) {
+				const index = next.findIndex((m) => m.id === assistantDraftId);
+				if (index >= 0) {
+					next[index] = { ...next[index]!, content: text };
+				} else {
+					next.push({ id: crypto.randomUUID(), role: "assistant", content: text });
+				}
+			} else {
+				next.push({ id: crypto.randomUUID(), role: "assistant", content: text });
+			}
 		}
 		return { messages: next, assistantDraftId: null };
 	}
