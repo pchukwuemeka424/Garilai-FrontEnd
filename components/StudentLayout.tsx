@@ -5,6 +5,7 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import { StudentSidebar } from "@/components/StudentSidebar";
 import { StudentTopBar } from "@/components/StudentTopBar";
+import { TokenExhaustedModal } from "@/components/TokenExhaustedModal";
 import { useAuth } from "@/hooks/useAuth";
 import { dashboardPathForRole } from "@/lib/dashboard-routes";
 
@@ -65,6 +66,8 @@ export function StudentLayout({ children }: Props) {
 				<StudentTopBar onMenuClick={() => setSidebarOpen(true)} />
 				<main className={isFluid ? "stu-content stu-content-fluid" : "stu-content"}>{children}</main>
 			</div>
+
+			<TokenExhaustedModal />
 		</div>
 	);
 }

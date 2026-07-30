@@ -1319,6 +1319,21 @@ a:hover {
   cursor: wait;
 }
 
+.token-exhausted-dialog .confirm-dialog-actions {
+  justify-content: center;
+}
+
+.token-exhausted-dialog .confirm-dialog-actions .primary-btn {
+  flex: 1;
+  justify-content: center;
+  min-height: 2.5rem;
+}
+
+.token-exhausted-icon {
+  background: color-mix(in srgb, var(--warning, #d97706) 16%, transparent);
+  color: var(--warning, #d97706);
+}
+
 .icon-btn {
   border: none;
   background: var(--bg-hover);

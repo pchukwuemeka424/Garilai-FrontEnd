@@ -112,7 +112,8 @@ function ResearchOutlineContent({ variant = "lecturer" }: Props) {
 		// Research note selected → never call outline generation.
 		if (context.sources?.projectIds?.length) return null;
 		if (!hasTokens) {
-			const message = "You have used all your research tokens. Contact your instructor for more.";
+			const message =
+				"Your research tokens are exhausted. Please contact your university to request a reset.";
 			setError(message);
 			return null;
 		}

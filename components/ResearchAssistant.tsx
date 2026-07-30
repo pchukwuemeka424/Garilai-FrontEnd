@@ -1401,9 +1401,8 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 									)}
 									{!hasTokens && (
 										<div className="banner banner-error research-error">
-											{variant === "student"
-												? "You have used all your research tokens. Contact your instructor for more."
-												: "You have used all your research tokens. Contact support for more."}
+											Your research tokens are exhausted. Please contact your university to request a
+											reset.
 										</div>
 									)}
 									{renderResults()}

@@ -17,6 +17,7 @@ import {
 	NIGERIA_DEPARTMENT_GROUPS,
 	NIGERIA_PROGRAM_LEVELS,
 } from "@/lib/nigeria-departments";
+import { isFreeEmail, LECTURER_FREE_EMAIL_ERROR } from "@/lib/email";
 import {
 	fetchOnboardedUniversities,
 	type OnboardedUniversity,
@@ -158,6 +159,11 @@ export function RegisterScreen({ defaultRole = "lecturer" }: Props) {
 			return;
 		}
 
+		if (!isStudent && isFreeEmail(email)) {
+			setError(LECTURER_FREE_EMAIL_ERROR);
+			return;
+		}
+
 		if (password !== confirmPassword) {
 			setError("Passwords do not match.");
 			return;
@@ -245,11 +251,20 @@ export function RegisterScreen({ defaultRole = "lecturer" }: Props) {
 							id="register-email"
 							label="Email"
 							type="email"
-							placeholder={isStudent ? "alex.johnson@gmail.com" : "jane.smith@gmail.com"}
+							placeholder={
+								isStudent
+									? "alex.johnson@gmail.com"
+									: "jane.smith@university.edu"
+							}
 							value={email}
 							onChange={(e) => setEmail(e.target.value)}
 							autoComplete="email"
 							required
+							error={
+								!isStudent && email.trim() && isFreeEmail(email)
+									? "University or professional email required"
+									: undefined
+							}
 						/>
 					</div>
 				</section>

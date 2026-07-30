@@ -40,9 +40,7 @@ export function StudentTokenQuotaBar({ quota, role }: Props) {
 			</p>
 			{depleted && (
 				<p className="stu-token-quota-warning">
-					{role === "lecturer" || role === "researcher"
-						? "Token limit reached. Contact support for more."
-						: "Token limit reached. Contact your instructor for more."}
+					Token limit reached. Contact your university to request a reset.
 				</p>
 			)}
 		</div>

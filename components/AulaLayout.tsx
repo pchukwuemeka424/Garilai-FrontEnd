@@ -6,6 +6,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { AulaRightPanel } from "@/components/AulaRightPanel";
 import { AulaSidebar } from "@/components/AulaSidebar";
 import { AulaTopBar } from "@/components/AulaTopBar";
+import { TokenExhaustedModal } from "@/components/TokenExhaustedModal";
 import { dashboardPathForRole } from "@/lib/dashboard-routes";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -69,6 +70,8 @@ export function AulaLayout({ children, showRightPanel = true, fullHeight = false
 					{showRightPanel && <AulaRightPanel />}
 				</div>
 			</div>
+
+			<TokenExhaustedModal />
 		</div>
 	);
 }
