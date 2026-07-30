@@ -729,7 +729,8 @@ function coalesceFrontMatterBlocks(blocks: PdfBlock[]): PdfBlock[] {
 				continue;
 			}
 		}
-		if (block.kind === "keywords" || block.kind === "studyArea" || block.kind === "section") {
+		// End abstract region on any following non-gap content (section already handled above).
+		if (inAbstract && block.kind !== "gap" && block.kind !== "abstractBody") {
 			inAbstract = false;
 		}
 		out.push(block);
