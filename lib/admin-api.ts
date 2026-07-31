@@ -258,6 +258,33 @@ export async function updateAdminUniversity(
 	return data.university;
 }
 
+export type BulkTokenDefaultsResult = {
+	updated: number;
+	scope: "all" | "country" | "university";
+	country: string | null;
+	universityId: string | null;
+	defaultStudentTokens: number | null;
+	defaultLecturerTokens: number | null;
+};
+
+export async function bulkUpdateAdminUniversityTokenDefaults(input: {
+	scope: "all" | "country" | "university";
+	country?: string;
+	universityId?: string;
+	defaultStudentTokens?: number | null;
+	defaultLecturerTokens?: number | null;
+}): Promise<BulkTokenDefaultsResult> {
+	const data = await adminJson<{ result: BulkTokenDefaultsResult }>(
+		"/api/admin/universities/token-defaults",
+		{
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(input),
+		},
+	);
+	return data.result;
+}
+
 export async function deleteAdminUniversity(
 	id: string,
 	confirmName: string,
