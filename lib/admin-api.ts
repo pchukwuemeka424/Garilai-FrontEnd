@@ -217,6 +217,27 @@ export async function onboardAdminUniversity(input: {
 	return data.university;
 }
 
+export type BulkOnboardResult = {
+	created: number;
+	updated: number;
+	failed: number;
+	total: number;
+	errors: Array<{ catalogueId: string; error: string }>;
+};
+
+export async function onboardAdminUniversitiesBulk(input: {
+	country?: string;
+	status?: "active" | "inactive";
+	universities: Array<{ catalogueId: string; name: string }>;
+}): Promise<BulkOnboardResult> {
+	const data = await adminJson<{ result: BulkOnboardResult }>("/api/admin/universities/bulk", {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ country: "NG", status: "active", ...input }),
+	});
+	return data.result;
+}
+
 export async function updateAdminUniversity(
 	id: string,
 	input: Partial<{
