@@ -18,7 +18,7 @@ export type AuthHeroContent = {
 
 const LOGIN_HERO: AuthHeroContent = {
 	eyebrow: "Research excellence",
-	title: "AI Built for Higher Education",
+	title: "Govern AI Built for Higher Education",
 	lead: `${APP_NAME} helps students and lecturers write research papers, build literature reviews, verify citations, and deliver publication-ready work — from undergraduate projects to postgraduate theses.`,
 	features: [
 		{

@@ -26,7 +26,6 @@ import {
   NotebookIcon,
   PlusIcon,
   ProgressIcon,
-  ReportIcon,
   SaveIcon,
   TableIcon,
   TemplateIcon,
@@ -49,7 +48,6 @@ import { ELNPanel } from '@/components/research-note/features/eln/ELNPanel'
 import { CloudSaveProvider } from '@/components/research-note/features/sync/CloudSave'
 import { assembleAllCaptured } from '@/components/research-note/ai/formatting'
 import { exportDraft } from '@/components/research-note/features/export/exporters'
-import { downloadEffortReport } from '@/components/research-note/features/effort/EffortReportPanel'
 
 const DataWorkspace = lazy(() =>
   import('@/components/research-note/features/data/DataWorkspace').then((m) => ({ default: m.DataWorkspace })),
@@ -112,7 +110,6 @@ export function NotebookView({
   const [pendingNewNote, setPendingNewNote] = useState(0)
   const [pendingTemplate, setPendingTemplate] = useState<NoteTemplateId | null>(null)
   const [exportingCaptured, setExportingCaptured] = useState(false)
-  const [exportingEffort, setExportingEffort] = useState(false)
   const [capturedError, setCapturedError] = useState<string | null>(null)
   const [guideDismissed, setGuideDismissed] = useState<Partial<Record<AiDraftTabKey, boolean>>>(
     () => loadGuideDismissed(),
@@ -161,22 +158,6 @@ export function NotebookView({
       )
     } finally {
       setExportingCaptured(false)
-    }
-  }
-
-  const onDownloadEffortReport = async () => {
-    if (exportingEffort) return
-    setExportingEffort(true)
-    setCapturedError(null)
-    try {
-      await cloud.saveNow()
-      await downloadEffortReport(projectId, 'pdf')
-    } catch (err) {
-      setCapturedError(
-        err instanceof Error ? err.message : 'Could not download effort report.',
-      )
-    } finally {
-      setExportingEffort(false)
     }
   }
 
@@ -269,16 +250,6 @@ export function NotebookView({
               </ul>
             </div>
           ))}
-          <button
-            type="button"
-            onClick={() => void onDownloadEffortReport()}
-            disabled={exportingEffort}
-            className="rn-workspace-topnav-download"
-            title="Download effort & attribution report (always available, even with no uploads or edits)"
-          >
-            <ReportIcon className="h-3.5 w-3.5" aria-hidden />
-            <span>{exportingEffort ? 'Preparing…' : 'Effort Report'}</span>
-          </button>
           <button
             type="button"
             onClick={() => void onGenerateAllCapturedPdf()}

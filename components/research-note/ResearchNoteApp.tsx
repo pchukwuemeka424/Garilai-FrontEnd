@@ -6,7 +6,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Dashboard } from "@/components/research-note/features/dashboard/Dashboard";
 import { SearchModal } from "@/components/research-note/features/search/SearchModal";
 import { useSettings } from "@/components/research-note/state/useSettings";
-import { useTheme } from "@/components/research-note/state/useTheme";
 import type { AuthUser as NoteAuthUser } from "@/components/research-note/state/useAuth";
 
 import "@/components/research-note/research-note.css";
@@ -46,7 +45,6 @@ export function ResearchNoteApp({ author, basePath = "/research/note" }: Props) 
 	);
 	const [showSearch, setShowSearch] = useState(false);
 	const ai = useSettings();
-	const theme = useTheme();
 
 	const noteUser: NoteAuthUser = {
 		id: author.id,
@@ -130,7 +128,7 @@ export function ResearchNoteApp({ author, basePath = "/research/note" }: Props) 
 	return (
 		<div
 			className={`research-note-shell${view.kind === "dashboard" ? " research-note-shell-embed" : ""}`}
-			data-theme={theme.resolved}
+			data-theme="light"
 		>
 			{body}
 		</div>

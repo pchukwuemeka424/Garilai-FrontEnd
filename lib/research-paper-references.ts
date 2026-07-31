@@ -208,7 +208,7 @@ export type ResearchReferencesIssue = {
 		| "empty_section"
 		| "missing_source"
 		| "run_on"
-		| "few_entries";
+		| "insufficient_entries";
 	message: string;
 };
 
@@ -284,10 +284,10 @@ export function validateResearchPaperReferences(content: string): ResearchRefere
 		});
 	}
 
-	if (entries.length > 0 && entries.length < 3) {
+	if (entries.length > 0 && entries.length < 25) {
 		issues.push({
-			code: "few_entries",
-			message: `Only ${entries.length} reference entr${entries.length === 1 ? "y" : "ies"} found.`,
+			code: "insufficient_entries",
+			message: `Only ${entries.length} reference entr${entries.length === 1 ? "y" : "ies"} found; minimum is 25 from the research bank.`,
 		});
 	}
 

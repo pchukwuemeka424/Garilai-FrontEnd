@@ -77,8 +77,10 @@ export const SECTION_CHECKLISTS: Record<string, SectionChecklist> = {
     avoid: [
       'Folding into Abstract or Literature Review',
       'Full results dump',
+      'Restating Abstract wording verbatim',
       'Thin citation (only 2–3 sources when more are available)',
       'Invented citations',
+      'Literature claims without bank cites, or claims beyond cited abstracts',
     ],
     useResearchApi: true,
     useInTextCitations: true,
@@ -98,6 +100,7 @@ export const SECTION_CHECKLISTS: Record<string, SectionChecklist> = {
       'Relying on only a handful of sources when many are available',
       'Invented sources',
       'Changing the research gap from Title/Abstract/Introduction',
+      'Claims not supported by the cited bank abstracts',
     ],
     useResearchApi: true,
     useInTextCitations: true,
@@ -106,15 +109,18 @@ export const SECTION_CHECKLISTS: Record<string, SectionChecklist> = {
     section: 'Materials & Methods',
     wordTarget: '600–1,200 words',
     mustCover: [
+      'Design / approach stated clearly',
       'Who/what was studied (sample, setting, materials)',
-      'How data were collected and analysed',
+      'How data were collected',
+      'Instruments, measures, software, and analysis procedures',
       'Enough detail to judge rigor / reproducibility',
-      'Ethics, instruments, software, stats (as relevant)',
+      'Ethics (as relevant); cite prior methods/standards from the bank only within scope',
     ],
     avoid: [
-      'Interpreting results',
+      'Interpreting results or reporting findings',
       'Inventing procedures not in Lab Log / notes / data',
       'Invented citations',
+      'Uncited literature claims or claims beyond cited source scope',
     ],
     useResearchApi: true,
     useInTextCitations: true,
@@ -126,7 +132,8 @@ export const SECTION_CHECKLISTS: Record<string, SectionChecklist> = {
       'What was found — facts first, little interpretation',
       'Clear link to aims/questions',
       'Report numbers and patterns from Data tables (do not invent values)',
-      'Reference each available Figure by name (e.g. Figure 1: …) and describe what it shows',
+      'Reference each available Figure/Table by name (e.g. Figure 1: …) with a one-sentence caption of what it shows',
+      'Place tables/figures near first prose mention; no orphan visuals',
       'Tables/figures that carry the main findings',
       'No new methods; no big “so what” yet',
     ],
@@ -134,7 +141,9 @@ export const SECTION_CHECKLISTS: Record<string, SectionChecklist> = {
       'Inventing numbers not in Data / Lab Log / Figures',
       'Ignoring saved Figures when they exist',
       'Full discussion / implications',
+      'Restating Abstract wording verbatim',
       'New methods not stated in Materials & Methods',
+      'Uncited literature claims beyond cited source scope',
     ],
     useResearchApi: true,
     useInTextCitations: true,
@@ -151,9 +160,11 @@ export const SECTION_CHECKLISTS: Record<string, SectionChecklist> = {
     ],
     avoid: [
       'Repeating Results without interpretation',
+      'Restating Abstract/Results summaries verbatim',
       'Thin comparison to prior work',
       'Inventing findings or sources',
       'Ignoring Title/Abstract/Introduction aims',
+      'Claims beyond what cited bank abstracts support',
     ],
     useResearchApi: true,
     useInTextCitations: true,
@@ -169,6 +180,7 @@ export const SECTION_CHECKLISTS: Record<string, SectionChecklist> = {
     avoid: [
       'New data',
       'Long literature rehash',
+      'Restating Abstract/Introduction verbatim',
       'New claims not supported earlier',
     ],
     useResearchApi: true,
@@ -230,7 +242,7 @@ export function formatSectionChecklist(section: string): string {
     'Avoid:',
     avoid,
     c.useInTextCitations
-      ? 'Use APA 7 author-date in-text citations (Author, Year) from research API papers and project References for every substantive literature claim, same convention as /research chat-paper. Deep dive with a large citation bank (~30 papers): Introduction/Discussion ≥10 distinct cites, Literature Review ≥14, other body sections ≥5–6 when the bank is large enough — synthesise across many sources.'
+      ? 'Use APA 7 author-date in-text citations (Author, Year) from research API papers and project References for every substantive literature claim, same convention as /research chat-paper. Deep dive with a large citation bank (~30 papers): Introduction/Discussion ≥10 distinct cites, Literature Review ≥14, other body sections ≥5–6 when the bank is large enough — synthesise across many sources. Stay within cited source scope; no decorative or out-of-scope claims. Strong academic English; do not restate Abstract/Results verbatim.'
       : 'Do not add in-text citations in this section.',
   ].join('\n')
 }

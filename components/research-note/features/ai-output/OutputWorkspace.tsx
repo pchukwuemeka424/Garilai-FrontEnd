@@ -273,37 +273,6 @@ export function OutputWorkspace({
                 <h3>{section ?? OUTPUT_TABS[activeOutput as OutputTabKey] ?? activeOutput}</h3>
               </div>
               <div className="rn-output-docbar-actions">
-                {canWrite &&
-                  isPublication &&
-                  section &&
-                  !isAutoManagedPublicationSection(section) && (
-                    <button
-                      type="button"
-                      className="rn-workspace-btn rn-workspace-btn-primary"
-                      disabled={Boolean(drafts.busySlot)}
-                      onClick={() => {
-                        const existing = drafts.getDraft(activeOutput, section)
-                        if (
-                          existing?.humanEdited &&
-                          draftContentToPlainText(existing.content).trim() &&
-                          !window.confirm(
-                            'This section was edited by you. Generate anyway and replace the current text? Your edits will be overwritten.',
-                          )
-                        ) {
-                          return
-                        }
-                        void drafts.generate(activeOutput, section, {
-                          existingContent: existing?.content ?? null,
-                        })
-                      }}
-                    >
-                      {drafts.busySlot === drafts.slot(activeOutput, section)
-                        ? 'Generating…'
-                        : draftContentToPlainText(draft?.content ?? '').trim()
-                          ? 'Refine with AI'
-                          : 'Generate with AI'}
-                    </button>
-                  )}
                 {canWrite && showFigureTools && (
                   <button
                     type="button"
@@ -504,8 +473,8 @@ export function OutputWorkspace({
                 label={activeSection}
                 placeholder={
                   activeSection === 'Title'
-                    ? 'e.g. Artificial Intelligence in Nigerian Higher Education'
-                    : 'e.g. artificial intelligence, higher education, Nigeria, pedagogy'
+                    ? 'e.g. Artificial Intelligence in Higher Education'
+                    : 'e.g. artificial intelligence, higher education, pedagogy, assessment'
                 }
                 value={plainText}
                 canWrite={canWrite}

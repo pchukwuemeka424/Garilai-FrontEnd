@@ -265,15 +265,37 @@ export function HomeScreen() {
 				<img className="home-hero-bg" src="/images/hero-researcher.png?v=20260730" alt="" aria-hidden />
 				<div className="home-hero-overlay" aria-hidden />
 				<div className="home-hero-content">
-					<div className="home-hero-inner home-reveal">
-						<h1 className="home-hero-title">
+					<div className="home-hero-inner">
+						<p className="home-hero-brand home-hero-animate home-hero-animate-1">{APP_NAME}</p>
+						<h1 className="home-hero-title home-hero-animate home-hero-animate-2">
 							{user ? <>Welcome back, {user.name.split(" ")[0]}</> : APP_TAGLINE}
 						</h1>
-						<p className="home-hero-lead">
+						<p className="home-hero-lead home-hero-animate home-hero-animate-3">
 							{user
 								? "Continue research, teaching and academic projects in your institutional workspace."
-								: `${APP_NAME} gives universities, colleges of education and polytechnics a purpose-built AI environment where students, lecturers and researchers can work with AI while institutions maintain visibility into AI use across academic activities.`}
+								: "A purpose-built academic AI workspace for universities — with institutional visibility built in."}
 						</p>
+						<div className="home-hero-actions home-hero-animate home-hero-animate-4">
+							{user ? (
+								<>
+									<Link href="/dashboard" className="home-btn home-btn-lg home-btn-light">
+										Open Dashboard
+									</Link>
+									<button type="button" className="home-btn home-btn-lg home-btn-ghost-light" onClick={() => logout(false)}>
+										Sign out
+									</button>
+								</>
+							) : (
+								<>
+									<Link href="/register" className="home-btn home-btn-lg home-btn-light">
+										Get Started
+									</Link>
+									<Link href="/login" className="home-btn home-btn-lg home-btn-ghost-light">
+										Sign in
+									</Link>
+								</>
+							)}
+						</div>
 					</div>
 				</div>
 			</section>
@@ -282,7 +304,7 @@ export function HomeScreen() {
 				<div className="home-section-inner home-split">
 					<div className="home-split-copy home-reveal-delay">
 						<p className="home-kicker">Overview</p>
-						<h2 className="home-section-title">AI Built for Higher Education</h2>
+						<h2 className="home-section-title">Govern AI Built for Higher Education</h2>
 						<p className="home-section-lead">
 							{APP_NAME} brings research, teaching and learning into a single academic workspace designed
 							specifically for higher education. Instead of open-ended prompting, users work through structured

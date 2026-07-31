@@ -332,6 +332,8 @@ function citationInstructions(
     `For "${agent.label}", you MUST insert at least ${minCites} distinct in-text citations by copying the "USE THIS CITE" strings exactly (e.g. (Smith, 2021)).`,
     'Synthesise across MANY bank sources — themes, methods, findings, and disagreements — do not lean on only a few papers.',
     'Place a citation after every sentence that states prior research, a gap, a definition from literature, or a comparison to prior work.',
+    'Citation scope: every literature claim must stay within what the cited bank abstract/evidence card actually supports — do not invent findings, statistics, or mechanisms beyond the source; omit ungrounded points.',
+    'No decorative cites: each cite must support the adjacent claim.',
     'Introduction especially: cite when stating the problem significance, the knowledge gap, and related prior approaches, drawing on a broad set of bank entries.',
     'Literature Review especially: organise by theme and cite multiple sources per theme; avoid one-paper-per-paragraph catalogues.',
     'When refining, keep the user write-up as the spine and ADD missing citations from the bank until the minimum is met.',
@@ -384,16 +386,17 @@ export function buildAgentPrompt(
     ? [
         `The user already has a write-up for "${agent.label}". That existing text is the primary spine.`,
         'REFINE it until EVERY item on the reader checklist is covered.',
-        'Improve clarity, structure, and academic tone.',
+        'Improve clarity, structure, and strong academic register (precise field terms; analytical verbs; no stock AI phrases).',
+        'Do not recycle Abstract/Results wording verbatim; keep this section’s distinct rhetorical job.',
         "Keep the author's topic, facts, claims, numbers, and intent.",
         'Do not rewrite into a different paper, invent new results, or change the research question.',
         agent.useInTextCitations && hasLiterature
-          ? `Add APA in-text citations from the CITATION BANK (at least ${minCites} distinct cites).`
+          ? `Add APA in-text citations from the CITATION BANK (at least ${minCites} distinct cites). Claims must stay within cited bank abstracts.`
           : 'Only add detail that is already supported by other filled sections, data, figures, or lab log.',
       ].join(' ')
     : agent.section
       ? agent.useResearchApi
-        ? `The "${agent.label}" section is empty. GENERATE it covering EVERY reader-checklist item, using research API papers as primary scholarly evidence, with APA in-text citations from the CITATION BANK.`
+        ? `The "${agent.label}" section is empty. GENERATE it covering EVERY reader-checklist item, using research API papers as primary scholarly evidence, with APA in-text citations from the CITATION BANK (claims within cited source scope only).`
         : `The "${agent.label}" section is empty. GENERATE it covering EVERY reader-checklist item from other filled sections, data, figures, and lab log.`
       : ''
 
@@ -408,14 +411,15 @@ export function buildAgentPrompt(
     refineNote,
     citeNote,
     hasLiterature
-      ? `CRITICAL CITATION RULE: Copy cite strings from the CITATION BANK into the prose. Minimum ${minCites} distinct bank citations required for this section.`
+      ? `CRITICAL CITATION RULE: Copy cite strings from the CITATION BANK into the prose. Minimum ${minCites} distinct bank citations required for this section. Do not write literature claims outside what those cites support.`
       : '',
     'Prefer notebook Materials (notes pages) when present — they are the researcher’s captured readings and ideas.',
     'When Data and/or Figures are present in Connected project evidence, Title and Abstract MUST reflect that study content (topic variables from columns/figures; Abstract key findings from the data).',
-    'Results MUST cite available Figures by name and report values from Data tables only.',
-    'Ground every claim in the write-ups, data/figures/lab log when provided, and listed literature. Do not invent data, results, or citations.',
+    'Materials & Methods: use a reproducible design → sample → collection → instruments → analysis structure; cite standards from the bank only within scope; no results in this section.',
+    'Results MUST cite available Figures/Tables by name with captions, report values from Data tables only, and link findings to aims/questions — little interpretation.',
+    'Ground every claim in the write-ups, data/figures/lab log when provided, and listed literature. Do not invent data, results, or citations. Do not expand beyond cited bank abstracts.',
     'If evidence is insufficient, note what is missing rather than fabricating.',
-    'Write clear formal academic English. Format as Markdown with appropriate headings unless the slot is Title or Keywords (plain text only).',
+    'Write strong formal academic English: precise terminology, analytical verbs, varied sentence openings; avoid stock AI phrases and cross-section summary duplication. Format as Markdown with appropriate headings unless the slot is Title or Keywords (plain text only).',
     'Do not use em dashes or en dashes. Use commas, colons, parentheses, or hyphens (-) instead.',
     'Do not add a References or bibliography section.',
     agent.section
@@ -521,6 +525,7 @@ export function buildCitationFixPrompt(
     `Copy cite strings exactly (e.g. (Smith, 2021)). Require at least ${minCites} distinct bank citations.`,
     'Do not invent sources. Do not change the study topic or invent findings.',
     'Preserve the author voice and structure. Prefer adding cites after literature claims, gap statements, and problem framing.',
+    'Only attach cites that support the adjacent claim; do not expand claims beyond what the cited bank abstract supports.',
     'Do not use em dashes. Do not add a References bibliography.',
     `Output ONLY the revised ${section} section as Markdown. No commentary.`,
   ].join(' ')

@@ -150,9 +150,11 @@ export function ResearchJobWatcher() {
 			runningJob &&
 			(runningJob.status === "queued" || runningJob.status === "running"),
 	);
-	const chipPercent = useSmoothProgress(runningJob?.progress ?? 0, {
+	const chipPercent = useSmoothProgress(Math.max(runningJob?.progress ?? 20, 20), {
 		active: showChip,
 		complete: false,
+		floor: 20,
+		autoCreep: true,
 	});
 
 	return (

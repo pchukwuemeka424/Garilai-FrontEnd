@@ -8,6 +8,7 @@ import { studentHasResearchTokens } from "@/components/StudentTokenQuota";
 import { AulaLayout } from "@/components/AulaLayout";
 import { CitationStyleSelect } from "@/components/aula/CitationStyleSelect";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { EffortReportModal } from "@/components/research/EffortReportModal";
 import { ResearchDocEditor } from "@/components/research/ResearchDocEditor";
 import { StudentLayout } from "@/components/StudentLayout";
 import {
@@ -38,6 +39,7 @@ import { fetchNotebook } from "@/lib/research-assets-api";
 import {
 	bandLabel,
 	computePaperEffort,
+	downloadPaperEffortReport,
 	emptyMaterialCounts,
 	materialCountsFromNotebook,
 	materialCountsFromSources,
@@ -49,8 +51,6 @@ import {
 	formatResearchPaperReferences,
 	reformatResearchPaperReferencesByStyle,
 	validateAndFormatResearchPaperReferences,
-	validateResearchPaperReferences,
-	type ResearchReferencesValidation,
 } from "@/lib/research-paper-references";
 import { promoteBoldSectionsForDisplay } from "@/lib/research-paper-sections";
 import { researchPaperWorkspacePath } from "@/lib/research-generate-routes";
@@ -93,14 +93,14 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 	const [saving, setSaving] = useState(false);
 	const [notice, setNotice] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
-	const [refValidation, setRefValidation] = useState<ResearchReferencesValidation | null>(null);
-	const [fixingRefs, setFixingRefs] = useState(false);
 	const [applyingStyle, setApplyingStyle] = useState(false);
 	const [citationStyle, setCitationStyle] = useState<CitationStyle>(DEFAULT_CITATION_STYLE);
 	const [pendingDelete, setPendingDelete] = useState(false);
 	const [pendingRegenerate, setPendingRegenerate] = useState(false);
 	const [regenerating, setRegenerating] = useState(false);
 	const [deleting, setDeleting] = useState(false);
+	const [effortReportOpen, setEffortReportOpen] = useState(false);
+	const [downloadingEffort, setDownloadingEffort] = useState(false);
 	const [materials, setMaterials] = useState<PaperMaterialCounts>(emptyMaterialCounts());
 
 	useEffect(() => {
@@ -127,10 +127,9 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 				return;
 			}
 
-			const { content: formatted, validation, changed } = validateAndFormatResearchPaperReferences(
+			const { content: formatted, changed } = validateAndFormatResearchPaperReferences(
 				loaded.content,
 			);
-			setRefValidation(validation);
 
 			let nextPaper = loaded;
 			if (changed) {
@@ -140,11 +139,7 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 				});
 				if (result.paper) {
 					nextPaper = result.paper;
-					setNotice(
-						validation.ok
-							? "References validated and formatted."
-							: "References formatted. Some issues remain — review below.",
-					);
+					setNotice("References formatted.");
 					window.setTimeout(() => setNotice(null), 5000);
 				} else {
 					nextPaper = { ...loaded, content: formatted };
@@ -214,17 +209,42 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 		[liveContent, paper?.aiBaselineContent, paper?.content, paper?.humanEdited, dirty, topic, materials],
 	);
 
+	const effortAuthor = useMemo(
+		() => ({
+			name: user?.name ?? null,
+			email: user?.email ?? null,
+			department: user?.department ?? null,
+			institution: user?.institution ?? null,
+		}),
+		[user?.name, user?.email, user?.department, user?.institution],
+	);
+
 	const formattedContent = useMemo(
 		() => (content.trim() ? formatResearchPaperReferences(content) : ""),
 		[content],
 	);
 	const displayTitle = extractPaperTitle(formattedContent || content, topic || "Research paper");
 
-	const liveRefValidation = useMemo(
-		() => (content.trim() ? validateResearchPaperReferences(content) : null),
-		[content],
-	);
-	const refsStatus = liveRefValidation ?? refValidation;
+	const handleDownloadEffortReport = useCallback(async () => {
+		setDownloadingEffort(true);
+		setError(null);
+		try {
+			await downloadPaperEffortReport({
+				title: displayTitle,
+				topic,
+				effort,
+				author: effortAuthor,
+			});
+		} catch (downloadError) {
+			setError(
+				downloadError instanceof Error
+					? downloadError.message
+					: "Could not download effort report.",
+			);
+		} finally {
+			setDownloadingEffort(false);
+		}
+	}, [displayTitle, topic, effort, effortAuthor]);
 
 	const paperMeta = useMemo(
 		() => ({
@@ -236,10 +256,9 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 		[user?.name, user?.department, user?.institution, topic],
 	);
 
-	const applyFormattedContent = useCallback((next: string, validation: ResearchReferencesValidation) => {
+	const applyFormattedContent = useCallback((next: string) => {
 		setContent(next);
 		setEditorHtml(markdownToDocHtml(promoteBoldSectionsForDisplay(next)));
-		setRefValidation(validation);
 		setDirty(true);
 	}, []);
 
@@ -248,38 +267,6 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 		setContent(htmlToOutlineText(html));
 		setDirty(true);
 	}, []);
-
-	const handleFixReferences = useCallback(async () => {
-		if (!id) return;
-		setFixingRefs(true);
-		setError(null);
-		const raw = htmlToOutlineText(editorHtml) || content;
-		const { content: formatted, validation, changed } = validateAndFormatResearchPaperReferences(raw);
-		applyFormattedContent(formatted, validation);
-
-		const result = await updateSavedResearchPaper(id, { topic, content: formatted });
-		setFixingRefs(false);
-		if (!result.paper) {
-			setError(result.error ?? "Could not save formatted references.");
-			return;
-		}
-		setPaper(result.paper);
-		setContent(result.paper.content);
-		setEditorHtml(
-			markdownToDocHtml(promoteBoldSectionsForDisplay(formatResearchPaperReferences(result.paper.content))),
-		);
-		setDirty(false);
-		setNotice(
-			changed
-				? validation.ok
-					? "References validated and formatted."
-					: "References formatted. Some issues remain."
-				: validation.ok
-					? "References already look good."
-					: "References checked — some issues remain.",
-		);
-		window.setTimeout(() => setNotice(null), 5000);
-	}, [applyFormattedContent, content, editorHtml, id, topic]);
 
 	const handleCitationStyleChange = useCallback((style: CitationStyle | "") => {
 		if (!style) return;
@@ -295,8 +282,8 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 
 		const raw = htmlToOutlineText(editorHtml) || content;
 		const styled = reformatResearchPaperReferencesByStyle(raw, citationStyle);
-		const { content: formatted, validation } = validateAndFormatResearchPaperReferences(styled.content);
-		applyFormattedContent(formatted, validation);
+		const { content: formatted } = validateAndFormatResearchPaperReferences(styled.content);
+		applyFormattedContent(formatted);
 
 		const result = await updateSavedResearchPaper(id, { topic, content: formatted });
 		setApplyingStyle(false);
@@ -324,8 +311,7 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 	const handleSave = useCallback(async () => {
 		if (!id || !dirty) return;
 		const raw = htmlToOutlineText(editorHtml);
-		const { content: nextContent, validation } = validateAndFormatResearchPaperReferences(raw);
-		setRefValidation(validation);
+		const { content: nextContent } = validateAndFormatResearchPaperReferences(raw);
 		setSaving(true);
 		setError(null);
 		const result = await updateSavedResearchPaper(id, { topic, content: nextContent });
@@ -341,21 +327,16 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 			markdownToDocHtml(promoteBoldSectionsForDisplay(formatResearchPaperReferences(result.paper.content))),
 		);
 		setDirty(false);
-		setNotice(
-			validation.ok
-				? "Changes saved. References validated."
-				: "Changes saved. References still need attention.",
-		);
+		setNotice("Changes saved.");
 		window.setTimeout(() => setNotice(null), 4000);
 	}, [id, dirty, topic, editorHtml]);
 
 	const handleDownload = useCallback(() => {
 		const raw = htmlToOutlineText(editorHtml) || content;
 		if (!raw.trim()) return;
-		const { content: nextContent, validation } = validateAndFormatResearchPaperReferences(raw);
-		setRefValidation(validation);
+		const { content: nextContent } = validateAndFormatResearchPaperReferences(raw);
 		if (nextContent !== raw) {
-			applyFormattedContent(nextContent, validation);
+			applyFormattedContent(nextContent);
 		}
 		void downloadResearchPaper(
 			{
@@ -512,7 +493,7 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 						type="button"
 						className={btnClass}
 						onClick={() => setPendingRegenerate(true)}
-						disabled={regenerating || fixingRefs || applyingStyle || saving || !hasTokens}
+						disabled={regenerating || applyingStyle || saving || !hasTokens}
 						title={
 							!hasTokens
 								? "Research token limit reached"
@@ -521,15 +502,6 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 					>
 						<IconRefresh size={16} />
 						{regenerating ? "Starting…" : "Regenerate"}
-					</button>
-					<button
-						type="button"
-						className={btnClass}
-						onClick={() => void handleFixReferences()}
-						disabled={fixingRefs}
-						title="Validate and format the References section"
-					>
-						{fixingRefs ? "Fixing…" : "Fix References"}
 					</button>
 					<button
 						type="button"
@@ -546,35 +518,6 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 			{error && (
 				<div className="saved-research-notice saved-research-notice-error" role="alert">
 					{error}
-				</div>
-			)}
-			{refsStatus && (
-				<div
-					className={`saved-research-notice${
-						refsStatus.ok
-							? " saved-research-notice-success"
-							: " saved-research-notice-warn"
-					}`}
-					role="status"
-				>
-					{refsStatus.ok ? (
-						<span>
-							References OK — {refsStatus.entryCount} entr
-							{refsStatus.entryCount === 1 ? "y" : "ies"} with Source links.
-						</span>
-					) : (
-						<div className="saved-research-refs-issues">
-							<strong>References need attention</strong>
-							<ul>
-								{refsStatus.issues.map((issue) => (
-									<li key={issue.code}>{issue.message}</li>
-								))}
-							</ul>
-							{refsStatus.needsFormat && (
-								<p>Click Fix References to reformat spacing and Source links.</p>
-							)}
-						</div>
-					)}
 				</div>
 			)}
 
@@ -598,7 +541,7 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 						type="button"
 						className={btnPrimaryClass}
 						onClick={() => void handleApplyReferenceStyle()}
-						disabled={applyingStyle || fixingRefs}
+						disabled={applyingStyle}
 						title="Reformat References to the selected style"
 					>
 						{applyingStyle ? "Applying…" : "Apply reference style"}
@@ -607,20 +550,31 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 			</section>
 
 			<section className="saved-research-effort saved-research-effort-compact" aria-labelledby="saved-research-effort-title">
-				<div className="saved-research-effort-overall">
-					<div
-						className="saved-research-effort-ring"
-						style={{ ["--p" as string]: String(effort.userEffortScore) }}
-						aria-label={`Overall score of user’s input: ${effort.userEffortScore} out of 100`}
-					>
-						<span className="saved-research-effort-ring-value">{effort.userEffortScore}</span>
-						<span className="saved-research-effort-ring-max">/ 100</span>
+				<div className="saved-research-effort-head">
+					<div className="saved-research-effort-overall">
+						<div
+							className="saved-research-effort-ring"
+							style={{ ["--p" as string]: String(effort.userEffortScore) }}
+							aria-label={`Overall score of user’s input: ${effort.userEffortScore} out of 100`}
+						>
+							<span className="saved-research-effort-ring-value">{effort.userEffortScore}</span>
+							<span className="saved-research-effort-ring-max">/ 100</span>
+						</div>
+						<div className="saved-research-effort-overall-copy">
+							<h2 id="saved-research-effort-title" className="saved-research-effort-overall-label">
+								Overall score of user’s input
+							</h2>
+							<p className="saved-research-effort-overall-band">{bandLabel(effort.userBand)}</p>
+						</div>
 					</div>
-					<div className="saved-research-effort-overall-copy">
-						<h2 id="saved-research-effort-title" className="saved-research-effort-overall-label">
-							Overall score of user’s input
-						</h2>
-						<p className="saved-research-effort-overall-band">{bandLabel(effort.userBand)}</p>
+					<div className="saved-research-effort-head-actions">
+						<button
+							type="button"
+							className={btnPrimaryClass}
+							onClick={() => setEffortReportOpen(true)}
+						>
+							Effort Report
+						</button>
 					</div>
 				</div>
 			</section>
@@ -656,6 +610,18 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 					/>
 				</div>
 			</div>
+
+			<EffortReportModal
+				open={effortReportOpen}
+				onClose={() => setEffortReportOpen(false)}
+				title={displayTitle}
+				topic={topic}
+				effort={effort}
+				author={effortAuthor}
+				onDownload={() => void handleDownloadEffortReport()}
+				downloading={downloadingEffort}
+				variant={variant}
+			/>
 
 			<ConfirmDialog
 				open={pendingRegenerate}

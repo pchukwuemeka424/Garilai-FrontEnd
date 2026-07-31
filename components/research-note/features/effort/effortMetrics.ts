@@ -105,10 +105,10 @@ export function editDistanceRatio(baseline: string, current: string): number {
 }
 
 export function bandForScore(score: number): EffortBand {
-  if (score <= 0) return 'none'
-  if (score < 25) return 'low'
-  if (score < 50) return 'moderate'
-  if (score < 75) return 'high'
+  if (score < 20) return 'none'
+  if (score < 40) return 'low'
+  if (score < 60) return 'moderate'
+  if (score < 80) return 'high'
   return 'very_high'
 }
 
@@ -257,7 +257,9 @@ export async function computeEffortReport(
         )
 
   // Blend: capture work matters even when the user never edited AI text.
-  const userEffortScore = clamp(captureScore * 0.4 + writingScore * 0.6)
+  // Baseline 20 so project reports never start at 0; remaining 80 is earned.
+  const blended = captureScore * 0.4 + writingScore * 0.6
+  const userEffortScore = clamp(20 + blended * 0.8)
 
   const materialsCitedByAgents = uniqueMaterials(
     sections.flatMap((s) => s.materialsUsed),
@@ -279,7 +281,7 @@ export async function computeEffortReport(
       'No Materials, Data, Figures, Lab Log, References, or manuscript text were recorded yet.',
     )
     summaryLines.push(
-      'User effort score is 0. This report still documents the empty baseline for audit.',
+      'User effort score starts at 20/100 for a new project. This report still documents the empty baseline for audit.',
     )
   } else {
     summaryLines.push(
@@ -426,7 +428,7 @@ export function composeEffortReportMarkdown(report: EffortReportSnapshot): strin
     '- **Writing & edits** compare each section to its last AI baseline (or award full credit for manual-only text).',
   )
   lines.push(
-    '- **User effort** = 40% capture + 60% writing/edits. Empty projects still produce this report with zeros.',
+    '- **User effort** = 20 baseline + 80% × (40% capture + 60% writing/edits). Empty projects still produce this report starting at 20.',
   )
   lines.push('')
 

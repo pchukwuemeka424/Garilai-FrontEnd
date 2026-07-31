@@ -186,7 +186,8 @@ export async function computeNotebookProgress(
   ]
 
   const weighted = buckets.reduce((sum, b) => sum + b.ratio * b.weight, 0)
-  const percent = Math.round(Math.min(100, Math.max(0, weighted)))
+  /** Baseline 20% so a new project never reports 0; remaining 80% is earned from capture work. */
+  const percent = Math.round(Math.min(100, 20 + Math.max(0, weighted) * 0.8))
 
   const workDone: string[] = []
   const remaining: string[] = []

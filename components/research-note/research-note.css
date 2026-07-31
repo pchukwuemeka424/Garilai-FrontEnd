@@ -5,7 +5,8 @@
 
 /*
  * Scoped design tokens for the Research-Note workspace.
- * Light & dark via data-theme on the shell (not global html).
+ * Shell is locked to data-theme="light" (OS/night dark view disabled).
+ * Legacy [data-theme="dark"] rules below are unused.
  */
 @theme {
 	--color-canvas: #ffffff;

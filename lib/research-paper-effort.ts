@@ -233,10 +233,10 @@ export function materialCountsFromSources(sources?: ResearchSourceSelection | nu
 }
 
 export function bandForScore(score: number): EffortBand {
-	if (score <= 0) return "none";
-	if (score < 25) return "low";
-	if (score < 50) return "moderate";
-	if (score < 75) return "high";
+	if (score < 20) return "none";
+	if (score < 40) return "low";
+	if (score < 60) return "moderate";
+	if (score < 80) return "high";
 	return "very_high";
 }
 
@@ -301,13 +301,14 @@ export function computePaperEffort(input: {
 	const artifactScore = scoreArtifacts(artifacts);
 
 	if (empty) {
+		const emptyScore = clamp(20 + captureScore * 0.5 * 0.8);
 		return {
-			userEffortScore: clamp(captureScore * 0.5),
+			userEffortScore: emptyScore,
 			aiShareScore: 0,
 			captureScore,
 			writingScore: 0,
 			artifactScore: 0,
-			userBand: bandForScore(clamp(captureScore * 0.5)),
+			userBand: bandForScore(emptyScore),
 			wordCount: 0,
 			baselineWordCount: 0,
 			humanEdited: Boolean(input.humanEdited),
@@ -317,7 +318,7 @@ export function computePaperEffort(input: {
 			artifacts,
 			edits,
 			summaryLines: [
-				`Overall score of user’s input: ${clamp(captureScore * 0.5)}/100.`,
+				`Overall score of user’s input: ${emptyScore}/100 (starts at 20).`,
 				"No paper text yet.",
 				captureScore > 0
 					? "Uploaded materials are counted toward capture effort."
@@ -345,8 +346,9 @@ export function computePaperEffort(input: {
 		if (edits.sectionsTouched >= 2) writingScore = clamp(writingScore + 5);
 	}
 
-	// Overall: capture 30% + writing 50% + in-paper artifacts 20%
-	const userEffortScore = clamp(captureScore * 0.3 + writingScore * 0.5 + artifactScore * 0.2);
+	// Overall: baseline 20 + 80% × (capture 30% + writing 50% + artifacts 20%)
+	const blended = captureScore * 0.3 + writingScore * 0.5 + artifactScore * 0.2
+	const userEffortScore = clamp(20 + blended * 0.8);
 	const aiShareScore = clamp(100 - writingScore);
 	const userBand = bandForScore(userEffortScore);
 
@@ -426,7 +428,7 @@ export function composePaperEffortMarkdown(input: {
 		``,
 		`**${effort.userEffortScore} / 100** (${bandLabel(effort.userBand)})`,
 		``,
-		`Combined from: 30% capture/uploads · 50% writing/edits · 20% graphs & labs.`,
+		`Starts at **20 / 100**, then adds from: 30% capture/uploads · 50% writing/edits · 20% graphs & labs.`,
 		``,
 		`**Paper:** ${input.title}`,
 		`**Topic:** ${input.topic || "—"}`,
@@ -493,8 +495,8 @@ export function composePaperEffortMarkdown(input: {
 		`- **Capture** counts uploaded/linked Materials, documents, datasets, figures, Lab Log, and Research Note projects.`,
 		`- **Writing & edits** compares the current paper to the AI baseline (words inserted/deleted and sections changed).`,
 		`- **Graphs & labs** credits charts, figures, tables, and lab/experiment language present in the paper.`,
-		`- **Overall user effort** = 30% capture + 50% writing + 20% graphs/labs.`,
-		`- This report is always available, even when you have not edited or uploaded yet.`,
+		`- **Overall user effort** = 20 baseline + 80% × (30% capture + 50% writing + 20% graphs/labs).`,
+		`- This report is always available, even when you have not edited or uploaded yet (starts at 20).`,
 		``,
 	];
 	return lines.join("\n");

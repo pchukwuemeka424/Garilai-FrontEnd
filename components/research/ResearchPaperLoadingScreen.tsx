@@ -12,15 +12,15 @@ type Props = {
 };
 
 function statusLabel(preparing: boolean, percent: number): string {
-	if (preparing && percent < 12) return "Preparing your research paper…";
-	if (percent < 25) return "Gathering literature…";
-	if (percent < 85) return "Generating your research paper…";
+	if (preparing && percent < 28) return "Preparing your research paper…";
+	if (percent < 42) return "Gathering literature…";
+	if (percent < 88) return "Generating your research paper…";
 	if (percent < 97) return "Completing citations & references…";
 	return "Finalizing your research paper…";
 }
 
 function statusDetail(preparing: boolean, percent: number): string {
-	if (preparing && percent < 12) {
+	if (preparing && percent < 28) {
 		return "Searching literature and building your outline first.";
 	}
 	if (percent >= 90) {
@@ -33,12 +33,14 @@ export function ResearchPaperLoadingScreen({
 	projectName,
 	preparing = false,
 	studentUI = false,
-	progress = 0,
+	progress = 20,
 	complete = false,
 }: Props) {
-	const percent = useSmoothProgress(preparing ? Math.max(progress, 4) : progress, {
+	const percent = useSmoothProgress(Math.max(progress, 20), {
 		complete,
 		active: true,
+		floor: 20,
+		autoCreep: true,
 	});
 
 	return (
