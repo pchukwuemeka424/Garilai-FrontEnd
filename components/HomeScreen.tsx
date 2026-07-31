@@ -275,27 +275,6 @@ export function HomeScreen() {
 								? "Continue research, teaching and academic projects in your institutional workspace."
 								: "A purpose-built academic AI workspace for universities — with institutional visibility built in."}
 						</p>
-						<div className="home-hero-actions home-hero-animate home-hero-animate-4">
-							{user ? (
-								<>
-									<Link href="/dashboard" className="home-btn home-btn-lg home-btn-light">
-										Open Dashboard
-									</Link>
-									<button type="button" className="home-btn home-btn-lg home-btn-ghost-light" onClick={() => logout(false)}>
-										Sign out
-									</button>
-								</>
-							) : (
-								<>
-									<Link href="/register" className="home-btn home-btn-lg home-btn-light">
-										Get Started
-									</Link>
-									<Link href="/login" className="home-btn home-btn-lg home-btn-ghost-light">
-										Sign in
-									</Link>
-								</>
-							)}
-						</div>
 					</div>
 				</div>
 			</section>
