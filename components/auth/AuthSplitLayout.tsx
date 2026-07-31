@@ -89,7 +89,7 @@ type Props = {
 	title: string;
 	subtitle: string;
 	children: React.ReactNode;
-	footer: React.ReactNode;
+	footer?: React.ReactNode;
 	wide?: boolean;
 	hero?: AuthHeroContent;
 	/** Root page class (defaults to `login-page`). */
@@ -132,7 +132,7 @@ export function AuthSplitLayout({
 							{children}
 						</div>
 
-						<div className="login-form-links">{footer}</div>
+						{footer ? <div className="login-form-links">{footer}</div> : null}
 
 						<SiteFooter variant="auth" />
 					</div>
