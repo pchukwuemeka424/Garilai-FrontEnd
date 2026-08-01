@@ -283,7 +283,7 @@ export function HomeScreen() {
 				<div className="home-section-inner home-split">
 					<div className="home-split-copy home-reveal-delay">
 						<p className="home-kicker">Overview</p>
-						<h2 className="home-section-title">Govern AI Built for Higher Education</h2>
+						<h2 className="home-section-title">Governed AI Workspace for Higher Education</h2>
 						<p className="home-section-lead">
 							{APP_NAME} brings research, teaching and learning into a single academic workspace designed
 							specifically for higher education. Instead of open-ended prompting, users work through structured

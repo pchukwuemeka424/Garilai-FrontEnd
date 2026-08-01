@@ -18,7 +18,7 @@ export type AuthHeroContent = {
 
 const LOGIN_HERO: AuthHeroContent = {
 	eyebrow: "Research excellence",
-	title: "Govern AI Built for Higher Education",
+	title: "Governed AI Workspace for Higher Education",
 	lead: `${APP_NAME} helps students and lecturers write research papers, build literature reviews, verify citations, and deliver publication-ready work — from undergraduate projects to postgraduate theses.`,
 	features: [
 		{
@@ -53,7 +53,7 @@ const LOGIN_HERO: AuthHeroContent = {
 
 export const REGISTER_HERO: AuthHeroContent = {
 	eyebrow: "Get started free",
-	title: "Your governed research workspace awaits",
+	title: "Governed AI Workspace for Higher Education",
 	lead: `Create your ${APP_NAME} account to access tools shaped for universities, polytechnics, and colleges of education — whether you are writing a first-year project or supervising postgraduate research.`,
 	features: [
 		{
