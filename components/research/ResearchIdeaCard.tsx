@@ -3,12 +3,16 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
 import { studentHasResearchTokens } from "@/components/StudentTokenQuota";
+import { ResearchCitationStyleModal } from "@/components/research/ResearchCitationStyleModal";
 import { IconEdit } from "@/components/ui/ButtonIcon";
 import { useAuth } from "@/hooks/useAuth";
+import { saveChatCitationStyle } from "@/lib/chat-research-citations";
+import type { CitationStyle } from "@/lib/citation-styles";
 import { stageOutlinePageContext } from "@/lib/research-outline-context";
 import { stagePaperSources } from "@/lib/research-paper-sources";
 import { researchOutlinePagePath } from "@/lib/research-outline-routes";
-import { researchGeneratePagePath } from "@/lib/research-generate-routes";
+import { researchPaperWorkspacePath } from "@/lib/research-generate-routes";
+import { stagePendingResearchPaper } from "@/lib/research-paper-pending";
 import { loadSavedOutline, saveResearchOutline } from "@/lib/research-outline-storage";
 import type { ResearchIdea, ResearchScope } from "@/lib/research-ideas";
 import { formatIdeaForChat, getFeasibilityLabel, getTypeLabel, ideaToEditableDocument } from "@/lib/research-ideas";
@@ -46,6 +50,7 @@ export function ResearchIdeaCard({
 	const { user } = useAuth();
 	const hasTokens = studentHasResearchTokens(user?.tokenQuota, user?.role);
 	const [copied, setCopied] = useState(false);
+	const [showCitationStyleModal, setShowCitationStyleModal] = useState(false);
 	const [outline] = useState<string | null>(() => loadSavedOutline(idea, discipline, topic, scope));
 
 	const ideaText = formatIdeaForChat(idea, topic);
@@ -108,11 +113,20 @@ export function ResearchIdeaCard({
 		[editOutline],
 	);
 
-	const openGeneratePage = useCallback(
+	const openGenerateModal = useCallback(
 		(event: React.MouseEvent<HTMLButtonElement>) => {
 			event.preventDefault();
 			event.stopPropagation();
 			if (!hasTokens) return;
+			setShowCitationStyleModal(true);
+		},
+		[hasTokens],
+	);
+
+	const confirmGenerateResearch = useCallback(
+		(style: CitationStyle) => {
+			if (!hasTokens) return;
+			saveChatCitationStyle(style);
 			const returnTo =
 				typeof window !== "undefined"
 					? `${window.location.pathname}${window.location.search}`
@@ -126,7 +140,13 @@ export function ResearchIdeaCard({
 				returnTo,
 			});
 			stagePaperSources(sources);
-			router.push(researchGeneratePagePath(key, studentUI ? "student" : "lecturer"));
+			stagePendingResearchPaper({
+				key,
+				citationStyle: style,
+				projectName: idea.title,
+			});
+			setShowCitationStyleModal(false);
+			router.push(researchPaperWorkspacePath(idea.title, studentUI ? "student" : "lecturer", key));
 		},
 		[idea, discipline, topic, scope, sources, hasTokens, router, studentUI],
 	);
@@ -243,7 +263,7 @@ export function ResearchIdeaCard({
 							<button
 								type="button"
 								className="research-action-btn research-action-btn-generate"
-								onClick={openGeneratePage}
+								onClick={openGenerateModal}
 								disabled={!hasTokens}
 								title={!hasTokens ? "Research token limit reached" : undefined}
 							>
@@ -269,6 +289,22 @@ export function ResearchIdeaCard({
 					</div>
 				</div>
 			</div>
+
+			<ResearchCitationStyleModal
+				open={showCitationStyleModal}
+				onClose={() => setShowCitationStyleModal(false)}
+				onConfirm={confirmGenerateResearch}
+				projectTitle={idea.title}
+				variant={studentUI ? "student" : "lecturer"}
+				note={
+					sources?.projectIds?.length
+						? "A research note is selected — the paper will be drafted from that note. Citations and the References list will use your chosen style."
+						: outline?.trim()
+							? "Your saved research outline will guide section structure. Citations and the References list will use your chosen style."
+							: "Citations and the References list will use your chosen style throughout the generated paper."
+				}
+				confirmLabel="Generate Research"
+			/>
 		</article>
 	);
 }

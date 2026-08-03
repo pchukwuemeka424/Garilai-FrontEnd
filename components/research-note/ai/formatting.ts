@@ -16,6 +16,35 @@ import {
 } from '@/components/research-note/context-providers/extractors'
 import { draftContentToMarkdown } from '@/components/research-note/lib/markdown'
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/** Remove a leading heading that matches the section so assembly does not duplicate it. */
+function stripLeadingSectionHeading(section: string, body: string): string {
+  const aliases =
+    section === 'Materials & Methods'
+      ? ['Materials & Methods', 'Materials and Methods', 'Methodology', 'Methods', 'Method']
+      : section === 'Results'
+        ? ['Results', 'Results / Analysis', 'Results and Analysis', 'Findings']
+        : [section]
+
+  const lines = body.replace(/\r/g, '').split('\n')
+  let start = 0
+  while (start < lines.length && !lines[start]!.trim()) start += 1
+  if (start >= lines.length) return body.trim()
+
+  const first = lines[start]!.trim()
+  const isDup = aliases.some((alias) => {
+    const hash = new RegExp(`^#{1,3}\\s*${escapeRegExp(alias)}\\s*:?\\s*$`, 'i')
+    const bold = new RegExp(`^\\*\\*${escapeRegExp(alias)}\\*\\*\\s*:?\\s*$`, 'i')
+    const plain = new RegExp(`^${escapeRegExp(alias)}\\s*:?\\s*$`, 'i')
+    return hash.test(first) || bold.test(first) || plain.test(first)
+  })
+  if (!isDup) return body.trim()
+  return lines.slice(start + 1).join('\n').trim()
+}
+
 /** Concatenate the drafted Publication sections into one manuscript (Markdown). */
 export async function assemblePublicationManuscript(
   projectId: string,
@@ -24,7 +53,11 @@ export async function assemblePublicationManuscript(
   for (const section of PUBLICATION_SECTIONS) {
     const draft = await getDraftFor(projectId, 'publication', section)
     if (draft?.content.trim()) {
-      parts.push(`# ${section}\n\n${draftContentToMarkdown(draft.content).trim()}`)
+      const body = stripLeadingSectionHeading(
+        section,
+        draftContentToMarkdown(draft.content).trim(),
+      )
+      if (body) parts.push(`# ${section}\n\n${body}`)
     }
   }
   return parts.join('\n\n')
@@ -122,9 +155,11 @@ export async function assembleAllCaptured(
   for (const section of PUBLICATION_SECTIONS) {
     const draft = await getDraftFor(projectId, 'publication', section)
     if (draft?.content.trim()) {
-      parts.push(
-        `# ${section}\n\n${draftContentToMarkdown(draft.content).trim()}`,
+      const body = stripLeadingSectionHeading(
+        section,
+        draftContentToMarkdown(draft.content).trim(),
       )
+      if (body) parts.push(`# ${section}\n\n${body}`)
     }
   }
 

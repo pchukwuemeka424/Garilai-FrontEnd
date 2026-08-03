@@ -59,22 +59,50 @@ function escapeRegExp(value: string): string {
 
 /**
  * Keep only the requested publication section if the model outputs multiple
- * IMRaD headings in one response.
+ * IMRaD headings in one response. Strip a leading heading for this section
+ * (hash or bold) so the UI/assembly does not show a duplicate title.
  */
 function isolatePublicationSection(section: string, text: string): string {
   let content = text.trim()
   if (!content) return content
 
-  const ownHeading = new RegExp(`^#{1,3}\\s*${escapeRegExp(section)}\\s*$`, 'im')
-  content = content.replace(ownHeading, '').trim()
+  const aliases =
+    section === 'Materials & Methods'
+      ? ['Materials & Methods', 'Materials and Methods', 'Methodology', 'Methods', 'Method']
+      : section === 'Results'
+        ? ['Results', 'Results / Analysis', 'Results and Analysis', 'Findings']
+        : [section]
+
+  const isOwnHeading = (line: string): boolean => {
+    const t = line.trim()
+    if (!t) return false
+    return aliases.some((alias) => {
+      const hash = new RegExp(`^#{1,3}\\s*${escapeRegExp(alias)}\\s*:?\\s*$`, 'i')
+      const bold = new RegExp(`^\\*\\*${escapeRegExp(alias)}\\*\\*\\s*:?\\s*$`, 'i')
+      const plain = new RegExp(`^${escapeRegExp(alias)}\\s*:?\\s*$`, 'i')
+      return hash.test(t) || bold.test(t) || plain.test(t)
+    })
+  }
+
+  const lines = content.split('\n')
+  let start = 0
+  while (start < lines.length && !lines[start]!.trim()) start += 1
+  while (start < lines.length && isOwnHeading(lines[start]!)) {
+    start += 1
+    while (start < lines.length && !lines[start]!.trim()) start += 1
+  }
+  content = lines.slice(start).join('\n').trim()
 
   let cutAt = content.length
   for (const other of PUBLICATION_SECTIONS) {
     if (other === section) continue
-    const next = new RegExp(`^#{1,3}\\s*${escapeRegExp(other)}\\s*$`, 'im')
-    const match = next.exec(content)
-    if (match?.index !== undefined && match.index < cutAt) {
-      cutAt = match.index
+    const nextHash = new RegExp(`^#{1,3}\\s*${escapeRegExp(other)}\\s*$`, 'im')
+    const nextBold = new RegExp(`^\\*\\*${escapeRegExp(other)}\\*\\*\\s*$`, 'im')
+    for (const next of [nextHash, nextBold]) {
+      const match = next.exec(content)
+      if (match?.index !== undefined && match.index < cutAt) {
+        cutAt = match.index
+      }
     }
   }
   return content.slice(0, cutAt).trim()

@@ -35,8 +35,8 @@ const SECTION_ALIASES: Record<string, (typeof STANDARD_RESEARCH_SECTIONS)[number
 	methodology: "Methodology",
 	methods: "Methodology",
 	method: "Methodology",
-	"research design": "Methodology",
 	"materials and methods": "Methodology",
+	"materials & methods": "Methodology",
 	results: "Results / Analysis",
 	analysis: "Results / Analysis",
 	findings: "Results / Analysis",
@@ -278,10 +278,33 @@ const BOLD_SECTION_OR_COLON = /^\*\*([^*\n]+?)\*\*[^\S\n]*:?[^\S\n]*$/gm;
 /**
  * Ensure blank lines around section / subsection headings so markdown/HTML parsers
  * do not merge `**Abstract**` / `**Themes**` / `## Abstract` with neighboring body text.
+ * Also collapses consecutive duplicate IMRaD headings (e.g. Methodology + Methods → one Methodology).
  */
 export function ensureResearchSectionSpacing(content: string): string {
 	const lines = content.replace(/\r/g, "").split("\n");
 	const out: string[] = [];
+
+	const headingCanonical = (headingLine: string): string | null => {
+		const bold = headingLine.match(/^\*\*([^*\n]+?)\*\*[^\S\n]*:?[^\S\n]*$/);
+		const hash = headingLine.match(/^#{1,6}\s+(.+?)\s*$/);
+		const plain = !bold && !hash ? headingLine.match(PLAIN_SECTION_TITLE) : null;
+		const rawTitle = (bold?.[1] ?? hash?.[1] ?? plain?.[1] ?? "").replace(/:+\s*$/, "").trim();
+		if (!rawTitle) return null;
+		const canonical = canonicalizeSectionTitle(rawTitle);
+		if (canonical && (STANDARD_RESEARCH_SECTIONS as readonly string[]).includes(canonical)) {
+			return canonical;
+		}
+		if (/^references$/i.test(rawTitle)) return "References";
+		return null;
+	};
+
+	const lastNonEmpty = (): string | null => {
+		for (let i = out.length - 1; i >= 0; i -= 1) {
+			const t = out[i]!.trim();
+			if (t) return t;
+		}
+		return null;
+	};
 
 	const isHeadingLine = (trimmed: string): string | null => {
 		const bold = trimmed.match(/^\*\*([^*\n]+?)\*\*[^\S\n]*:?[^\S\n]*$/);
@@ -301,7 +324,7 @@ export function ensureResearchSectionSpacing(content: string): string {
 			return `${hashPrefix} References`;
 		}
 
-		// Bold-only / hash subsection titles (Themes, Framework, Gap, Limitations, …).
+		// Bold-only / hash subsection titles (Themes, Framework, Gap, Research design, …).
 		if (bold) return `**${rawTitle}**`;
 		if (hashPrefix) return `${hashPrefix} ${rawTitle}`;
 		return null;
@@ -313,6 +336,12 @@ export function ensureResearchSectionSpacing(content: string): string {
 		const headingLine = isHeadingLine(trimmed);
 
 		if (headingLine) {
+			const canonical = headingCanonical(headingLine);
+			const prev = lastNonEmpty();
+			if (canonical && prev && headingCanonical(prev) === canonical) {
+				/** Drop duplicate IMRaD heading (e.g. **Methodology** then **Methods**). */
+				continue;
+			}
 			if (out.length > 0 && out[out.length - 1]!.trim() !== "") {
 				out.push("");
 			}

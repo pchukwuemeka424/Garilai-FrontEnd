@@ -8,6 +8,7 @@ import ReactMarkdown from "react-markdown";
 import { DisciplineSelect } from "@/components/aula/DisciplineSelect";
 import { ResearchScopeSelect } from "@/components/aula/ResearchScopeSelect";
 import { NavIcon } from "@/components/aula/NavIcon";
+import { ResearchCitationStyleModal } from "@/components/research/ResearchCitationStyleModal";
 import { ResearchIdeaCard } from "@/components/research/ResearchIdeaCard";
 import { StudentResearchHistory } from "@/components/research/StudentResearchHistory";
 import {
@@ -141,6 +142,7 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 	const [topic, setTopic] = useState("");
 	const [scope, setScope] = useState<ResearchScope | "">("");
 	const [citationStyle, setCitationStyle] = useState<CitationStyle | "">(DEFAULT_CITATION_STYLE);
+	const [showCitationStyleModal, setShowCitationStyleModal] = useState(false);
 	const [focusFilter, setFocusFilter] = useState<IdeaType | "all">("all");
 	const [localIdeas, setLocalIdeas] = useState<ResearchIdea[] | null>(null);
 	const [hasGenerated, setHasGenerated] = useState(false);
@@ -692,8 +694,16 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 		setDisciplineTouched(true);
 		setScopeTouched(true);
 		const trimmedTopic = topic.trim();
-		const style = citationStyle || DEFAULT_CITATION_STYLE;
 		if (!trimmedTopic || !discipline || !scope || !hasTokens) return;
+		setShowCitationStyleModal(true);
+	};
+
+	const confirmGenerateResearch = (style: CitationStyle) => {
+		const trimmedTopic = topic.trim();
+		if (!trimmedTopic || !discipline || !scope || !hasTokens) return;
+
+		setCitationStyle(style);
+		setShowCitationStyleModal(false);
 
 		const idea: ResearchIdea = {
 			id: `direct-${discipline}-${scope}`,
@@ -931,6 +941,7 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 	};
 
 	const page = (
+		<>
 		<div className={variant === "student" ? "research-page research-page-student" : "research-page"}>
 				<header className="research-page-header">
 					<div className="research-page-header-start">
@@ -1413,6 +1424,21 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 					</div>
 				</div>
 			</div>
+
+			<ResearchCitationStyleModal
+				open={showCitationStyleModal}
+				onClose={() => setShowCitationStyleModal(false)}
+				onConfirm={confirmGenerateResearch}
+				projectTitle={topic.trim()}
+				variant={isStudent ? "student" : "lecturer"}
+				note={
+					selectedSources.projectIds?.length
+						? "A research note is selected — the paper will be drafted from that note. Citations and the References list will use your chosen style."
+						: "Citations and the References list will use your chosen style throughout the generated paper."
+				}
+				confirmLabel="Generate Research"
+			/>
+		</>
 	);
 
 	return variant === "student" ? <StudentLayout>{page}</StudentLayout> : <AulaLayout showRightPanel={false}>{page}</AulaLayout>;
