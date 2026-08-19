@@ -2,10 +2,13 @@ import type { NextConfig } from "next";
 
 const DEV_BACKEND = process.env.FEYNMAN_BACKEND_URL ?? "http://127.0.0.1:3141";
 
+const useStandalone = process.env.GARIL_STATIC_EXPORT === "0";
+const useStaticExport = !useStandalone && process.env.NODE_ENV === "production";
+
 const nextConfig: NextConfig = {
-	// Static export is for production builds only. Keeping it on in `next dev`
-	// breaks rewrites (API/WS proxy) and can leave webpack HMR serving stale chunks.
-	...(process.env.NODE_ENV === "production" ? { output: "export" as const } : {}),
+	// Static export is for nginx `out/` deploys. Coolify uses standalone (`GARIL_STATIC_EXPORT=0`)
+	// so dynamic portal routes can be served. Keep export off in `next dev`.
+	...(useStandalone ? { output: "standalone" as const } : useStaticExport ? { output: "export" as const } : {}),
 	images: {
 		unoptimized: true,
 	},

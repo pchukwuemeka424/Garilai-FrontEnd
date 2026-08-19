@@ -1,6 +1,10 @@
-# Coolify / Docker — GARIL AI frontend (static Next export + nginx)
-# Build arg: NEXT_PUBLIC_FEYNMAN_BACKEND=https://your-api.example.com
-# Runtime: listens on $PORT (Coolify sets this; default 80)
+# Build from repo root:
+#   docker build -f deploy/frontend/Dockerfile \
+#     --build-arg NEXT_PUBLIC_FEYNMAN_BACKEND=https://api.example.com \
+#     -t garil-frontend .
+#
+# Coolify: Dockerfile path = deploy/frontend/Dockerfile (or repo-root copy).
+# Runtime listens on $PORT (Coolify injects this).
 
 FROM node:22-bookworm-slim AS build
 
@@ -20,18 +24,22 @@ COPY next.config.ts postcss.config.mjs tsconfig.json next-env.d.ts ./
 ARG NEXT_PUBLIC_FEYNMAN_BACKEND=
 ENV NEXT_PUBLIC_FEYNMAN_BACKEND=$NEXT_PUBLIC_FEYNMAN_BACKEND
 ENV NODE_ENV=production
+ENV GARIL_STATIC_EXPORT=0
 
-RUN npm run build && test -f out/index.html
+RUN npm run build \
+	&& test -f .next/standalone/server.js
 
-FROM nginx:1.27-alpine AS runtime
+FROM node:22-bookworm-slim AS runtime
 
+WORKDIR /app
+ENV NODE_ENV=production
 ENV PORT=80
+ENV HOSTNAME=0.0.0.0
+ENV GARIL_STATIC_EXPORT=0
 
-COPY nginx.conf /etc/nginx/nginx-app.conf.template
-COPY docker-entrypoint.sh /docker-entrypoint-app.sh
-RUN chmod +x /docker-entrypoint-app.sh
-
-COPY --from=build /app/out /usr/share/nginx/html
+COPY --from=build /app/public ./public
+COPY --from=build /app/.next/standalone ./
+COPY --from=build /app/.next/static ./.next/static
 
 EXPOSE 80
-ENTRYPOINT ["/docker-entrypoint-app.sh"]
+CMD ["node", "server.js"]
