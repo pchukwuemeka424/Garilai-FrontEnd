@@ -153,7 +153,7 @@ function PlotChart({
 		style: { fill: "#334155", fontSize: 12, fontWeight: 600, textAnchor: "middle" },
 	};
 	const xTicks = {
-		interval: data.length <= 24 ? 0 : "preserveStartEnd",
+		interval: (data.length <= 24 ? 0 : "preserveStartEnd") as 0 | "preserveStartEnd",
 		angle: data.length > 8 ? -32 : 0,
 		textAnchor: data.length > 8 ? ("end" as const) : ("middle" as const),
 		height: data.length > 8 ? 72 : 52,

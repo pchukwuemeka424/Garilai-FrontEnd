@@ -27,6 +27,7 @@ import {
   type SupervisorComment,
 } from "@/components/portal/features/feedback/student-feedback";
 import { apiFetch } from "@/lib/portal-api";
+import { cn } from "@/lib/portal/cn";
 import { RemarkHtml } from "@/components/portal/editor/remark-html";
 
 function StatusChip({ status }: { status: "approved" | "needs_revision" }) {

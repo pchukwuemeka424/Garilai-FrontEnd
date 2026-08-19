@@ -115,7 +115,7 @@ export function AssignmentBriefPanel({
               Instructions
             </p>
             <div className="rounded-xl border border-border bg-muted/20 px-3.5 py-3">
-              <AssignmentInstructions value={brief.instructions} />
+              <AssignmentInstructions value={brief.instructions || ""} />
             </div>
           </div>
         ) : null}

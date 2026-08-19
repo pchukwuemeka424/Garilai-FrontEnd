@@ -16,6 +16,8 @@ export type AuthUser = {
 	status: "active" | "inactive";
 	department: string | null;
 	institution: string | null;
+	programme: string | null;
+	cohort: string | null;
 	universityId: string | null;
 	lastActiveAt: string | null;
 	createdAt: string;
