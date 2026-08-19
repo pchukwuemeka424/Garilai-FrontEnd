@@ -335,8 +335,8 @@ export function AdminRetentionDashboard() {
 	return (
 		<AdminShell
 			title="Retention & Deletion Management"
-			subtitle="Data lifecycle policies, legal holds, and subject deletion requests"
-			breadcrumb="Admin · Governance"
+			subtitle="How long governance and research-related records are retained, archived, or deleted"
+			breadcrumb="Admin · Controls"
 			actions={
 				<>
 					<button

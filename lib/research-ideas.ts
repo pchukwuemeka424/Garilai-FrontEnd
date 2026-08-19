@@ -4,7 +4,16 @@ import { TOPIC_QUALITY_RULES } from "@/lib/research-topic-guidance";
 
 export type IdeaType = "empirical" | "theoretical" | "interdisciplinary" | "applied";
 export type IdeaFeasibility = "high" | "medium" | "exploratory";
-export type ResearchScope = "undergraduate" | "masters" | "doctoral" | "faculty";
+export type ResearchScope =
+	| "assignment"
+	| "conference"
+	| "dissertation"
+	| "faculty"
+	| "journal"
+	| "proposal"
+	| "report"
+	| "thesis"
+	| "undergraduate_project";
 
 export type ResearchIdea = {
 	id: string;
@@ -77,12 +86,96 @@ const FEASIBILITY_LABELS: Record<IdeaFeasibility, string> = {
 	exploratory: "Exploratory",
 };
 
+const SCOPE_LABELS: Record<ResearchScope, string> = {
+	assignment: "Assignment",
+	conference: "Conference paper",
+	dissertation: "Dissertation",
+	faculty: "Faculty / grant",
+	journal: "Journal/Research Paper",
+	proposal: "Research proposal",
+	report: "Project report",
+	thesis: "Thesis",
+	undergraduate_project: "Undergraduate project",
+};
+
+/** User-facing research types. `faculty`, `report`, and `proposal` are legacy-only. */
 export const SCOPE_OPTIONS: { id: ResearchScope; label: string; hint: string }[] = [
-	{ id: "undergraduate", label: "Undergraduate", hint: "Accessible, focused projects" },
-	{ id: "masters", label: "Master's thesis", hint: "Original but bounded scope" },
-	{ id: "doctoral", label: "Doctoral research", hint: "Novel, publishable contributions" },
-	{ id: "faculty", label: "Faculty / grant", hint: "Ambitious, multi-year programmes" },
+	{ id: "assignment", label: SCOPE_LABELS.assignment, hint: "Coursework or class assignment" },
+	{ id: "conference", label: SCOPE_LABELS.conference, hint: "Conference or symposium contribution" },
+	{ id: "journal", label: SCOPE_LABELS.journal, hint: "Peer-reviewed journal article or research paper" },
+	{ id: "dissertation", label: SCOPE_LABELS.dissertation, hint: "Doctoral dissertation with novel contributions" },
+	{ id: "thesis", label: SCOPE_LABELS.thesis, hint: "Master's thesis with original but bounded scope" },
+	{ id: "undergraduate_project", label: SCOPE_LABELS.undergraduate_project, hint: "Focused undergraduate research project" },
 ];
+
+export const RESEARCH_SCOPE_IDS: ResearchScope[] = [
+	"assignment",
+	"conference",
+	"dissertation",
+	"faculty",
+	"journal",
+	"proposal",
+	"report",
+	"thesis",
+	"undergraduate_project",
+];
+
+/** Map legacy scope ids from older sessions to current values. */
+export function normalizeResearchScope(scope: string | null | undefined): ResearchScope | "" {
+	if (!scope) return "";
+	const legacy: Record<string, ResearchScope> = {
+		undergraduate: "undergraduate_project",
+		masters: "thesis",
+		doctoral: "dissertation",
+		phd: "dissertation",
+	};
+	const mapped = legacy[scope] ?? scope;
+	return RESEARCH_SCOPE_IDS.includes(mapped as ResearchScope) ? (mapped as ResearchScope) : "";
+}
+
+export function getScopeLabel(scope: string): string {
+	if (scope === "others") return "Others";
+	const normalized = normalizeResearchScope(scope) || scope;
+	return SCOPE_LABELS[normalized as ResearchScope] ?? SCOPE_OPTIONS.find((s) => s.id === normalized)?.label ?? scope;
+}
+
+/** Drop retired types from the wizard dropdown. */
+export function toSelectableResearchScope(scope: string | null | undefined): ResearchScope | "" {
+	const normalized = normalizeResearchScope(scope);
+	if (!normalized) return "";
+	if (normalized === "faculty" || normalized === "report" || normalized === "proposal") {
+		return "";
+	}
+	return normalized;
+}
+
+/** Primary CTA label for generating a full document for the selected research type. */
+export function getGenerateResearchLabel(scope: string | null | undefined): string {
+	const normalized = normalizeResearchScope(scope);
+	if (!normalized) return "Generate Research";
+	return `Generate ${getScopeLabel(normalized)}`;
+}
+
+/** CTA to open the completed document (e.g. Preview Assignment). */
+export function getPreviewResearchLabel(scope: string | null | undefined): string {
+	const normalized = normalizeResearchScope(scope);
+	if (!normalized) return "Preview Research";
+	return `Preview ${getScopeLabel(normalized)}`;
+}
+
+/** Lowercase document name for sentences (e.g. "assignment", "journal article"). */
+export function getScopeDocumentLabel(scope: string | null | undefined): string {
+	const normalized = normalizeResearchScope(scope);
+	if (!normalized) return "research paper";
+	return getScopeLabel(normalized).toLowerCase();
+}
+
+/** Short project eyebrow for loading/complete screens (e.g. "Assignment"). */
+export function getScopeProjectEyebrow(scope: string | null | undefined): string {
+	const normalized = normalizeResearchScope(scope);
+	if (!normalized) return "Research project";
+	return getScopeLabel(normalized);
+}
 
 export const FOCUS_OPTIONS: { id: IdeaType | "all"; label: string }[] = [
 	{ id: "all", label: "All types" },
@@ -173,7 +266,7 @@ export function buildResearchOutlinePrompt(
 	scope: ResearchScope,
 ): string {
 	const disciplineLabel = getDisciplineLabel(disciplineId);
-	const scopeLabel = SCOPE_OPTIONS.find((s) => s.id === scope)?.label ?? scope;
+	const scopeLabel = getScopeLabel(scope);
 	const needsHypothesis =
 		idea.type === "empirical" || idea.type === "applied" || idea.type === "interdisciplinary";
 
@@ -230,10 +323,15 @@ import { buildOutlineSources, buildOutlineSourcesFromPapers, type OutlinePaper }
 
 function outlineTimelinePhases(scope: ResearchScope): { title: string; period: string; activities: string }[] {
 	const periods: Record<ResearchScope, string[]> = {
-		undergraduate: ["Weeks 1–2", "Weeks 3–5", "Weeks 6–8", "Weeks 9–11", "Weeks 12–14"],
-		masters: ["Months 1–2", "Months 3–4", "Months 5–6", "Months 7–9", "Months 10–12"],
-		doctoral: ["Months 1–3", "Months 4–8", "Months 9–14", "Months 15–24", "Months 25–36"],
+		undergraduate_project: ["Weeks 1–2", "Weeks 3–5", "Weeks 6–8", "Weeks 9–11", "Weeks 12–14"],
+		thesis: ["Months 1–2", "Months 3–4", "Months 5–6", "Months 7–9", "Months 10–12"],
+		dissertation: ["Months 1–3", "Months 4–8", "Months 9–14", "Months 15–24", "Months 25–36"],
 		faculty: ["Quarter 1", "Quarters 2–3", "Quarters 4–6", "Quarters 7–8", "Ongoing"],
+		journal: ["Weeks 1–2", "Weeks 3–5", "Weeks 6–8", "Weeks 9–11", "Weeks 12–14"],
+		conference: ["Weeks 1–2", "Weeks 3–4", "Weeks 5–6", "Weeks 7–8", "Weeks 9–10"],
+		proposal: ["Weeks 1–2", "Weeks 3–4", "Weeks 5–6", "Weeks 7–8", "Weeks 9–10"],
+		report: ["Weeks 1–2", "Weeks 3–5", "Weeks 6–8", "Weeks 9–11", "Weeks 12–14"],
+		assignment: ["Days 1–2", "Days 3–5", "Days 6–8", "Days 9–11", "Days 12–14"],
 	};
 
 	const [p1, p2, p3, p4, p5] = periods[scope];
@@ -278,7 +376,7 @@ export function generateLocalResearchOutline(
 	papers?: OutlinePaper[],
 ): string {
 	const disciplineLabel = getDisciplineLabel(disciplineId);
-	const scopeLabel = SCOPE_OPTIONS.find((s) => s.id === scope)?.label ?? scope;
+	const scopeLabel = getScopeLabel(scope);
 	const contextTopic = topic.trim();
 	const question = idea.title.replace(/\?$/, "").trim();
 	const needsHypothesis =
@@ -419,7 +517,7 @@ export function buildResearchIdeasPrompt(
 	scope: ResearchScope,
 ): string {
 	const disciplineLabel = getDisciplineLabel(disciplineId);
-	const scopeLabel = SCOPE_OPTIONS.find((s) => s.id === scope)?.label ?? scope;
+	const scopeLabel = getScopeLabel(scope);
 
 	return `You are an academic research advisor running a multi-step analysis before generating ideas.
 
@@ -638,7 +736,7 @@ export function ideaToEditableDocument(
 	idea: ResearchIdea,
 	contextTopic?: string,
 	disciplineId?: string,
-	scope: ResearchScope = "masters",
+	scope: ResearchScope = "thesis",
 ): string {
 	if (disciplineId) {
 		return generateLocalResearchOutline(idea, disciplineId, contextTopic ?? "", scope);

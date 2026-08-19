@@ -20,6 +20,8 @@ export type ResearchJob = {
 export async function startResearchPaperJob(input: {
 	prompt: string;
 	topic?: string;
+	figureDocumentIds?: string[];
+	sources?: import("@/lib/research-assets-api").ResearchSourceSelection | null;
 }): Promise<ResearchJob> {
 	const res = await fetch(apiUrl("/api/research/jobs"), {
 		method: "POST",
@@ -27,6 +29,8 @@ export async function startResearchPaperJob(input: {
 		body: JSON.stringify({
 			prompt: input.prompt,
 			...(input.topic?.trim() ? { topic: input.topic.trim() } : {}),
+			...(input.figureDocumentIds?.length ? { figureDocumentIds: input.figureDocumentIds } : {}),
+			...(input.sources ? { sources: input.sources } : {}),
 		}),
 	});
 	const data = (await res.json()) as { job?: ResearchJob; error?: string };

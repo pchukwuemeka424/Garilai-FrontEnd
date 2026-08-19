@@ -16,9 +16,9 @@ const nextConfig: NextConfig = {
 	experimental: {
 		proxyTimeout: 180_000,
 	},
-	// pptxgenjs (Research Note PPTX export) uses dynamic `import('node:fs')` /
-	// `import('node:https')`. Webpack does not understand the `node:` scheme in
-	// client bundles — strip the prefix and stub Node builtins for the browser.
+	// Some packages use dynamic `import('node:fs')` / `import('node:https')`.
+	// Webpack does not understand the `node:` scheme in client bundles — strip
+	// the prefix and stub Node builtins for the browser.
 	webpack: (config, { isServer, webpack }) => {
 		config.plugins.push(
 			new webpack.NormalModuleReplacementPlugin(/^node:/, (resource: { request: string }) => {

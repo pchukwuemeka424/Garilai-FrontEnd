@@ -169,7 +169,7 @@ export type ApprovalStats = {
 	rejected: number;
 };
 
-export type GovernanceReportAudience = "management" | "senate" | "both";
+export type GovernanceReportAudience = "management" | "senate" | "both" | "external_auditors";
 
 export type GovernanceReportRecord = {
 	id: string;
@@ -200,24 +200,30 @@ export type GovernanceDashboard = {
 		byFaculty: UsageBreakdownRow[];
 		byFeature: UsageAnalytics["byFeature"];
 	};
+	tokens: {
+		userCount: number;
+		studentsWithQuota: number;
+		lecturersWithQuota: number;
+		totalTokensUsed: number;
+		dailyTokensApprox: number;
+		weeklyTokensApprox: number;
+		monthlyTokensApprox: number;
+		estimatedCost: number;
+		byFaculty: Array<{ key: string; label: string; users: number; tokensUsed: number; allowance: number }>;
+		byDepartment: Array<{ key: string; label: string; users: number; tokensUsed: number; allowance: number }>;
+		byProgramme: Array<{ key: string; label: string; users: number; tokensUsed: number; allowance: number }>;
+	};
 	policies: PolicyStats;
 	audit: AuditAlertStats;
 	alerts: AlertStats;
-	approvals: ApprovalStats;
-	risks: RiskStats;
-	compliance: ComplianceStats;
 	incidents: IncidentStats;
-	inventory: AiSystemStats;
 	contributions: ContributionStats;
 	provenance: ProvenanceStats;
 	privacy: PrivacyStats;
 	retention: RetentionStats;
-	topRisks: GovernanceRiskRecord[];
 	activeIncidents: GovernanceIncidentRecord[];
 	activeAlerts: GovernanceAlertRecord[];
-	highRiskSystems: AiSystemRecord[];
 	recentFlags: AuditLogRecord[];
-	pendingApprovals: ApprovalRequestRecord[];
 	recentReports: GovernanceReportRecord[];
 };
 
@@ -420,6 +426,7 @@ export type AiContributionStatementRecord = {
 	createdAt: string;
 	updatedAt: string;
 	universityId?: string | null;
+	titleEncrypted?: boolean;
 };
 
 export type ContributionStats = {
@@ -460,6 +467,7 @@ export type ResearchProvenanceRecord = {
 	createdAt: string;
 	updatedAt: string;
 	universityId?: string | null;
+	titleEncrypted?: boolean;
 };
 
 export type ProvenanceStats = {

@@ -8,7 +8,6 @@ import { studentHasResearchTokens } from "@/components/StudentTokenQuota";
 import { AulaLayout } from "@/components/AulaLayout";
 import { CitationStyleSelect } from "@/components/aula/CitationStyleSelect";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { EffortReportModal } from "@/components/research/EffortReportModal";
 import { ResearchDocEditor } from "@/components/research/ResearchDocEditor";
 import { StudentLayout } from "@/components/StudentLayout";
 import {
@@ -19,7 +18,9 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import {
 	loadChatCitationStyle,
+	loadChatResearchScope,
 	saveChatCitationStyle,
+	saveChatResearchScope,
 } from "@/lib/chat-research-citations";
 import {
 	downloadResearchPaper,
@@ -35,17 +36,14 @@ import {
 	type CitationStyle,
 } from "@/lib/citation-styles";
 import { htmlToOutlineText, markdownToDocHtml } from "@/lib/research-ideas";
-import { fetchNotebook } from "@/lib/research-assets-api";
 import {
-	bandLabel,
 	computePaperEffort,
 	downloadPaperEffortReport,
-	emptyMaterialCounts,
-	materialCountsFromNotebook,
-	materialCountsFromSources,
-	mergeMaterialCounts,
-	type PaperMaterialCounts,
 } from "@/lib/research-paper-effort";
+import {
+	hasResearchSources,
+	loadPaperEffortEvidence,
+} from "@/lib/research-paper-effort-evidence";
 import { peekPaperSources } from "@/lib/research-paper-sources";
 import {
 	formatResearchPaperReferences,
@@ -99,9 +97,7 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 	const [pendingRegenerate, setPendingRegenerate] = useState(false);
 	const [regenerating, setRegenerating] = useState(false);
 	const [deleting, setDeleting] = useState(false);
-	const [effortReportOpen, setEffortReportOpen] = useState(false);
 	const [downloadingEffort, setDownloadingEffort] = useState(false);
-	const [materials, setMaterials] = useState<PaperMaterialCounts>(emptyMaterialCounts());
 
 	useEffect(() => {
 		setCitationStyle(loadChatCitationStyle() ?? DEFAULT_CITATION_STYLE);
@@ -159,92 +155,16 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 		});
 	}, [id]);
 
-	useEffect(() => {
-		let alive = true;
-		const run = async () => {
-			const wizard = loadResearchWizardDraft(isStudent ? "student" : "lecturer", user?.id);
-			const staged = peekPaperSources();
-			const sources =
-				paper?.sources ??
-				staged ??
-				wizard?.selectedSources ??
-				null;
-
-			let counts = materialCountsFromSources(sources);
-			const projectIds = sources?.projectIds ?? [];
-			if (projectIds.length > 0) {
-				const notebooks = await Promise.all(
-					projectIds.map((projectId) =>
-						fetchNotebook(projectId)
-							.then((res) => materialCountsFromNotebook(res.notebookData))
-							.catch(() => emptyMaterialCounts()),
-					),
-				);
-				counts = mergeMaterialCounts(counts, ...notebooks);
-				// Avoid double-counting projects from both sources + notebooks
-				counts.projects = projectIds.length;
-			}
-			if (alive) setMaterials(counts);
-		};
-		void run();
-		return () => {
-			alive = false;
-		};
-	}, [paper?.sources, paper?.id, isStudent, user?.id]);
-
 	const liveContent = useMemo(() => {
 		const fromHtml = htmlToOutlineText(editorHtml);
 		return fromHtml.trim() ? fromHtml : content;
 	}, [editorHtml, content]);
-
-	const effort = useMemo(
-		() =>
-			computePaperEffort({
-				content: liveContent,
-				aiBaselineContent: paper?.aiBaselineContent ?? paper?.content ?? null,
-				humanEdited: paper?.humanEdited || dirty,
-				topic,
-				materials,
-			}),
-		[liveContent, paper?.aiBaselineContent, paper?.content, paper?.humanEdited, dirty, topic, materials],
-	);
-
-	const effortAuthor = useMemo(
-		() => ({
-			name: user?.name ?? null,
-			email: user?.email ?? null,
-			department: user?.department ?? null,
-			institution: user?.institution ?? null,
-		}),
-		[user?.name, user?.email, user?.department, user?.institution],
-	);
 
 	const formattedContent = useMemo(
 		() => (content.trim() ? formatResearchPaperReferences(content) : ""),
 		[content],
 	);
 	const displayTitle = extractPaperTitle(formattedContent || content, topic || "Research paper");
-
-	const handleDownloadEffortReport = useCallback(async () => {
-		setDownloadingEffort(true);
-		setError(null);
-		try {
-			await downloadPaperEffortReport({
-				title: displayTitle,
-				topic,
-				effort,
-				author: effortAuthor,
-			});
-		} catch (downloadError) {
-			setError(
-				downloadError instanceof Error
-					? downloadError.message
-					: "Could not download effort report.",
-			);
-		} finally {
-			setDownloadingEffort(false);
-		}
-	}, [displayTitle, topic, effort, effortAuthor]);
 
 	const paperMeta = useMemo(
 		() => ({
@@ -361,6 +281,71 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 		topic,
 	]);
 
+	const handleDownloadEffortReport = useCallback(async () => {
+		setDownloadingEffort(true);
+		setError(null);
+		try {
+			const wizard = loadResearchWizardDraft(isStudent ? "student" : "lecturer", user?.id);
+			const staged = peekPaperSources();
+			const stored = paper?.sources ?? null;
+			const sources = hasResearchSources(stored)
+				? stored
+				: staged ?? wizard?.selectedSources ?? stored;
+			const evidence = await loadPaperEffortEvidence(sources, paper?.topic ?? topic);
+			const effort = computePaperEffort({
+				content: liveContent,
+				aiBaselineContent: paper?.aiBaselineContent ?? paper?.content ?? null,
+				humanEdited: paper?.humanEdited || dirty,
+				topic,
+				materials: evidence.materials,
+				sources,
+				evidence,
+			});
+			await downloadPaperEffortReport({
+				title: displayTitle,
+				topic,
+				effort,
+				author: {
+					name: user?.name ?? null,
+					email: user?.email ?? null,
+					department: user?.department ?? null,
+					institution: user?.institution ?? null,
+				},
+				paperId: paper?.id ?? id,
+				createdAt: paper?.createdAt,
+				sources,
+				evidence,
+			});
+		} catch (downloadError) {
+			setError(
+				downloadError instanceof Error
+					? downloadError.message
+					: "Could not download effort report.",
+			);
+		} finally {
+			setDownloadingEffort(false);
+		}
+	}, [
+		dirty,
+		displayTitle,
+		id,
+		isStudent,
+		liveContent,
+		paper?.aiBaselineContent,
+		paper?.content,
+		paper?.createdAt,
+		paper?.humanEdited,
+		paper?.id,
+		paper?.sources,
+		paper?.topic,
+		topic,
+		user?.department,
+		user?.email,
+		user?.id,
+		user?.institution,
+		user?.name,
+	]);
+
 	const handleDelete = useCallback(async () => {
 		if (!id) return;
 		setDeleting(true);
@@ -400,18 +385,22 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 			}
 
 			const refineTopic = topic.trim() || paper?.topic || displayTitle || "Research paper";
+			const scope = loadChatResearchScope() ?? "journal";
 			const prompt = buildRefineResearchPaperPrompt({
 				topic: refineTopic,
 				content: draft,
 				citationStyle,
+				scope,
 			});
 			saveChatCitationStyle(citationStyle);
+			saveChatResearchScope(scope);
 			stagePendingResearchRefine({
 				prompt,
 				topic: refineTopic,
 				citationStyle,
+				scope,
 			});
-			router.push(researchPaperWorkspacePath(refineTopic, variant));
+			router.push(researchPaperWorkspacePath(refineTopic, variant, undefined, scope));
 		} catch (regenError) {
 			setRegenerating(false);
 			setError(
@@ -473,7 +462,6 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 					<p className="saved-research-meta">
 						Last updated {formatWhen(paper.updatedAt)}
 						{dirty ? " · Unsaved changes" : ""}
-						{` · Overall input score ${effort.userEffortScore}/100`}
 					</p>
 				</div>
 				<div className="saved-research-head-actions">
@@ -488,6 +476,15 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 					<button type="button" className={btnClass} onClick={handleDownload}>
 						<IconDownload size={16} />
 						Download PDF
+					</button>
+					<button
+						type="button"
+						className={btnClass}
+						onClick={() => void handleDownloadEffortReport()}
+						disabled={downloadingEffort}
+					>
+						<IconDownload size={16} />
+						{downloadingEffort ? "Preparing…" : "Download Effort Report"}
 					</button>
 					<button
 						type="button"
@@ -549,36 +546,6 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 				</div>
 			</section>
 
-			<section className="saved-research-effort saved-research-effort-compact" aria-labelledby="saved-research-effort-title">
-				<div className="saved-research-effort-head">
-					<div className="saved-research-effort-overall">
-						<div
-							className="saved-research-effort-ring"
-							style={{ ["--p" as string]: String(effort.userEffortScore) }}
-							aria-label={`Overall score of user’s input: ${effort.userEffortScore} out of 100`}
-						>
-							<span className="saved-research-effort-ring-value">{effort.userEffortScore}</span>
-							<span className="saved-research-effort-ring-max">/ 100</span>
-						</div>
-						<div className="saved-research-effort-overall-copy">
-							<h2 id="saved-research-effort-title" className="saved-research-effort-overall-label">
-								Overall score of user’s input
-							</h2>
-							<p className="saved-research-effort-overall-band">{bandLabel(effort.userBand)}</p>
-						</div>
-					</div>
-					<div className="saved-research-effort-head-actions">
-						<button
-							type="button"
-							className={btnPrimaryClass}
-							onClick={() => setEffortReportOpen(true)}
-						>
-							Effort Report
-						</button>
-					</div>
-				</div>
-			</section>
-
 			<div className="saved-research-card saved-research-card-doc">
 				<div className="saved-research-edit saved-research-edit-doc">
 					<label className="saved-research-field-label" htmlFor="saved-research-topic">
@@ -610,18 +577,6 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 					/>
 				</div>
 			</div>
-
-			<EffortReportModal
-				open={effortReportOpen}
-				onClose={() => setEffortReportOpen(false)}
-				title={displayTitle}
-				topic={topic}
-				effort={effort}
-				author={effortAuthor}
-				onDownload={() => void handleDownloadEffortReport()}
-				downloading={downloadingEffort}
-				variant={variant}
-			/>
 
 			<ConfirmDialog
 				open={pendingRegenerate}

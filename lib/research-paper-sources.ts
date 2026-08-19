@@ -3,7 +3,7 @@ import type { ResearchSourceSelection } from "@/lib/research-assets-api";
 const SESSION_KEY = "aula.research.paper.sources";
 
 function emptySources(): ResearchSourceSelection {
-	return { documentIds: [], datasetIds: [], noteIds: [], projectIds: [] };
+	return { documentIds: [], datasetIds: [], questionnaireIds: [], noteIds: [], projectIds: [] };
 }
 
 export function stagePaperSources(sources?: ResearchSourceSelection | null): void {
@@ -12,6 +12,7 @@ export function stagePaperSources(sources?: ResearchSourceSelection | null): voi
 		const payload: ResearchSourceSelection = {
 			documentIds: [...(sources?.documentIds ?? [])],
 			datasetIds: [...(sources?.datasetIds ?? [])],
+			questionnaireIds: [...(sources?.questionnaireIds ?? [])],
 			noteIds: [...(sources?.noteIds ?? [])],
 			projectIds: [...(sources?.projectIds ?? [])],
 		};
@@ -32,6 +33,7 @@ export function peekPaperSources(): ResearchSourceSelection | null {
 			...parsed,
 			documentIds: parsed.documentIds ?? [],
 			datasetIds: parsed.datasetIds ?? [],
+			questionnaireIds: parsed.questionnaireIds ?? [],
 			noteIds: parsed.noteIds ?? [],
 			projectIds: parsed.projectIds ?? [],
 		};

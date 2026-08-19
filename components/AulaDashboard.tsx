@@ -9,33 +9,25 @@ import { NavIcon } from "@/components/aula/NavIcon";
 import { AulaLayout } from "@/components/AulaLayout";
 import {
 	IconArrowRight,
-	IconBook,
 	IconClock,
 	IconFileText,
-	IconFolder,
-	IconGraduationCap,
 	IconLightbulb,
 	IconMicroscope,
 	IconPlus,
 	IconRefresh,
 	IconSparkles,
-	IconStickyNote,
 } from "@/components/ui/ButtonIcon";
 import { useAuth } from "@/hooks/useAuth";
 import { AULA_HUB_TOOLS, AULA_QUICK_ACCESS } from "@/lib/aula-nav";
 import { roleDisplay, userInitials } from "@/lib/aula-utils";
 import { loadAllSavedPapers, type SavedResearchPaper } from "@/lib/chat-research-storage";
-import { fetchSavedCoursePlansFromApi } from "@/lib/lesson-planner-api";
-import type { SavedCoursePlan } from "@/lib/lesson-planner-storage";
-import { fetchProjects, type ResearchProject } from "@/lib/research-assets-api";
 import { loadAllSavedIdeas, type SavedIdea } from "@/lib/research-storage";
-import { savedCourseOutlinePath } from "@/lib/saved-courses-routes";
 import { savedResearchPagePath } from "@/lib/saved-research-routes";
 import { researchTokenAllowance } from "@/lib/student-tokens";
 
 type ActivityItem = {
 	id: string;
-	kind: "idea" | "paper" | "course" | "notebook";
+	kind: "idea" | "paper";
 	title: string;
 	meta: string;
 	href: string;
@@ -73,16 +65,11 @@ function formatRelative(iso: string): string {
 
 const TOOL_ICONS: Record<string, ReactNode> = {
 	research: <IconMicroscope size={26} />,
-	"research-note": <IconStickyNote size={26} />,
-	"lesson-planner": <IconGraduationCap size={26} />,
-	references: <IconBook size={26} />,
 };
 
 const KIND_ICONS: Record<ActivityItem["kind"], ReactNode> = {
 	idea: <IconLightbulb size={16} />,
 	paper: <IconFileText size={16} />,
-	course: <IconGraduationCap size={16} />,
-	notebook: <IconFolder size={16} />,
 };
 
 export function AulaDashboard() {
@@ -91,8 +78,6 @@ export function AulaDashboard() {
 	const [loading, setLoading] = useState(true);
 	const [ideas, setIdeas] = useState<SavedIdea[]>([]);
 	const [papers, setPapers] = useState<SavedResearchPaper[]>([]);
-	const [courses, setCourses] = useState<SavedCoursePlan[]>([]);
-	const [projects, setProjects] = useState<ResearchProject[]>([]);
 	const [quickOpen, setQuickOpen] = useState(false);
 	const [toolModalId, setToolModalId] = useState<string | null>(null);
 	const [topicDraft, setTopicDraft] = useState("");
@@ -100,17 +85,12 @@ export function AulaDashboard() {
 	const load = useCallback(async () => {
 		setLoading(true);
 		try {
-			const [ideaRows, paperRows, courseRows, projectRows] = await Promise.all([
+			const [ideaRows, paperRows] = await Promise.all([
 				loadAllSavedIdeas().catch(() => [] as SavedIdea[]),
 				loadAllSavedPapers().catch(() => [] as SavedResearchPaper[]),
-				fetchSavedCoursePlansFromApi().then((r) => r ?? []).catch(() => [] as SavedCoursePlan[]),
-				// Notebooks live in Mongo via /api/research/projects (same as Research Note).
-				fetchProjects().catch(() => [] as ResearchProject[]),
 			]);
 			setIdeas(ideaRows);
 			setPapers(paperRows);
-			setCourses(courseRows);
-			setProjects(projectRows);
 		} finally {
 			setLoading(false);
 		}
@@ -144,25 +124,9 @@ export function AulaDashboard() {
 				href: savedResearchPagePath(paper.id),
 				at: paper.updatedAt || paper.createdAt,
 			})),
-			...courses.map((course) => ({
-				id: `course-${course.id}`,
-				kind: "course" as const,
-				title: course.title,
-				meta: `${course.department} · ${course.level}`,
-				href: savedCourseOutlinePath(course.id),
-				at: course.updatedAt || course.createdAt,
-			})),
-			...projects.map((project) => ({
-				id: `nb-${project.id}`,
-				kind: "notebook" as const,
-				title: project.title || "Untitled notebook",
-				meta: project.description?.trim() || "Research notebook",
-				href: `/research/note?project=${encodeURIComponent(project.id)}`,
-				at: project.updatedAt || project.createdAt,
-			})),
 		];
 		return items.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime()).slice(0, 8);
-	}, [ideas, papers, courses, projects]);
+	}, [ideas, papers]);
 
 	const toolModal = AULA_QUICK_ACCESS.find((t) => t.id === toolModalId) ?? null;
 
@@ -240,26 +204,6 @@ export function AulaDashboard() {
 							<p className="aula-dash-kpi-hint">Drafts & outputs</p>
 						</div>
 					</article>
-					<article className="aula-dash-kpi">
-						<span className="aula-dash-kpi-icon aula-dash-kpi-courses" aria-hidden>
-							<IconGraduationCap size={18} />
-						</span>
-						<div>
-							<p className="aula-dash-kpi-label">Course plans</p>
-							<p className="aula-dash-kpi-value">{loading ? "…" : courses.length}</p>
-							<p className="aula-dash-kpi-hint">Lesson planner</p>
-						</div>
-					</article>
-					<article className="aula-dash-kpi">
-						<span className="aula-dash-kpi-icon aula-dash-kpi-notes" aria-hidden>
-							<IconFolder size={18} />
-						</span>
-						<div>
-							<p className="aula-dash-kpi-label">Notebooks</p>
-							<p className="aula-dash-kpi-value">{loading ? "…" : projects.length}</p>
-							<p className="aula-dash-kpi-hint">Research note</p>
-						</div>
-					</article>
 				</section>
 
 				<section className="aula-dash-section">
@@ -302,7 +246,7 @@ export function AulaDashboard() {
 						<div className="aula-dash-section-head">
 							<div>
 								<h2 className="aula-dash-section-title">Recent activity</h2>
-								<p className="aula-dash-section-desc">Ideas, papers, courses, and notebooks.</p>
+								<p className="aula-dash-section-desc">Ideas and papers.</p>
 							</div>
 							<Link href="/research/saved" className="ghost-btn">
 								View library
@@ -316,7 +260,7 @@ export function AulaDashboard() {
 									<IconSparkles size={22} />
 								</span>
 								<p className="aula-dash-empty-title">Nothing here yet</p>
-								<p className="muted">Start a research idea or course plan to see activity.</p>
+								<p className="muted">Start a research idea to see activity.</p>
 								<button type="button" className="primary-btn" onClick={() => setQuickOpen(true)}>
 									Quick start
 								</button>
@@ -382,7 +326,7 @@ export function AulaDashboard() {
 				open={quickOpen}
 				onClose={() => setQuickOpen(false)}
 				title="Quick start"
-				description="Jump into research, a notebook, or a new course plan."
+				description="Jump into research."
 				footer={
 					<>
 						<button type="button" className="ghost-btn" onClick={() => setQuickOpen(false)}>
@@ -415,33 +359,6 @@ export function AulaDashboard() {
 						<span>
 							<strong>Research Assistant</strong>
 							<small>Generate cited research ideas</small>
-						</span>
-					</Link>
-					<Link href="/research/note" className="aula-dash-quick-card" onClick={() => setQuickOpen(false)}>
-						<span className="aula-quick-icon-teal aula-dash-quick-icon" aria-hidden>
-							<IconStickyNote size={20} />
-						</span>
-						<span>
-							<strong>Research Notebook</strong>
-							<small>Notes, data & AI drafts</small>
-						</span>
-					</Link>
-					<Link href="/lesson-planner" className="aula-dash-quick-card" onClick={() => setQuickOpen(false)}>
-						<span className="aula-quick-icon-pink aula-dash-quick-icon" aria-hidden>
-							<IconGraduationCap size={20} />
-						</span>
-						<span>
-							<strong>Lesson Planner</strong>
-							<small>Build a course outline</small>
-						</span>
-					</Link>
-					<Link href="/references" className="aula-dash-quick-card" onClick={() => setQuickOpen(false)}>
-						<span className="aula-quick-icon-green aula-dash-quick-icon" aria-hidden>
-							<IconBook size={20} />
-						</span>
-						<span>
-							<strong>References</strong>
-							<small>Format &amp; validate citations</small>
 						</span>
 					</Link>
 				</div>

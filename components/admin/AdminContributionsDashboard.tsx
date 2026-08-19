@@ -259,8 +259,8 @@ export function AdminContributionsDashboard() {
 	};
 
 	const onCreate = async () => {
-		if (!form.outputTitle.trim()) {
-			setError("Output title is required.");
+		if (!form.outputRef.trim()) {
+			setError("Output reference is required.");
 			return;
 		}
 		setWorking(true);
@@ -268,6 +268,7 @@ export function AdminContributionsDashboard() {
 		try {
 			await createAdminContribution({
 				...form,
+				outputTitle: form.outputTitle.trim() || "Research output",
 				toolsUsed: form.toolsUsed
 					.split(",")
 					.map((t) => t.trim())
@@ -296,7 +297,7 @@ export function AdminContributionsDashboard() {
 		<AdminShell
 			title="AI Contribution Statements"
 			subtitle="Check that researchers disclosed how GARIL AI helped their work — without opening the research itself"
-			breadcrumb="Admin · Research Integrity"
+			breadcrumb="Admin · Research integrity"
 			actions={
 				<>
 					<button
@@ -400,16 +401,6 @@ export function AdminContributionsDashboard() {
 				>
 					<div className="admin-form-grid">
 						<label>
-							Output title
-							<input
-								className="topic-input"
-								value={form.outputTitle}
-								onChange={(e) =>
-									setForm((f) => ({ ...f, outputTitle: e.target.value }))
-								}
-							/>
-						</label>
-						<label>
 							Output reference
 							<input
 								className="topic-input"
@@ -417,6 +408,7 @@ export function AdminContributionsDashboard() {
 								onChange={(e) =>
 									setForm((f) => ({ ...f, outputRef: e.target.value }))
 								}
+								placeholder="Record id — not the research title"
 							/>
 						</label>
 						<label>
@@ -724,6 +716,9 @@ export function AdminContributionsDashboard() {
 											</td>
 											<td>
 												<strong>{displayText(row.outputTitle, "Untitled output")}</strong>
+												{row.titleEncrypted !== false && (
+													<span className="admin-chip admin-chip-restricted">encrypted title</span>
+												)}
 												{hasDiscrepancy(row) && (
 													<span
 														className="admin-sev admin-sev-warning"

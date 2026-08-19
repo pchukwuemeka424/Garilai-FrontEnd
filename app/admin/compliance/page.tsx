@@ -1,5 +1,5 @@
-import { AdminComplianceDashboard } from "@/components/admin/AdminComplianceDashboard";
+import { redirect } from "next/navigation";
 
-export default function AdminCompliancePage() {
-	return <AdminComplianceDashboard />;
+export default function RemovedAdminModulePage() {
+	redirect("/admin");
 }

@@ -202,8 +202,8 @@ export function AdminIncidentsDashboard() {
 	return (
 		<AdminShell
 			title="Incident Management"
-			subtitle="Report, investigate, and resolve incidents with full timeline and SLA tracking"
-			breadcrumb="Admin · Safety & Compliance"
+			subtitle="Record, investigate, and resolve incidents with a full history of actions and comments"
+			breadcrumb="Admin · Accountability"
 			actions={
 				<div className="admin-actions-row">
 					<button type="button" className="ghost-btn" onClick={() => setShowCreate(!showCreate)}>{showCreate ? "Cancel" : "Open Incident"}</button>
@@ -265,7 +265,7 @@ export function AdminIncidentsDashboard() {
 				</AdminPanel>
 			</div>
 
-			<AdminPanel title="Incident Log" description={`${filtered.length} incidents`}>
+			<AdminPanel title="Incident cases" description={`${filtered.length} incidents — open a case to see comments, actions, and resolution`}>
 				{loading ? <p className="muted">Loading…</p> : (
 					<div className="admin-table-scroll">
 						<table className="admin-simple-table">

@@ -198,16 +198,21 @@ export async function fetchPapersForOutline(query: string, limit = 6): Promise<O
 	}
 }
 
-export async function fetchResearchOutlineFromApi(input: {
-	idea: ResearchIdea;
-	disciplineLabel: string;
-	topic: string;
-	scope: ResearchScope;
-	sources?: ResearchSourceSelection;
-}): Promise<{ outline: string; sourceContext?: string; tokenQuota?: StudentTokenQuota }> {
+export async function fetchResearchOutlineFromApi(
+	input: {
+		idea: ResearchIdea;
+		disciplineLabel: string;
+		topic: string;
+		scope: ResearchScope;
+		sources?: ResearchSourceSelection;
+		assignmentInstructions?: string;
+	},
+	options?: { signal?: AbortSignal },
+): Promise<{ outline: string; sourceContext?: string; tokenQuota?: StudentTokenQuota }> {
 	const res = await fetch(apiUrl("/api/research/outline"), {
 		method: "POST",
 		headers: { "Content-Type": "application/json", ...authHeaders() },
+		signal: options?.signal,
 		body: JSON.stringify({
 			idea: {
 				id: input.idea.id,
@@ -224,6 +229,7 @@ export async function fetchResearchOutlineFromApi(input: {
 			topic: input.topic,
 			scope: input.scope,
 			sources: input.sources,
+			assignmentInstructions: input.assignmentInstructions,
 		}),
 	});
 
@@ -252,10 +258,12 @@ export async function fetchResearchOutlineFromApi(input: {
 
 export async function fetchResearchSourceContextFromApi(
 	sources: ResearchSourceSelection,
+	options?: { signal?: AbortSignal },
 ): Promise<string> {
 	const res = await fetch(apiUrl("/api/research/source-context"), {
 		method: "POST",
 		headers: { "Content-Type": "application/json", ...authHeaders() },
+		signal: options?.signal,
 		body: JSON.stringify({ sources }),
 	});
 	const data = (await res.json().catch(() => ({}))) as { sourceContext?: string; error?: string };
@@ -265,22 +273,34 @@ export async function fetchResearchSourceContextFromApi(
 	return data.sourceContext?.trim() ?? "";
 }
 
-export async function fetchResearchVisualizationsFromApi(input: {
-	datasetIds?: string[];
-	projectIds?: string[];
-	topic: string;
-}): Promise<{ artifacts: string; figureAppendix: string; hasSavedFigures: boolean }> {
+export async function fetchResearchVisualizationsFromApi(
+	input: {
+		datasetIds?: string[];
+		projectIds?: string[];
+		documentIds?: string[];
+		topic: string;
+	},
+	options?: { signal?: AbortSignal },
+): Promise<{
+	artifacts: string;
+	figureAppendix: string;
+	hasSavedFigures: boolean;
+	figureDocumentIds: string[];
+}> {
 	const datasetIds = input.datasetIds ?? [];
 	const projectIds = input.projectIds ?? [];
-	if (!datasetIds.length && !projectIds.length) {
-		return { artifacts: "", figureAppendix: "", hasSavedFigures: false };
+	const documentIds = input.documentIds ?? [];
+	if (!datasetIds.length && !projectIds.length && !documentIds.length) {
+		return { artifacts: "", figureAppendix: "", hasSavedFigures: false, figureDocumentIds: [] };
 	}
 	const res = await fetch(apiUrl("/api/research/visualizations"), {
 		method: "POST",
 		headers: { "Content-Type": "application/json", ...authHeaders() },
+		signal: options?.signal,
 		body: JSON.stringify({
 			datasetIds,
 			projectIds,
+			documentIds,
 			topic: input.topic,
 		}),
 	});
@@ -288,6 +308,7 @@ export async function fetchResearchVisualizationsFromApi(input: {
 		artifacts?: string;
 		figureAppendix?: string;
 		hasSavedFigures?: boolean;
+		figureDocumentIds?: string[];
 		error?: string;
 	};
 	if (!res.ok) {
@@ -297,6 +318,9 @@ export async function fetchResearchVisualizationsFromApi(input: {
 		artifacts: data.artifacts?.trim() ?? "",
 		figureAppendix: data.figureAppendix?.trim() ?? "",
 		hasSavedFigures: Boolean(data.hasSavedFigures),
+		figureDocumentIds: Array.isArray(data.figureDocumentIds)
+			? data.figureDocumentIds.map(String).filter(Boolean)
+			: [],
 	};
 }
 

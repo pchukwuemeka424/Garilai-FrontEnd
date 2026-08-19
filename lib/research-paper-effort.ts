@@ -1,5 +1,6 @@
-import { exportDraft, type ExportFormat } from "@/components/research-note/features/export/exporters";
 import type { ResearchSourceSelection } from "@/lib/research-assets-api";
+
+export type ExportFormat = "pdf" | "md" | "txt" | "docx";
 
 export type EffortBand = "none" | "low" | "moderate" | "high" | "very_high";
 
@@ -18,7 +19,7 @@ export type PaperMaterialCounts = {
 	labEntries: number;
 	references: number;
 	templates: number;
-	/** Research Note projects linked at generation time. */
+	/** Linked research projects at generation time (legacy). */
 	projects: number;
 };
 
@@ -60,7 +61,7 @@ function clamp(n: number, lo = 0, hi = 100): number {
 	return Math.max(lo, Math.min(hi, Math.round(n)));
 }
 
-function tokenize(text: string): string[] {
+export function tokenize(text: string): string[] {
 	return text
 		.replace(/<[^>]+>/g, " ")
 		.toLowerCase()
@@ -185,28 +186,6 @@ export function emptyMaterialCounts(): PaperMaterialCounts {
 	};
 }
 
-/** Extract capture counts from a Research Note ProjectState-like notebook JSON. */
-export function materialCountsFromNotebook(notebookData: unknown): PaperMaterialCounts {
-	const counts = emptyMaterialCounts();
-	if (!notebookData || typeof notebookData !== "object") return counts;
-	const n = notebookData as {
-		pages?: unknown[];
-		datasets?: unknown[];
-		assets?: unknown[];
-		labEntries?: unknown[];
-		references?: unknown[];
-		templates?: unknown[];
-	};
-	counts.notes = Array.isArray(n.pages) ? n.pages.length : 0;
-	counts.datasets = Array.isArray(n.datasets) ? n.datasets.length : 0;
-	counts.figures = Array.isArray(n.assets) ? n.assets.length : 0;
-	counts.labEntries = Array.isArray(n.labEntries) ? n.labEntries.length : 0;
-	counts.references = Array.isArray(n.references) ? n.references.length : 0;
-	counts.templates = Array.isArray(n.templates) ? n.templates.length : 0;
-	counts.projects = 1;
-	return counts;
-}
-
 export function mergeMaterialCounts(...parts: PaperMaterialCounts[]): PaperMaterialCounts {
 	const out = emptyMaterialCounts();
 	for (const p of parts) {
@@ -226,7 +205,7 @@ export function materialCountsFromSources(sources?: ResearchSourceSelection | nu
 	const counts = emptyMaterialCounts();
 	if (!sources) return counts;
 	counts.documents = sources.documentIds?.length ?? 0;
-	counts.datasets = sources.datasetIds?.length ?? 0;
+	counts.datasets = (sources.datasetIds?.length ?? 0) + (sources.questionnaireIds?.length ?? 0);
 	counts.notes += sources.noteIds?.length ?? 0;
 	counts.projects = sources.projectIds?.length ?? 0;
 	return counts;
@@ -255,17 +234,93 @@ export function bandLabel(band: EffortBand): string {
 	}
 }
 
-function scoreCapture(materials: PaperMaterialCounts): number {
-	const raw =
-		(materials.notes > 0 ? 18 : 0) +
-		(materials.documents > 0 ? 12 : 0) +
-		(materials.datasets > 0 ? 16 : 0) +
-		(materials.figures > 0 ? 14 : 0) +
-		(materials.labEntries > 0 ? 16 : 0) +
-		(materials.references > 0 ? 10 : 0) +
-		(materials.projects > 0 ? 8 : 0) +
-		Math.min(6, materials.notes + materials.documents);
-	return clamp(raw);
+/** One recorded capture item is worth 5%. Original writing is 1% per 100 words, rounding any remainder up so short inserts still score. */
+export const CAPTURE_SCORE_PER_ITEM = 5;
+
+export function scoreWritingWords(writingWords: number): number {
+	const words = Math.max(0, writingWords);
+	if (words <= 0) return 0;
+	return clamp(Math.ceil(words / 100));
+}
+
+export function scoreOfficialUserEffort(input: {
+	captureItems: number;
+	writingWords: number;
+}): { captureScore: number; writingScore: number; userEffortScore: number } {
+	const captureScore = clamp(Math.max(0, input.captureItems) * CAPTURE_SCORE_PER_ITEM);
+	const writingScore = scoreWritingWords(input.writingWords);
+	return {
+		captureScore,
+		writingScore,
+		userEffortScore: clamp(captureScore + writingScore),
+	};
+}
+
+function labRecordCounts(row: { detail?: string } | unknown): boolean {
+	if (!row || typeof row !== "object") return false;
+	const detail = "detail" in row && typeof row.detail === "string" ? row.detail : "";
+	if (!detail) return true;
+	if (detail === "Empty") return false;
+	return !/\b0 words\b/.test(detail);
+}
+
+export function tallyOfficialPaperEffort(input: {
+	evidence?: {
+		pages?: { detail: string }[];
+		files?: unknown[];
+		surveys?: unknown[];
+		datasets?: unknown[];
+		pictures?: unknown[];
+		lab?: unknown[];
+	} | null;
+	materials?: PaperMaterialCounts | null;
+	sources?: ResearchSourceSelection | null;
+	wordsInserted?: number;
+}): {
+	pages: number;
+	files: number;
+	surveys: number;
+	datasets: number;
+	pictures: number;
+	lab: number;
+	captureItems: number;
+	captureScore: number;
+	writingWords: number;
+	writingScore: number;
+	userEffortScore: number;
+} {
+	const evidence = input.evidence;
+	const materials = input.materials ?? emptyMaterialCounts();
+	const sources = input.sources;
+	const pages = (evidence?.pages ?? []).filter((row) => row.detail !== "Empty").length;
+	const files = Math.max(evidence?.files?.length ?? 0, materials.documents);
+	const pictures = Math.max(evidence?.pictures?.length ?? 0, materials.figures);
+	const sourceDocUploads = sources?.documentIds?.length ?? 0;
+	const extraDocs = Math.max(0, sourceDocUploads - (files + pictures));
+	const surveys = Math.max(
+		evidence?.surveys?.length ?? 0,
+		sources?.questionnaireIds?.length ?? 0,
+	);
+	const datasets = Math.max(evidence?.datasets?.length ?? 0, sources?.datasetIds?.length ?? 0);
+	const lab = Math.max(
+		(evidence?.lab ?? []).filter(labRecordCounts).length,
+		materials.labEntries,
+	);
+	const captureItems = pages + files + extraDocs + surveys + datasets + pictures + lab;
+	// Manuscript edits after generation only. Notebook prose is already counted as capture items.
+	const writingWords = Math.max(0, input.wordsInserted ?? 0);
+	const scored = scoreOfficialUserEffort({ captureItems, writingWords });
+	return {
+		pages,
+		files,
+		surveys,
+		datasets,
+		pictures,
+		lab,
+		captureItems,
+		writingWords,
+		...scored,
+	};
 }
 
 function scoreArtifacts(artifacts: PaperContentArtifacts): number {
@@ -279,7 +334,7 @@ function scoreArtifacts(artifacts: PaperContentArtifacts): number {
 
 /**
  * Score user contribution on a Research Assistant paper.
- * Combines capture (uploads / research note), writing edits, and in-paper graphs/labs.
+ * Overall = official capture (5% per item) + writing (1% per 100 manuscript words inserted).
  */
 export function computePaperEffort(input: {
 	content: string;
@@ -287,28 +342,47 @@ export function computePaperEffort(input: {
 	humanEdited?: boolean;
 	topic?: string;
 	materials?: PaperMaterialCounts | null;
+	sources?: ResearchSourceSelection | null;
+	evidence?: {
+		pages?: { detail: string }[];
+		files?: unknown[];
+		surveys?: unknown[];
+		datasets?: unknown[];
+		pictures?: unknown[];
+		lab?: unknown[];
+		writingWords?: number;
+	} | null;
 }): PaperEffortSnapshot {
 	const content = input.content.trim();
-	const baseline = (input.aiBaselineContent ?? content).trim();
+	const baseline = (input.aiBaselineContent?.trim() || content).trim();
 	const words = tokenize(content);
 	const baselineWords = tokenize(baseline);
 	const materials = input.materials ?? emptyMaterialCounts();
 	const artifacts = analyzePaperArtifacts(content);
 	const edits = computeEditStats(baseline, content);
 	const empty = words.length === 0;
-
-	const captureScore = scoreCapture(materials);
 	const artifactScore = scoreArtifacts(artifacts);
 
+	const official = tallyOfficialPaperEffort({
+		evidence: input.evidence,
+		materials,
+		sources: input.sources,
+		wordsInserted: edits.wordsInserted,
+	});
+	const captureScore = official.captureScore;
+	const writingScore = official.writingScore;
+	const userEffortScore = official.userEffortScore;
+	const userBand = bandForScore(userEffortScore);
+	const aiShareScore = clamp(100 - writingScore);
+
 	if (empty) {
-		const emptyScore = clamp(20 + captureScore * 0.5 * 0.8);
 		return {
-			userEffortScore: emptyScore,
+			userEffortScore,
 			aiShareScore: 0,
 			captureScore,
-			writingScore: 0,
+			writingScore,
 			artifactScore: 0,
-			userBand: bandForScore(emptyScore),
+			userBand,
 			wordCount: 0,
 			baselineWordCount: 0,
 			humanEdited: Boolean(input.humanEdited),
@@ -318,11 +392,11 @@ export function computePaperEffort(input: {
 			artifacts,
 			edits,
 			summaryLines: [
-				`Overall score of user’s input: ${emptyScore}/100 (starts at 20).`,
-				"No paper text yet.",
+				`Overall score of user’s input: ${userEffortScore}/100.`,
+				`Capture ${captureScore}/100 (${official.captureItems} item(s) × 5%) · Writing ${writingScore}/100.`,
 				captureScore > 0
 					? "Uploaded materials are counted toward capture effort."
-					: "Upload Materials, Data, Figures, or Lab Log (or edit the paper) to raise your score.",
+					: "Upload Materials, Data, Figures, or Lab Log (or insert original text) to raise your score.",
 			],
 		};
 	}
@@ -333,28 +407,9 @@ export function computePaperEffort(input: {
 		(Boolean(input.aiBaselineContent?.trim()) && ratio > 0.02) ||
 		edits.wordsInserted + edits.wordsDeleted > 0;
 
-	let writingScore = 0;
-	if (!input.aiBaselineContent?.trim() && !edited) {
-		writingScore = 0;
-	} else if (!edited && ratio < 0.02) {
-		writingScore = 0;
-	} else {
-		writingScore = clamp(ratio * 100 * 1.15);
-		if (edited && writingScore < 8) writingScore = 8;
-		// Bonus for substantial inserts
-		if (edits.wordsInserted >= 80) writingScore = clamp(writingScore + 8);
-		if (edits.sectionsTouched >= 2) writingScore = clamp(writingScore + 5);
-	}
-
-	// Overall: baseline 20 + 80% × (capture 30% + writing 50% + artifacts 20%)
-	const blended = captureScore * 0.3 + writingScore * 0.5 + artifactScore * 0.2
-	const userEffortScore = clamp(20 + blended * 0.8);
-	const aiShareScore = clamp(100 - writingScore);
-	const userBand = bandForScore(userEffortScore);
-
 	const summaryLines: string[] = [
 		`Overall score of user’s input: ${userEffortScore}/100 (${bandLabel(userBand)}).`,
-		`Capture ${captureScore}/100 · Writing/edits ${writingScore}/100 · Graphs & labs in paper ${artifactScore}/100.`,
+		`Capture ${captureScore}/100 (${official.captureItems} item(s) × 5%) · Writing ${writingScore}/100 (1% per 100 inserted words; remainder counts). Overall is capture plus writing.`,
 		`AI text share (writing): ${aiShareScore}/100 · Paper length: ${words.length} words.`,
 	];
 
@@ -428,7 +483,7 @@ export function composePaperEffortMarkdown(input: {
 		``,
 		`**${effort.userEffortScore} / 100** (${bandLabel(effort.userBand)})`,
 		``,
-		`Starts at **20 / 100**, then adds from: 30% capture/uploads · 50% writing/edits · 20% graphs & labs.`,
+		`Capture ${effort.captureScore}% + writing ${effort.writingScore}% = overall ${effort.userEffortScore}/100.`,
 		``,
 		`**Paper:** ${input.title}`,
 		`**Topic:** ${input.topic || "—"}`,
@@ -458,7 +513,7 @@ export function composePaperEffortMarkdown(input: {
 		``,
 		`| Material | Count |`,
 		`| --- | ---: |`,
-		`| Research Note projects | ${effort.materials.projects} |`,
+		`| Linked projects | ${effort.materials.projects} |`,
 		`| Notes / materials pages | ${effort.materials.notes} |`,
 		`| Documents | ${effort.materials.documents} |`,
 		`| Datasets | ${effort.materials.datasets} |`,
@@ -492,14 +547,26 @@ export function composePaperEffortMarkdown(input: {
 		``,
 		`## Scoring notes`,
 		``,
-		`- **Capture** counts uploaded/linked Materials, documents, datasets, figures, Lab Log, and Research Note projects.`,
-		`- **Writing & edits** compares the current paper to the AI baseline (words inserted/deleted and sections changed).`,
-		`- **Graphs & labs** credits charts, figures, tables, and lab/experiment language present in the paper.`,
-		`- **Overall user effort** = 20 baseline + 80% × (30% capture + 50% writing + 20% graphs/labs).`,
-		`- This report is always available, even when you have not edited or uploaded yet (starts at 20).`,
+		`- **Capture** is 5% for each recorded item: notebook pages, uploaded files, pictures, datasets, surveys, and lab records from the selected notebook and from documents or datasets picked on Research Assistant.`,
+		`- **Writing** is 1% for every 100 words inserted in the manuscript after generation. Any remainder under 100 words still counts as 1%.`,
+		`- **Overall user effort** = capture + writing, the same figures as the official PDF report.`,
+		`- Generated manuscript text and notebook prose already counted as capture items are not added again as writing.`,
 		``,
 	];
 	return lines.join("\n");
+}
+
+function downloadBlob(filename: string, content: string, mime: string): void {
+	const blob = new Blob([content], { type: mime });
+	const url = URL.createObjectURL(blob);
+	const a = document.createElement("a");
+	a.href = url;
+	a.download = filename;
+	a.rel = "noopener";
+	document.body.appendChild(a);
+	a.click();
+	a.remove();
+	URL.revokeObjectURL(url);
 }
 
 export async function downloadPaperEffortReport(
@@ -508,10 +575,33 @@ export async function downloadPaperEffortReport(
 		topic: string;
 		effort: PaperEffortSnapshot;
 		author?: PaperAuthorProfile | null;
+		paperId?: string;
+		createdAt?: string;
+		sources?: ResearchSourceSelection | null;
+		evidence?: import("@/lib/research-paper-effort-evidence").PaperEffortEvidence | null;
 	},
 	format: ExportFormat = "pdf",
 ): Promise<void> {
+	const base = `${input.title || "Research"}-User-Effort-Score`.replace(/[^\w.-]+/g, "_");
+	if (format === "pdf" || format === "docx") {
+		const { downloadOfficialEffortPdf, officialReportFromPaper } = await import(
+			"@/lib/garil-user-effort-score-docx"
+		);
+		await downloadOfficialEffortPdf(
+			`${base}.pdf`,
+			officialReportFromPaper({
+				title: input.title,
+				topic: input.topic,
+				paperId: input.paperId,
+				createdAt: input.createdAt,
+				effort: input.effort,
+				author: input.author,
+				sources: input.sources,
+				evidence: input.evidence,
+			}),
+		);
+		return;
+	}
 	const md = composePaperEffortMarkdown(input);
-	const base = `${input.title || "Research"}-Effort-Report`;
-	await exportDraft(format, base, md);
+	downloadBlob(`${base}.md`, md, "text/markdown;charset=utf-8");
 }

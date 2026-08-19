@@ -1,5 +1,5 @@
-import { AdminInventoryDashboard } from "@/components/admin/AdminInventoryDashboard";
+import { redirect } from "next/navigation";
 
-export default function AdminInventoryPage() {
-	return <AdminInventoryDashboard />;
+export default function RemovedAdminModulePage() {
+	redirect("/admin");
 }

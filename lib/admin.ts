@@ -1,29 +1,5 @@
 import type { StudentTokenQuota } from "@/lib/student-tokens";
 
-export type AdminLectureRecord = {
-	id: string;
-	userId: string | null;
-	title: string;
-	department: string;
-	level: string;
-	outline: string;
-	presentation: {
-		title: string;
-		slides: { title: string; explanation: string; bullets: string[]; imageUrl?: string | null }[];
-	} | null;
-	createdAt: string;
-	updatedAt: string;
-	ownerName: string | null;
-	ownerEmail: string | null;
-	slideCount: number;
-};
-
-export type LectureAdminStats = {
-	total: number;
-	withPresentation: number;
-	withoutPresentation: number;
-};
-
 export type AdminTokenRecord = {
 	id: string;
 	name: string;
@@ -47,6 +23,9 @@ export type TokenAdminStats = {
 	weeklyTokensApprox?: number;
 	monthlyTokensApprox?: number;
 	estimatedCost?: number;
+	byFaculty?: Array<{ key: string; label: string; users: number; tokensUsed: number; allowance: number }>;
+	byDepartment?: Array<{ key: string; label: string; users: number; tokensUsed: number; allowance: number }>;
+	byProgramme?: Array<{ key: string; label: string; users: number; tokensUsed: number; allowance: number }>;
 };
 
 export type UpdateTokenInput = {

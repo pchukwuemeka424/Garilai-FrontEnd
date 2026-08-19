@@ -129,7 +129,7 @@ export function AulaRightPanel() {
 					<h3 className="aula-panel-widget-title">Focus</h3>
 				</div>
 				<p className="aula-panel-empty">
-					Use Lesson Planner for teaching sessions and Research Assistant for cited paper drafts.
+					Use Research Assistant for cited research ideas and full paper drafts.
 				</p>
 			</section>
 		</aside>

@@ -1,5 +1,6 @@
 import { apiUrl } from "@/lib/api";
 import { authHeaders } from "@/lib/auth";
+import type { ResearchNotebookData } from "@/lib/research-notebook";
 import type { ResearchProjectType } from "@/lib/research-project-types";
 
 export type ResearchDataset = {
@@ -31,8 +32,10 @@ export type AttachmentPayload = {
 export type ResearchSourceSelection = {
 	documentIds: string[];
 	datasetIds: string[];
+	questionnaireIds?: string[];
+	/** Legacy note ids retained for saved-paper source compat. */
 	noteIds: string[];
-	/** Research Note workspace projects (notebook + linked assets). */
+	/** Legacy project ids retained for saved-paper source compat. */
 	projectIds?: string[];
 };
 
@@ -76,8 +79,9 @@ export function downloadDataUrl(dataUrl: string, fileName: string): void {
 	a.remove();
 }
 
-export async function fetchDatasets(): Promise<ResearchDataset[]> {
-	const res = await fetch(apiUrl("/api/research/datasets"), { headers: authHeaders() });
+export async function fetchDatasets(projectId?: string): Promise<ResearchDataset[]> {
+	const q = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
+	const res = await fetch(apiUrl(`/api/research/datasets${q}`), { headers: authHeaders() });
 	if (res.status === 401) throw new Error("Sign in to view your datasets.");
 	if (!res.ok) throw new Error(await parseError(res, "Could not load datasets."));
 	const data = (await res.json()) as { datasets?: ResearchDataset[] };
@@ -102,8 +106,17 @@ export async function createDataset(input: {
 	/** When set, uploads directly to MinIO (supports up to 2 GB). */
 	file?: File;
 }): Promise<ResearchDataset> {
-	if (input.file) {
+	if (input.file && input.file.size > 8 * 1024 * 1024) {
 		return createDatasetViaDirectUpload(input, input.file);
+	}
+
+	let fileName = input.fileName;
+	let fileMime = input.fileMime;
+	let fileData = input.fileData;
+	if (input.file) {
+		fileName = input.file.name;
+		fileMime = input.file.type || "text/csv";
+		fileData = await readFileAsDataUrl(input.file);
 	}
 
 	const res = await fetch(apiUrl("/api/research/datasets"), {
@@ -121,9 +134,9 @@ export async function createDataset(input: {
 			tags: parseTagsText(input.tagsText),
 			visibility: input.visibility,
 			projectId: input.projectId,
-			fileName: input.fileName,
-			fileMime: input.fileMime,
-			fileData: input.fileData,
+			fileName,
+			fileMime,
+			fileData,
 		}),
 	});
 	if (!res.ok) throw new Error(await parseError(res, "Could not save dataset."));
@@ -252,7 +265,53 @@ export async function deleteDataset(id: string): Promise<void> {
 	if (!res.ok) throw new Error(await parseError(res, "Could not remove dataset."));
 }
 
-export type GraphChartType = "bar" | "line" | "area" | "pie" | "scatter";
+export type GraphChartType =
+	| "bar"
+	| "stacked_bar"
+	| "horizontal_bar"
+	| "line"
+	| "area"
+	| "composed"
+	| "scatter"
+	| "bubble"
+	| "pie"
+	| "doughnut"
+	| "radar"
+	| "funnel"
+	| "treemap"
+	| "histogram";
+
+export const GRAPH_CHART_GROUPS: Array<{ label: string; options: Array<{ value: GraphChartType; label: string }> }> = [
+	{
+		label: "Comparison",
+		options: [
+			{ value: "bar", label: "Bar" },
+			{ value: "stacked_bar", label: "Stacked bar" },
+			{ value: "horizontal_bar", label: "Horizontal bar" },
+			{ value: "line", label: "Line" },
+			{ value: "area", label: "Area" },
+			{ value: "composed", label: "Composed (bar + line)" },
+		],
+	},
+	{
+		label: "Distribution",
+		options: [
+			{ value: "histogram", label: "Histogram" },
+			{ value: "scatter", label: "Scatter" },
+			{ value: "bubble", label: "Bubble" },
+			{ value: "radar", label: "Radar" },
+		],
+	},
+	{
+		label: "Part to whole",
+		options: [
+			{ value: "pie", label: "Pie" },
+			{ value: "doughnut", label: "Doughnut" },
+			{ value: "funnel", label: "Funnel" },
+			{ value: "treemap", label: "Treemap" },
+		],
+	},
+];
 
 export type GraphExplanation = {
 	summary: string;
@@ -345,7 +404,9 @@ export type ResearchProject = {
 		datasets: number;
 		notes: number;
 		references: number;
+		questionnaires?: number;
 	};
+	notebookData?: ResearchNotebookData;
 };
 
 export type ResearchDocument = {
@@ -356,14 +417,6 @@ export type ResearchDocument = {
 	sizeLabel: string;
 	kind: "doc" | "pdf" | "sheet" | "other";
 	hasFile: boolean;
-	createdAt: string;
-	updatedAt: string;
-};
-
-export type ResearchNote = {
-	id: string;
-	title: string;
-	content: string;
 	createdAt: string;
 	updatedAt: string;
 };
@@ -379,7 +432,7 @@ export type ResearchReferenceItem = {
 
 export type ResearchActivity = {
 	id: string;
-	kind: "dataset" | "document" | "note" | "reference" | "project";
+	kind: "dataset" | "document" | "reference" | "project" | "questionnaire";
 	label: string;
 	at: string;
 };
@@ -388,8 +441,8 @@ export type ResearchWorkspace = {
 	project: ResearchProject;
 	datasets: ResearchDataset[];
 	documents: ResearchDocument[];
-	notes: ResearchNote[];
 	references: ResearchReferenceItem[];
+	questionnaires?: import("@/lib/research-questionnaire").ResearchQuestionnaire[];
 	activity: ResearchActivity[];
 };
 
@@ -435,36 +488,6 @@ export async function deleteProject(projectId: string): Promise<void> {
 	if (!res.ok) throw new Error(await parseError(res, "Could not delete research folder."));
 }
 
-export async function fetchNotebook(projectId: string): Promise<{
-	notebookData: unknown | null;
-	updatedAt: string;
-}> {
-	const res = await fetch(
-		apiUrl(`/api/research/projects/${encodeURIComponent(projectId)}/notebook`),
-		{ headers: authHeaders() },
-	);
-	if (res.status === 401) throw new Error("Sign in to view your notebook.");
-	if (!res.ok) throw new Error(await parseError(res, "Could not load notebook."));
-	return (await res.json()) as { notebookData: unknown | null; updatedAt: string };
-}
-
-export async function saveNotebook(
-	projectId: string,
-	notebookData: unknown,
-): Promise<{ updatedAt: string }> {
-	const res = await fetch(
-		apiUrl(`/api/research/projects/${encodeURIComponent(projectId)}/notebook`),
-		{
-			method: "PUT",
-			headers: { "Content-Type": "application/json", ...authHeaders() },
-			body: JSON.stringify({ notebookData }),
-		},
-	);
-	if (!res.ok) throw new Error(await parseError(res, "Could not save notebook."));
-	const data = (await res.json()) as { updatedAt?: string };
-	return { updatedAt: data.updatedAt ?? new Date().toISOString() };
-}
-
 export async function updateProject(
 	projectId: string,
 	input: {
@@ -474,6 +497,8 @@ export async function updateProject(
 		favorite?: boolean;
 		projectType?: ResearchProjectType;
 		sections?: Array<{ id: string; title?: string; content?: string }>;
+		notebookData?: ResearchNotebookData;
+		progress?: number;
 	},
 ): Promise<ResearchProject> {
 	const res = await fetch(apiUrl(`/api/research/projects/${encodeURIComponent(projectId)}`), {
@@ -487,8 +512,9 @@ export async function updateProject(
 	return data.project;
 }
 
-export async function fetchDocuments(): Promise<ResearchDocument[]> {
-	const res = await fetch(apiUrl("/api/research/documents"), { headers: authHeaders() });
+export async function fetchDocuments(projectId?: string): Promise<ResearchDocument[]> {
+	const q = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
+	const res = await fetch(apiUrl(`/api/research/documents${q}`), { headers: authHeaders() });
 	if (res.status === 401) throw new Error("Sign in to view your documents.");
 	if (!res.ok) throw new Error(await parseError(res, "Could not load documents."));
 	const data = (await res.json()) as { documents?: ResearchDocument[] };
@@ -514,14 +540,6 @@ export async function createDocument(input: {
 	return data.document;
 }
 
-export async function fetchNotes(): Promise<ResearchNote[]> {
-	const res = await fetch(apiUrl("/api/research/notes"), { headers: authHeaders() });
-	if (res.status === 401) throw new Error("Sign in to view your findings.");
-	if (!res.ok) throw new Error(await parseError(res, "Could not load findings."));
-	const data = (await res.json()) as { notes?: ResearchNote[] };
-	return data.notes ?? [];
-}
-
 export async function fetchDocumentFile(id: string): Promise<AttachmentPayload | null> {
 	const res = await fetch(apiUrl(`/api/research/documents/${encodeURIComponent(id)}/file`), {
 		headers: authHeaders(),
@@ -538,45 +556,6 @@ export async function deleteDocument(id: string): Promise<void> {
 		headers: authHeaders(),
 	});
 	if (!res.ok) throw new Error(await parseError(res, "Could not remove document."));
-}
-
-export async function createNote(input: {
-	title: string;
-	content: string;
-	projectId?: string;
-}): Promise<ResearchNote> {
-	const res = await fetch(apiUrl("/api/research/notes"), {
-		method: "POST",
-		headers: { "Content-Type": "application/json", ...authHeaders() },
-		body: JSON.stringify(input),
-	});
-	if (!res.ok) throw new Error(await parseError(res, "Could not save note."));
-	const data = (await res.json()) as { note?: ResearchNote };
-	if (!data.note) throw new Error("Could not save note.");
-	return data.note;
-}
-
-export async function updateNote(
-	id: string,
-	input: { title?: string; content?: string },
-): Promise<ResearchNote> {
-	const res = await fetch(apiUrl(`/api/research/notes/${encodeURIComponent(id)}`), {
-		method: "PATCH",
-		headers: { "Content-Type": "application/json", ...authHeaders() },
-		body: JSON.stringify(input),
-	});
-	if (!res.ok) throw new Error(await parseError(res, "Could not update note."));
-	const data = (await res.json()) as { note?: ResearchNote };
-	if (!data.note) throw new Error("Could not update note.");
-	return data.note;
-}
-
-export async function deleteNote(id: string): Promise<void> {
-	const res = await fetch(apiUrl(`/api/research/notes/${encodeURIComponent(id)}`), {
-		method: "DELETE",
-		headers: authHeaders(),
-	});
-	if (!res.ok) throw new Error(await parseError(res, "Could not remove note."));
 }
 
 export async function createReference(input: {
@@ -602,5 +581,97 @@ export async function deleteReference(id: string): Promise<void> {
 		headers: authHeaders(),
 	});
 	if (!res.ok) throw new Error(await parseError(res, "Could not remove reference."));
+}
+
+export async function fetchQuestionnaires(
+	projectId?: string,
+): Promise<import("@/lib/research-questionnaire").ResearchQuestionnaire[]> {
+	const q = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
+	const res = await fetch(apiUrl(`/api/research/questionnaires${q}`), { headers: authHeaders() });
+	if (res.status === 401) throw new Error("Sign in to view questionnaires.");
+	if (!res.ok) throw new Error(await parseError(res, "Could not load questionnaires."));
+	const data = (await res.json()) as {
+		questionnaires?: import("@/lib/research-questionnaire").ResearchQuestionnaire[];
+	};
+	return data.questionnaires ?? [];
+}
+
+export async function createQuestionnaire(input: {
+	projectId?: string;
+	title: string;
+	description?: string;
+	population?: string;
+	sampleSize?: number;
+	distributionNote?: string;
+	items?: import("@/lib/research-questionnaire").QuestionnaireItem[];
+	instrumentDocumentId?: string;
+}): Promise<import("@/lib/research-questionnaire").ResearchQuestionnaire> {
+	const res = await fetch(apiUrl("/api/research/questionnaires"), {
+		method: "POST",
+		headers: { "Content-Type": "application/json", ...authHeaders() },
+		body: JSON.stringify(input),
+	});
+	if (!res.ok) throw new Error(await parseError(res, "Could not create questionnaire."));
+	const data = (await res.json()) as {
+		questionnaire?: import("@/lib/research-questionnaire").ResearchQuestionnaire;
+	};
+	if (!data.questionnaire) throw new Error("Could not create questionnaire.");
+	return data.questionnaire;
+}
+
+export async function updateQuestionnaire(
+	id: string,
+	input: {
+		title?: string;
+		description?: string;
+		population?: string;
+		sampleSize?: number;
+		distributionNote?: string;
+		items?: import("@/lib/research-questionnaire").QuestionnaireItem[];
+		instrumentDocumentId?: string | null;
+	},
+): Promise<import("@/lib/research-questionnaire").ResearchQuestionnaire> {
+	const res = await fetch(apiUrl(`/api/research/questionnaires/${encodeURIComponent(id)}`), {
+		method: "PATCH",
+		headers: { "Content-Type": "application/json", ...authHeaders() },
+		body: JSON.stringify(input),
+	});
+	if (!res.ok) throw new Error(await parseError(res, "Could not save questionnaire."));
+	const data = (await res.json()) as {
+		questionnaire?: import("@/lib/research-questionnaire").ResearchQuestionnaire;
+	};
+	if (!data.questionnaire) throw new Error("Could not save questionnaire.");
+	return data.questionnaire;
+}
+
+export async function importQuestionnaireResponses(
+	id: string,
+	input: { file: File; columnMap?: Record<string, string> },
+): Promise<import("@/lib/research-questionnaire").ResearchQuestionnaire> {
+	const fileData = await readFileAsDataUrl(input.file);
+	const res = await fetch(apiUrl(`/api/research/questionnaires/${encodeURIComponent(id)}/import`), {
+		method: "POST",
+		headers: { "Content-Type": "application/json", ...authHeaders() },
+		body: JSON.stringify({
+			fileName: input.file.name,
+			fileMime: input.file.type || "text/csv",
+			fileData,
+			columnMap: input.columnMap,
+		}),
+	});
+	if (!res.ok) throw new Error(await parseError(res, "Could not import responses."));
+	const data = (await res.json()) as {
+		questionnaire?: import("@/lib/research-questionnaire").ResearchQuestionnaire;
+	};
+	if (!data.questionnaire) throw new Error("Could not import responses.");
+	return data.questionnaire;
+}
+
+export async function deleteQuestionnaire(id: string): Promise<void> {
+	const res = await fetch(apiUrl(`/api/research/questionnaires/${encodeURIComponent(id)}`), {
+		method: "DELETE",
+		headers: authHeaders(),
+	});
+	if (!res.ok) throw new Error(await parseError(res, "Could not remove questionnaire."));
 }
 

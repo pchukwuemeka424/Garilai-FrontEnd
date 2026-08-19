@@ -13,6 +13,8 @@ export type OutlinePageContext = {
 	scope: ResearchScope;
 	sources?: ResearchSourceSelection;
 	returnTo?: string;
+	/** Coursework brief / lecturer instructions for assignment generation. */
+	assignmentInstructions?: string;
 };
 
 export function stageOutlinePageContext(input: {
@@ -22,6 +24,7 @@ export function stageOutlinePageContext(input: {
 	scope: ResearchScope;
 	sources?: ResearchSourceSelection;
 	returnTo?: string;
+	assignmentInstructions?: string;
 }): string {
 	const key = outlineStorageKey(input.idea, input.discipline, input.topic, input.scope);
 	if (typeof window !== "undefined") {
@@ -59,5 +62,9 @@ export function resolveOutlinePageContext(key: string): OutlinePageContext | nul
 		discipline: outlineEntry.discipline,
 		topic: outlineEntry.topic,
 		scope: outlineEntry.scope,
+		...(outlineEntry.sources ? { sources: outlineEntry.sources } : {}),
+		...(outlineEntry.assignmentInstructions
+			? { assignmentInstructions: outlineEntry.assignmentInstructions }
+			: {}),
 	};
 }

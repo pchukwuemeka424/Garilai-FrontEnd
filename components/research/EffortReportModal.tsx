@@ -92,7 +92,7 @@ export function EffortReportModal({
 							onClick={onDownload}
 							disabled={downloading}
 						>
-							{downloading ? "Preparing…" : "Download report"}
+							{downloading ? "Preparing…" : "Download official PDF report"}
 						</button>
 						<button
 							ref={closeRef}
@@ -119,7 +119,8 @@ export function EffortReportModal({
 							<p className="saved-research-effort-overall-label">Overall score of user’s input</p>
 							<p className="saved-research-effort-overall-band">{bandLabel(effort.userBand)}</p>
 							<p className="saved-research-effort-overall-formula">
-								30% capture/uploads · 50% writing/edits · 20% graphs & labs
+								Capture {effort.captureScore}% + writing {effort.writingScore}% = overall{" "}
+								{effort.userEffortScore}/100
 							</p>
 							{topic.trim() ? (
 								<p className="saved-research-report-topic">
@@ -181,7 +182,7 @@ export function EffortReportModal({
 							<h3>Uploaded & linked materials</h3>
 							<ul className="saved-research-effort-metrics">
 								<li>
-									<span>Research Note projects</span>
+									<span>Linked projects</span>
 									<strong>{effort.materials.projects}</strong>
 								</li>
 								<li>

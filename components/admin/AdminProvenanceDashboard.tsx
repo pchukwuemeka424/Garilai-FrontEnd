@@ -267,8 +267,8 @@ export function AdminProvenanceDashboard() {
 	};
 
 	const onCreate = async () => {
-		if (!form.outputTitle.trim()) {
-			setError("Output title is required.");
+		if (!form.outputRef.trim()) {
+			setError("Output reference is required.");
 			return;
 		}
 		setWorking(true);
@@ -276,7 +276,7 @@ export function AdminProvenanceDashboard() {
 		try {
 			await createAdminProvenance({
 				outputRef: form.outputRef,
-				outputTitle: form.outputTitle,
+				outputTitle: form.outputTitle.trim() || "Research output",
 				outputType: form.outputType,
 				ownerName: form.ownerName,
 				ownerEmail: form.ownerEmail,
@@ -306,7 +306,7 @@ export function AdminProvenanceDashboard() {
 		<AdminShell
 			title="Research Provenance & Transparency"
 			subtitle="Track AI-assisted research process chains for integrity and accountability"
-			breadcrumb="Admin · Governance"
+			breadcrumb="Admin · Research integrity"
 			actions={
 				<>
 					<button
@@ -358,16 +358,6 @@ export function AdminProvenanceDashboard() {
 				>
 					<div className="admin-form-grid">
 						<label>
-							Output title
-							<input
-								className="topic-input"
-								value={form.outputTitle}
-								onChange={(e) =>
-									setForm((f) => ({ ...f, outputTitle: e.target.value }))
-								}
-							/>
-						</label>
-						<label>
 							Output reference
 							<input
 								className="topic-input"
@@ -375,6 +365,7 @@ export function AdminProvenanceDashboard() {
 								onChange={(e) =>
 									setForm((f) => ({ ...f, outputRef: e.target.value }))
 								}
+								placeholder="Record id — not the research title"
 							/>
 						</label>
 						<label>
@@ -561,6 +552,9 @@ export function AdminProvenanceDashboard() {
 										>
 											<td>
 												<strong>{row.outputTitle}</strong>
+												{row.titleEncrypted !== false && (
+													<span className="admin-chip admin-chip-restricted">encrypted title</span>
+												)}
 											</td>
 											<td>{row.outputType}</td>
 											<td>{row.ownerName || "—"}</td>

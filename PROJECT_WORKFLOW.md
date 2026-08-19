@@ -1,27 +1,27 @@
-# Project Workflow — GARIL AI Frontend
+# Project Workflow — GARIL AI
 
-End-to-end product workflows from the **UI** side: user journeys, WebSocket client protocol, research flows, and local development for this frontend repo.
-
-The agentic runtime, literature APIs, and MongoDB live in the **backend** service. This app talks to it over HTTP `/api/*` and WebSocket `/ws`.
+End-to-end workflows for the GARIL AI research platform: user journeys, agentic chat pipeline, research features, and local development.
 
 ---
 
-## Architecture
+## Architecture (dev)
 
 ```mermaid
 flowchart LR
-  Browser["Browser"] --> Next["Next.js UI :3000 / nginx :80"]
-  Next -->|"NEXT_PUBLIC_FEYNMAN_BACKEND"| API["Backend Fastify"]
+  Browser["Browser :3000"] -->|rewrites /api /ws| Next["Next.js"]
+  Next --> API["Fastify :3141"]
   API --> Mongo[(MongoDB)]
   API --> OR[OpenRouter]
   API --> LitSrc[AlphaXiv / arXiv / Tavily]
 ```
 
-| Layer | Stack | Default |
-|-------|--------|---------|
-| Frontend (this repo) | Next.js 16, React 19, static export | http://localhost:3000 |
-| Backend (separate) | Fastify + MongoDB | http://127.0.0.1:3141 |
-| API base | `lib/api.ts` → `getBackendOrigin()` | env or `:3141` in dev |
+| Layer | Stack | Default URL |
+|-------|--------|-------------|
+| Frontend | Next.js 16, React 19 | http://localhost:3000 |
+| Backend | Fastify 5, TypeScript | http://127.0.0.1:3141 |
+| Database | MongoDB (Mongoose) | `mongodb://127.0.0.1:27017/feynman` |
+| AI | OpenRouter | — |
+| Real-time | WebSocket `/ws` | proxied via Next |
 
 ---
 
@@ -41,7 +41,7 @@ flowchart TD
 ```
 
 1. Public landing (`/`) → register or login.
-2. Auth APIs (backend): `POST /api/auth/login`, `/register`, `/register-student`.
+2. Auth APIs: `POST /api/auth/login`, `/register`, `/register-student`.
 3. Role routing (`lib/dashboard-routes.ts`):
    - student → `/student/dashboard`
    - lecturer / researcher → `/dashboard`
@@ -69,44 +69,57 @@ flowchart TD
 | 4. Draft | `/research/paper` | WebSocket `chat-paper` streams full paper |
 | 5. Library | `/research/saved` | Persisted papers |
 
-Student path mirrors this under `/student/research/*`.
+Student path mirrors this under `/student/research/*` (`variant="student"`).
 
 ### Other product surfaces
 
 | Flow | Paths |
 |------|--------|
-| Paper drafting | `/research/paper` → `FeynmanApp` |
-| Research Note | `/research/note` → notebook UI |
-| Lesson planner | `/lesson-planner` (+ presentation / saved) |
-| References | `/references` |
-| Admin | `/admin/*` — users, tokens, governance |
-| Super admin | `/super-admin/*` — universities / platform |
+| Paper drafting | `/research/paper` → `GarilApp` |
+| Admin | `/admin` — ops (users, sessions, tokens, backup) + AI governance (analytics, policies, audit, approvals, Management/Senate reports) |
+
 
 ---
 
-## 2. Agentic chat — frontend client
+## 2. Agentic chat pipeline
 
-Runtime is on the backend (`ChatService`). The UI drives it over WebSocket.
+Runtime is implemented in `backend/src/services/chat.service.ts`. Workflow prompts under `backend/prompts/` condition the LLM via the system message; literature search + streaming are the executed “agent” loop.
 
 ```mermaid
 sequenceDiagram
-  participant UI as FeynmanApp / useFeynmanSocket
-  participant WS as Backend /ws
+  participant UI as GarilApp
+  participant WS as Fastify /ws
   participant Chat as ChatService
   participant Lit as Paper search
   participant LLM as OpenRouter
+  participant DB as MongoDB
 
   UI->>WS: reset workflow + topic
+  WS->>Chat: resetSession
+  Chat->>DB: Session + system Message
   WS-->>UI: reset_complete
   UI->>WS: prompt
   WS->>Chat: sendMessage
-  Chat->>Lit: enrich literature first turn
-  Chat->>LLM: stream
+  Chat->>DB: user Message
+  Chat->>Lit: enrichHistoryWithAlphaXiv first turn
+  Lit-->>Chat: paper context
+  Chat->>LLM: streamOpenRouterChat
   loop deltas
-    WS-->>UI: message_update
+    LLM-->>Chat: text_delta
+    Chat-->>UI: message_update
   end
-  WS-->>UI: message_end, token_usage, agent_end
+  Chat->>Chat: format references if chat-paper
+  Chat->>DB: assistant Message + optional SavedResearch
+  Chat-->>UI: message_end, token_usage, agent_end
 ```
+
+### Pipeline steps
+
+1. **Session** — `reset` loads workflow prompt (or default), creates Mongo `Session` + system `Message`.
+2. **User message** — persist turn; assert student token balance when applicable.
+3. **Literature** (first user turn only, for research workflows) — AlphaXiv → arXiv → AlphaXiv MCP → Tavily; inject into system context.
+4. **LLM stream** — OpenRouter SSE; emit `message_update` deltas over WebSocket.
+5. **Post-process** — for `chat-paper`: format references, auto-save if content ≥ 400 chars, deduct tokens.
 
 ### WebSocket protocol
 
@@ -127,75 +140,183 @@ sequenceDiagram
 | `reset_complete` / `prompt_complete` / `aborted` / `error` | Lifecycle |
 | `student_token_quota` | Remaining tokens |
 
-**Paper client sequence** (`hooks/useFeynmanSocket.ts` → `sendResearchPaper`):
+**Paper client sequence** (`useGarilSocket.sendResearchPaper`):
 
 1. `reset` with `workflow: "chat-paper"` and `topic`
 2. On `reset_complete`, send `prompt` with the full paper prompt (outline embedded)
 
-Key helpers: `lib/agent-events.ts`, `lib/prepare-research-paper.ts`, `lib/api.ts` (`wsUrl()`).
-
 ---
 
-## 3. Research workflows (backend prompts)
+## 3. Research workflows (prompts)
 
-Workflow definitions live on the backend (`prompts/*.md`). The UI selects them via WebSocket `reset.workflow` or REST.
+Prompts live in `backend/prompts/*.md`. `backend/src/services/workflows.ts` loads them; commands with `topLevelCli: true` are listed via `GET /api/workflows` and WebSocket `connected`.
 
 | Command | Description |
 |---------|-------------|
-| `/chat-paper` | Full academic paper with inline citations (primary UI path) |
-| `/deepresearch` | Multi-step investigation protocol |
-| `/lit` | Literature review |
-| `/draft` | Structured section drafting |
-| `/compare` | Study comparison |
-| `/summarize` | Concise summary |
-| `/review` | Critical review |
+| `/chat-paper` | Full academic paper with inline citations (primary UI path; not listed as CLI) |
+| `/deepresearch` | Multi-step investigation protocol (plan → gather → draft → cite → review → deliver) |
+| `/lit` | Literature review grounded in retrieved papers |
+| `/draft` | Structured paper-section drafting |
+| `/compare` | Side-by-side study comparison |
+| `/summarize` | Concise topic/paper summary |
+| `/review` | Critical academic review |
 | `/audit` | Citation / integrity audit |
 | `/autoresearch` | Autonomous experiment-style loop |
-| `/watch` | Topic monitoring |
+| `/watch` | Monitor a topic for new developments |
 | `/log` | Session journaling |
 | `/replicate` | Replication planning |
-| `/recipe` | Methodology builder |
+| `/recipe` | Step-by-step methodology builder |
 | `/jobs` | Background task inspection |
 
-### Outline & ideas (REST)
+Literature auto-injection applies to research-oriented workflows (e.g. `chat-paper`, `lit`, `deepresearch`, `draft`, `compare`, `review`, …). `log` and `jobs` skip it.
 
-| Step | Frontend | Backend API |
-|------|----------|-------------|
-| Ideas | `/research` | `POST /api/research/ideas/generate` |
-| Outline | `/research/outline` | `POST /api/research/outline` |
-| Save paper | `/research/saved` | SavedResearch APIs |
+> **Note:** Prompt text may describe tools like `web_search` or subagents. The Fastify runtime does not run a general tool-calling loop; it uses literature enrichment + LLM streaming. Prompts still shape output structure and quality.
 
----
+### Deep research protocol (prompt-level)
 
-## 4. Literature (backend)
+When `/deepresearch` is selected, the system prompt instructs a 7-step protocol:
 
-The UI does not call AlphaXiv/arXiv/Tavily directly. The backend enriches the first research turn (library → AlphaXiv → arXiv → Tavily) before streaming.
+1. Plan → 2. Scale → 3. Gather evidence → 4. Draft → 5. Cite → 6. Review → 7. Deliver
 
 ---
 
-## 5. Local development
+## 4. Outline generation
+
+**API:** `POST /api/research/outline`  
+**Service:** `backend/src/services/outline.service.ts`
+
+```mermaid
+flowchart LR
+  A["Idea + topic + scope"] --> B["Search query"]
+  B --> C["fetchPapersForQuery limit 8"]
+  C --> D["Prompt + paper context"]
+  D --> E["Fast model complete"]
+  E --> F["Strip arXiv meta / trim"]
+  F --> G["Append Sources for further reading"]
+```
+
+1. Build query from topic + idea title + discipline.
+2. Fetch up to 8 papers (AlphaXiv → arXiv → MCP → Tavily).
+3. Inject abstracts into the outline prompt.
+4. Complete with the fast model (`FEYNMAN_FAST_MODEL`).
+5. Post-process and append sources; deduct tokens; optionally persist `SavedResearchOutline`.
+
+---
+
+## 5. Paper drafting & save
+
+1. Ideas: `POST /api/research/ideas/generate`
+2. Outline: as above
+3. Generate page stages prompt + citation style → `/research/paper`
+4. `prepareResearchPaperPrompt` embeds outline + IMRaD + citation style
+5. WebSocket `chat-paper` streams the paper
+6. Dual persistence:
+   - **Backend:** `ChatService` → `SavedResearch` when long enough
+   - **Frontend:** `lib/chat-research-storage.ts` → API and/or localStorage
+
+---
+
+## 6. Literature sources (library-first RAG)
+
+```mermaid
+flowchart TD
+  Q[Query] --> LIB{Paper library}
+  LIB -->|enough hits| OUT[Papers]
+  LIB -->|thin/empty| AX{AlphaXiv}
+  AX -->|hits| SAVE[Upsert library]
+  AX -->|empty/fail| AR[arXiv]
+  AR -->|hits| SAVE
+  AR -->|empty| MCP{MCP if API key}
+  MCP -->|hits| SAVE
+  MCP -->|empty/skip| TV[Tavily]
+  TV --> SAVE
+  SAVE --> OUT
+```
+
+Priority: **Paper library (Mongo)** → if fewer than `PAPER_LIBRARY_MIN_HITS` (default 4) → **AlphaXiv** → **arXiv** → **AlphaXiv MCP** (if keyed) → **Tavily**. New API hits are upserted (deduped by arXiv ID / title) for reuse.
+
+---
+
+## 7. Backend map
+
+| Concern | Key files |
+|---------|-----------|
+| Server / WS / routes | `backend/src/server.ts`, `backend/src/index.ts` |
+| Chat | `backend/src/services/chat.service.ts` |
+| LLM | `backend/src/services/llm.service.ts` |
+| Workflows | `backend/src/services/workflows.ts`, `backend/prompts/` |
+| Literature | `alphaxiv.service.ts`, `arxiv.service.ts`, `tavily.service.ts` |
+| Outline / ideas | `outline.service.ts`, `research-ideas.service.ts` |
+| Saved papers | `research.service.ts` |
+| Auth / tokens | `auth.service.ts`, `student-token.service.ts` |
+| Models | `backend/src/db/models/*` |
+
+### Token quotas
+
+| Role | Quota |
+|------|--------|
+| Student | 400,000 |
+| Lecturer / researcher | 1,000,000 |
+
+---
+
+## 8. Local development workflow
 
 ### Prerequisites
 
-- Node.js `>=20.19.0 <26`
-- Backend running (API + Mongo + OpenRouter keys configured there)
+- Node.js `>=20.19.0 <26` (see `.nvmrc`)
+- MongoDB running locally or remote URI
 
-### Install & run
+### Install
 
 ```bash
 npm install
-cp .env.example .env.local
-# NEXT_PUBLIC_FEYNMAN_BACKEND=http://127.0.0.1:3141
-
-npm run dev
+cd backend && npm install
 ```
+
+### Environment
+
+Put secrets in `backend/.env`. Required / common vars:
+
+| Variable | Role |
+|----------|------|
+| `OPENROUTER_API_KEY` | Required for AI |
+| `MONGODB_URI` | Database |
+| `PORT` | Backend port (default `3141`) |
+| `FEYNMAN_MODEL` | Main chat model |
+| `FEYNMAN_FAST_MODEL` | Outlines / ideas |
+| `AUTH_SECRET` | JWT signing |
+| `ALPHAXIV_*` / `TAVILY_*` | Literature sources |
+| `HF_TOKEN` | Hugging Face Inference (rerank + fact-check) |
+| `PAPER_LIBRARY_ENABLED` | Local RAG library before live APIs (default on) |
+| `PAPER_LIBRARY_MIN_HITS` | Min library hits to skip APIs (default `4`) |
+
+### Run
+
+```bash
+npm run dev           # Frontend → http://localhost:3000
+npm run dev:backend   # Backend  → http://127.0.0.1:3141
+```
+
+Next rewrites `/api/*` and `/ws` to the backend in development.
 
 ### Build / production
 
 ```bash
-NEXT_PUBLIC_FEYNMAN_BACKEND=https://api.your.domain npm run build
-npm start
-# or Docker — see deploy/README.md
+npm run build:all
+npm run start         # Serves backend (and static export when present)
+```
+
+VPS (split frontend/backend or all-in-one): see [deploy/README.md](deploy/README.md).
+
+```bash
+# Split (recommended for Coolify)
+npm run deploy:build:backend
+NEXT_PUBLIC_FEYNMAN_BACKEND=https://api.example.com npm run deploy:build:frontend
+
+# All-in-one
+npm run deploy:build
+sudo bash deploy/all-in-one/setup-vps.sh /var/www/garil-ai
 ```
 
 ---
@@ -205,10 +326,6 @@ npm start
 | Concern | Paths |
 |---------|--------|
 | Branding / nav | `lib/brand.ts`, `lib/aula-nav.ts`, `lib/dashboard-routes.ts` |
-| Research UI | `components/ResearchAssistant.tsx`, `components/research/*`, `components/FeynmanApp.tsx` |
-| Chat client | `hooks/useFeynmanSocket.ts`, `lib/agent-events.ts`, `lib/prepare-research-paper.ts` |
+| Research UI | `components/ResearchAssistant.tsx`, `components/research/*`, `components/GarilApp.tsx` |
+| Chat client | `hooks/useGarilSocket.ts`, `lib/agent-events.ts`, `lib/prepare-research-paper.ts` |
 | API helpers | `lib/api.ts`, `lib/research-api.ts`, `lib/chat-research-storage.ts` |
-| Auth | `hooks/useAuth.tsx`, `lib/auth.ts`, `components/auth/*` |
-| Admin | `components/admin/*`, `lib/admin-api.ts`, `lib/admin-governance.ts` |
-| Lesson planner | `components/LessonPlanner.tsx`, `lib/lesson-planner*.ts` |
-| Research note | `components/research-note/*` |

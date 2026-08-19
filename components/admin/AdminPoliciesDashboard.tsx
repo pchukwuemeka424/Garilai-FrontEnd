@@ -219,8 +219,8 @@ export function AdminPoliciesDashboard() {
 	return (
 		<AdminShell
 			title="Policy Management"
-			subtitle="Define, test, and enforce institutional AI governance policies"
-			breadcrumb="Admin · Safety & Compliance"
+			subtitle="Institutional AI policies that define acceptable use and trigger alerts when violated"
+			breadcrumb="Admin · Controls"
 			actions={
 				<div className="admin-actions-row">
 					<button type="button" className="ghost-btn" onClick={() => { setShowCreate(!showCreate); setEditingId(null); setForm(emptyForm); }}>

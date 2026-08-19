@@ -1,5 +1,5 @@
-import { AdminApprovalsDashboard } from "@/components/admin/AdminApprovalsDashboard";
+import { redirect } from "next/navigation";
 
-export default function AdminApprovalsPage() {
-	return <AdminApprovalsDashboard />;
+export default function RemovedAdminModulePage() {
+	redirect("/admin");
 }

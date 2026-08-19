@@ -1,8 +1,9 @@
 "use client";
 
-import { useId } from "react";
+import { useId, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { canonicalizeSectionTitle, sectionHeadingId } from "@/lib/research-paper-sections";
 import {
 	Area,
 	AreaChart,
@@ -306,6 +307,16 @@ function ResearchImage({ spec }: { spec: ResearchImageSpec }) {
 	);
 }
 
+function headingText(children: ReactNode): string {
+	if (children == null || typeof children === "boolean") return "";
+	if (typeof children === "string" || typeof children === "number") return String(children);
+	if (Array.isArray(children)) return children.map(headingText).join("");
+	if (typeof children === "object" && "props" in children) {
+		return headingText((children as { props?: { children?: ReactNode } }).props?.children);
+	}
+	return "";
+}
+
 function MarkdownSection({ content }: { content: string }) {
 	if (!content.trim()) return null;
 	return (
@@ -318,7 +329,15 @@ function MarkdownSection({ content }: { content: string }) {
 						{children}
 					</a>
 				),
-				h2: ({ children }) => <h2 className="paper-section-heading">{children}</h2>,
+				h2: ({ children }) => {
+					const text = headingText(children);
+					const canonical = canonicalizeSectionTitle(text) ?? text;
+					return (
+						<h2 id={canonical ? sectionHeadingId(canonical) : undefined} className="paper-section-heading">
+							{children}
+						</h2>
+					);
+				},
 				h3: ({ children }) => <h3 className="paper-section-heading">{children}</h3>,
 			}}
 		>

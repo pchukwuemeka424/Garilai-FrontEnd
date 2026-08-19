@@ -228,7 +228,10 @@ function extractReferencesBody(content: string): string | null {
 }
 
 /** Validate References structure, spacing, and Source links. */
-export function validateResearchPaperReferences(content: string): ResearchReferencesValidation {
+export function validateResearchPaperReferences(
+	content: string,
+	options?: { minEntries?: number },
+): ResearchReferencesValidation {
 	const trimmed = content.trim();
 	const formatted = formatResearchPaperReferences(trimmed);
 	const needsFormat = Boolean(trimmed) && formatted !== trimmed;
@@ -284,10 +287,11 @@ export function validateResearchPaperReferences(content: string): ResearchRefere
 		});
 	}
 
-	if (entries.length > 0 && entries.length < 25) {
+	const minEntries = options?.minEntries ?? 25;
+	if (entries.length > 0 && entries.length < minEntries) {
 		issues.push({
 			code: "insufficient_entries",
-			message: `Only ${entries.length} reference entr${entries.length === 1 ? "y" : "ies"} found; minimum is 25 from the research bank.`,
+			message: `Only ${entries.length} reference entr${entries.length === 1 ? "y" : "ies"} found; minimum is ${minEntries} from the research bank.`,
 		});
 	}
 

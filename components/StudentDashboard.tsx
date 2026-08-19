@@ -2,19 +2,37 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+	Bell,
+	BookOpen,
+	CalendarClock,
+	ChevronRight,
+	ClipboardList,
+	FolderKanban,
+	Lightbulb,
+	MessageSquareText,
+	Plus,
+	RefreshCw,
+	Sparkles,
+	type LucideIcon,
+} from "lucide-react";
 
 import { NavIcon } from "@/components/aula/NavIcon";
 import {
 	IconBookmark,
 	IconCheck,
-	IconChevronRight,
 	IconClock,
-	IconLightbulb,
 	IconMoveRight,
-	IconRefresh,
 } from "@/components/ui/ButtonIcon";
+import {
+	notificationHref,
+	parseNotificationsPayload,
+	type NotificationItem,
+} from "@/components/portal/features/notifications/student-notifications";
 import { useAuth } from "@/hooks/useAuth";
 import { userInitials } from "@/lib/aula-utils";
+import { apiFetch } from "@/lib/portal-api";
+import { projectTypeLabel } from "@/lib/portal/project-types";
 import { getDisciplineLabel } from "@/lib/research-disciplines";
 import { getFeasibilityLabel, getTypeLabel } from "@/lib/research-ideas";
 import {
@@ -39,27 +57,27 @@ const STATUS_LABELS: Record<ResearchBoardStatus, string> = {
 	completed: "Completed",
 };
 
-type StatTone = "total" | "saved" | "progress" | "completed" | "tokens";
-
-type KpiItem = {
-	label: string;
-	value: number | string;
-	tone: StatTone;
-	hint: string;
-};
-
-const KPI_ICONS: Record<StatTone, ReactNode> = {
-	total: <IconLightbulb size={18} />,
-	saved: <IconBookmark size={18} />,
-	progress: <IconClock size={18} />,
-	completed: <IconCheck size={18} />,
-	tokens: <NavIcon id="tokens" size={18} />,
-};
-
 const PIPELINE_ICONS: Record<ResearchBoardStatus, ReactNode> = {
-	saved: <IconBookmark size={18} />,
-	in_progress: <IconClock size={18} />,
-	completed: <IconCheck size={18} />,
+	saved: <IconBookmark size={16} />,
+	in_progress: <IconClock size={16} />,
+	completed: <IconCheck size={16} />,
+};
+
+type WorkspaceProject = {
+	_id: string;
+	title: string;
+	projectType: string;
+	topic?: string;
+	progressPercent?: number;
+	status?: string;
+	updatedAt?: string;
+	supervisor?: { id: string; name: string; email: string } | null;
+	score?: number | null;
+	assignmentBrief?: { dueAt?: string | null; courseName?: string | null } | null;
+	pages?: Array<{
+		reviewStatus?: string;
+		content?: string;
+	}>;
 };
 
 function formatToday(): string {
@@ -70,12 +88,27 @@ function formatToday(): string {
 	}).format(new Date());
 }
 
-function formatShortDate(iso: string): string {
+function formatShortDate(iso?: string | null): string {
+	if (!iso) return "";
 	try {
-		return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(new Date(iso));
+		return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(
+			new Date(iso),
+		);
 	} catch {
 		return "";
 	}
+}
+
+function formatRelative(iso?: string | null): string {
+	if (!iso) return "";
+	const date = new Date(iso);
+	if (Number.isNaN(date.getTime())) return "";
+	const diffMs = Date.now() - date.getTime();
+	const days = Math.floor(diffMs / 86_400_000);
+	if (days <= 0) return "Today";
+	if (days === 1) return "Yesterday";
+	if (days < 7) return `${days} days ago`;
+	return formatShortDate(iso);
 }
 
 function getGreeting(): string {
@@ -85,36 +118,60 @@ function getGreeting(): string {
 	return "Good evening";
 }
 
-function formatShare(count: number, total: number): string {
-	if (total === 0) return "Awaiting first idea";
-	return `${Math.round((count / total) * 100)}% of portfolio`;
+function isAssignment(project: WorkspaceProject) {
+	return project.projectType === "assignment";
 }
 
-function KpiCard({ label, value, tone, hint, loading }: KpiItem & { loading?: boolean }) {
+function projectHref(project: WorkspaceProject) {
+	return isAssignment(project)
+		? `/student/assignments/${project._id}`
+		: `/student/projects/${project._id}`;
+}
+
+function dueSoon(dueAt?: string | null) {
+	if (!dueAt) return false;
+	const t = new Date(dueAt).getTime();
+	if (Number.isNaN(t)) return false;
+	const now = Date.now();
+	return t >= now && t - now <= 7 * 24 * 60 * 60 * 1000;
+}
+
+function assignmentTone(row: WorkspaceProject): { label: string; tone: string } {
+	if (typeof row.score === "number") return { label: "Graded", tone: "graded" };
+	const page = row.pages?.[0];
+	if (page?.reviewStatus === "approved") return { label: "Approved", tone: "done" };
+	if (page?.reviewStatus === "needs_revision") return { label: "Needs revision", tone: "alert" };
+	if (page?.reviewStatus && page.reviewStatus !== "none") return { label: "Submitted", tone: "info" };
+	if (String(page?.content || "").trim()) return { label: "In progress", tone: "progress" };
+	return { label: "Not started", tone: "idle" };
+}
+
+function TokenRing({ percentUsed, remaining }: { percentUsed: number; remaining: number }) {
+	const radius = 36;
+	const circumference = 2 * Math.PI * radius;
+	const clamped = Math.min(100, Math.max(0, percentUsed));
 	return (
-		<article className={`stu-kpi stu-kpi-${tone}`}>
-			<div className="stu-kpi-head">
-				<span className="stu-kpi-icon" aria-hidden>
-					{KPI_ICONS[tone]}
-				</span>
-				<p className="stu-kpi-label">{label}</p>
+		<div className="stu-home-ring" aria-hidden>
+			<svg width="96" height="96" viewBox="0 0 100 100">
+				<circle cx="50" cy="50" r={radius} fill="none" stroke="#e8edf2" strokeWidth="8" />
+				<circle
+					cx="50"
+					cy="50"
+					r={radius}
+					fill="none"
+					stroke="#0d9488"
+					strokeWidth="8"
+					strokeLinecap="round"
+					strokeDasharray={circumference}
+					strokeDashoffset={circumference * (1 - clamped / 100)}
+					transform="rotate(-90 50 50)"
+				/>
+			</svg>
+			<div className="stu-home-ring-label">
+				<strong>{remaining.toLocaleString()}</strong>
+				<span>tokens left</span>
 			</div>
-			<div className="stu-kpi-body">
-				{loading ? (
-					<div className="stu-skeleton stu-skeleton-kpi-value" aria-hidden />
-				) : (
-					<p className="stu-kpi-value">{value}</p>
-				)}
-				{loading ? (
-					<div className="stu-skeleton stu-skeleton-kpi-hint" aria-hidden />
-				) : (
-					<p className="stu-kpi-hint">{hint}</p>
-				)}
-			</div>
-			<div className="stu-kpi-watermark" aria-hidden>
-				{KPI_ICONS[tone]}
-			</div>
-		</article>
+		</div>
 	);
 }
 
@@ -129,30 +186,29 @@ function BoardCard({
 	onMove: (status: ResearchBoardStatus) => void;
 	onRemove: () => void;
 }) {
-	const disciplineLabel = getDisciplineLabel(idea.discipline);
 	const nextColumns = STUDENT_BOARD_COLUMNS.filter((col) => col.id !== columnId);
 
 	return (
-		<article className="stu-card">
-			<div className="stu-card-tags">
-				<span className="stu-tag stu-tag-type">{getTypeLabel(idea.type)}</span>
-				<span className="stu-tag stu-tag-feasibility">{getFeasibilityLabel(idea.feasibility)}</span>
+		<article className="stu-home-idea">
+			<div className="stu-home-idea-tags">
+				<span className="stu-home-chip">{getTypeLabel(idea.type)}</span>
+				<span className="stu-home-chip stu-home-chip-muted">{getFeasibilityLabel(idea.feasibility)}</span>
 			</div>
-			<h3 className="stu-card-title">{idea.title}</h3>
-			<p className="stu-card-meta">
-				{disciplineLabel} · {idea.topic}
+			<h3>{idea.title}</h3>
+			<p className="stu-home-idea-meta">
+				{getDisciplineLabel(idea.discipline)} · {idea.topic}
 			</p>
-			<p className="stu-card-body">{idea.rationale}</p>
-			<div className="stu-card-foot">
-				<div className="stu-card-moves">
+			<p className="stu-home-idea-body">{idea.rationale}</p>
+			<div className="stu-home-idea-foot">
+				<div className="stu-home-idea-moves">
 					{nextColumns.map((col) => (
-						<button key={col.id} type="button" className="stu-card-move" onClick={() => onMove(col.id)}>
+						<button key={col.id} type="button" className="stu-home-move" onClick={() => onMove(col.id)}>
 							<IconMoveRight size={12} />
 							{col.label}
 						</button>
 					))}
 				</div>
-				<button type="button" className="stu-card-remove" onClick={onRemove} aria-label="Remove idea">
+				<button type="button" className="stu-home-remove" onClick={onRemove} aria-label="Remove idea">
 					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
 						<path d="M18 6 6 18M6 6l12 12" strokeLinecap="round" />
 					</svg>
@@ -162,42 +218,71 @@ function BoardCard({
 	);
 }
 
-function BoardSkeleton() {
+function MetricCard({
+	label,
+	value,
+	hint,
+	icon: Icon,
+	tone,
+	href,
+	loading,
+}: {
+	label: string;
+	value: number | string;
+	hint: string;
+	icon: LucideIcon;
+	tone: "navy" | "teal" | "amber" | "rose" | "violet";
+	href: string;
+	loading?: boolean;
+}) {
 	return (
-		<div className="stu-board" aria-busy="true" aria-label="Loading research board">
-			{STUDENT_BOARD_COLUMNS.map((column) => (
-				<div key={column.id} className={`stu-column stu-column-${COLUMN_ACCENTS[column.id]}`}>
-					<div className="stu-column-head">
-						<div className="stu-skeleton stu-skeleton-line" />
-					</div>
-					<div className="stu-column-body">
-						<div className="stu-skeleton stu-skeleton-card" />
-						<div className="stu-skeleton stu-skeleton-card" />
-					</div>
-				</div>
-			))}
-		</div>
+		<Link href={href} className={`stu-home-metric stu-home-metric-${tone}`}>
+			<span className="stu-home-metric-icon" aria-hidden>
+				<Icon size={18} strokeWidth={1.75} />
+			</span>
+			<div className="stu-home-metric-copy">
+				<p className="stu-home-metric-label">{label}</p>
+				{loading ? (
+					<div className="stu-skeleton stu-skeleton-kpi-value" />
+				) : (
+					<p className="stu-home-metric-value">{value}</p>
+				)}
+				<p className="stu-home-metric-hint">{loading ? " " : hint}</p>
+			</div>
+			<ChevronRight size={16} className="stu-home-metric-chevron" aria-hidden />
+		</Link>
 	);
 }
 
 export function StudentDashboard() {
 	const { user } = useAuth();
 	const [ideas, setIdeas] = useState<SavedIdea[]>([]);
-	const [loadingIdeas, setLoadingIdeas] = useState(true);
+	const [projects, setProjects] = useState<WorkspaceProject[]>([]);
+	const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+	const [unreadCount, setUnreadCount] = useState(0);
+	const [loading, setLoading] = useState(true);
 
-	const refreshIdeas = useCallback(async () => {
-		setLoadingIdeas(true);
+	const refresh = useCallback(async () => {
+		setLoading(true);
 		try {
-			const next = await loadAllSavedIdeas();
-			setIdeas(next);
+			const [nextIdeas, projectList, notificationPayload] = await Promise.all([
+				loadAllSavedIdeas(),
+				apiFetch("/api/v1/projects").catch(() => []) as Promise<WorkspaceProject[]>,
+				apiFetch("/api/v1/notifications").catch(() => []) as Promise<unknown>,
+			]);
+			setIdeas(nextIdeas);
+			setProjects(Array.isArray(projectList) ? projectList : []);
+			const parsed = parseNotificationsPayload(notificationPayload);
+			setNotifications(parsed.items.slice(0, 4));
+			setUnreadCount(parsed.unreadCount);
 		} finally {
-			setLoadingIdeas(false);
+			setLoading(false);
 		}
 	}, []);
 
 	useEffect(() => {
-		void refreshIdeas();
-	}, [refreshIdeas]);
+		void refresh();
+	}, [refresh]);
 
 	const ideasByStatus = useMemo(() => {
 		const grouped: Record<ResearchBoardStatus, SavedIdea[]> = {
@@ -206,75 +291,70 @@ export function StudentDashboard() {
 			completed: [],
 		};
 		for (const idea of ideas) {
-			const status = idea.status ?? "saved";
-			grouped[status].push(idea);
+			grouped[idea.status ?? "saved"].push(idea);
 		}
 		return grouped;
 	}, [ideas]);
 
-	const stats = useMemo(
-		() => ({
-			total: ideas.length,
-			saved: ideasByStatus.saved.length,
-			inProgress: ideasByStatus.in_progress.length,
-			completed: ideasByStatus.completed.length,
-		}),
-		[ideas.length, ideasByStatus],
+	const researchProjects = useMemo(
+		() => projects.filter((p) => !isAssignment(p) && p.status !== "archived"),
+		[projects],
 	);
+	const assignments = useMemo(() => projects.filter(isAssignment), [projects]);
+	const activeProjects = useMemo(
+		() =>
+			[...researchProjects]
+				.sort(
+					(a, b) =>
+						new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime(),
+				)
+				.slice(0, 4),
+		[researchProjects],
+	);
+	const upcomingAssignments = useMemo(
+		() =>
+			[...assignments]
+				.sort((a, b) => {
+					const da = a.assignmentBrief?.dueAt ? new Date(a.assignmentBrief.dueAt).getTime() : Infinity;
+					const db = b.assignmentBrief?.dueAt ? new Date(b.assignmentBrief.dueAt).getTime() : Infinity;
+					return da - db;
+				})
+				.slice(0, 4),
+		[assignments],
+	);
+
+	const revisionCount = useMemo(
+		() =>
+			projects.filter((p) =>
+				(p.pages || []).some((page) => page.reviewStatus === "needs_revision"),
+			).length,
+		[projects],
+	);
+	const dueSoonCount = assignments.filter((a) => dueSoon(a.assignmentBrief?.dueAt)).length;
+	const avgProgress =
+		researchProjects.length === 0
+			? 0
+			: Math.round(
+					researchProjects.reduce((sum, p) => sum + (p.progressPercent ?? 0), 0) /
+						researchProjects.length,
+				);
+	const continueProject = activeProjects[0] ?? upcomingAssignments[0] ?? null;
 
 	const recentIdeas = useMemo(
 		() =>
 			[...ideas]
 				.sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime())
-				.slice(0, 5),
+				.slice(0, 4),
 		[ideas],
 	);
 
-	const completionPercent = stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
+	const completionPercent =
+		ideas.length > 0 ? Math.round((ideasByStatus.completed.length / ideas.length) * 100) : 0;
 
 	const allowance = user?.tokenQuota?.allowance ?? researchTokenAllowance(user?.role) ?? 0;
 	const tokensRemaining = user?.tokenQuota?.remaining ?? allowance;
 	const tokenPercentUsed =
 		allowance > 0 ? Math.min(100, Math.round(((allowance - tokensRemaining) / allowance) * 100)) : 0;
-
-	const kpiItems = useMemo<KpiItem[]>(
-		() => [
-			{
-				label: "Total ideas",
-				value: stats.total,
-				tone: "total",
-				hint: stats.total === 0 ? "Start in Research Assistant" : "Across all stages",
-			},
-			{
-				label: "Saved",
-				value: stats.saved,
-				tone: "saved",
-				hint: formatShare(stats.saved, stats.total),
-			},
-			{
-				label: "In progress",
-				value: stats.inProgress,
-				tone: "progress",
-				hint: formatShare(stats.inProgress, stats.total),
-			},
-			{
-				label: "Completed",
-				value: stats.completed,
-				tone: "completed",
-				hint: formatShare(stats.completed, stats.total),
-			},
-			{
-				label: "Tokens remaining",
-				value: tokensRemaining.toLocaleString(),
-				tone: "tokens",
-				hint:
-					allowance > 0
-						? `${tokenPercentUsed}% of ${allowance.toLocaleString()} used`
-						: "No allocation set",
-			},
-		],
-		[stats, tokensRemaining, tokenPercentUsed, allowance],
-	);
 
 	const handleMove = async (idea: SavedIdea, status: ResearchBoardStatus) => {
 		if (!idea.dbId) {
@@ -297,137 +377,316 @@ export function StudentDashboard() {
 	if (!user) return null;
 
 	const firstName = user.name.split(" ")[0] ?? user.name;
-	const tools = STUDENT_NAV_ITEMS.filter((item) => item.id !== "dashboard");
 	const initials = userInitials(user.name);
+	const tools = STUDENT_NAV_ITEMS.filter((item) => item.id !== "dashboard");
+	const programmeLine = [user.programme, user.department, user.institution]
+		.filter(Boolean)
+		.join(" · ");
 
 	return (
-		<div className="stu-dashboard">
-			<header className="stu-dash-header">
-				<div className="stu-dash-header-copy">
-					<p className="stu-dash-eyebrow">{formatToday()}</p>
-					<h2 className="stu-dash-title">
+		<div className="stu-home">
+			<section className="stu-home-hero">
+				<div className="stu-home-hero-copy">
+					<p className="stu-home-hero-date">{formatToday()}</p>
+					<h1>
 						{getGreeting()}, {firstName}
-					</h2>
-					<p className="stu-dash-lead">
-						Track ideas from first inspiration to finished topics. Save from the Research Assistant and
-						organize them on your board.
+					</h1>
+					<p className="stu-home-hero-lead">
+						{programmeLine || "Your writing, supervision, and research in one workspace."}
 					</p>
+					{user.cohort ? <p className="stu-home-hero-meta">{user.cohort}</p> : null}
 				</div>
-				<div className="stu-dash-header-actions">
+				<div className="stu-home-hero-actions">
 					<button
 						type="button"
-						className="stu-dash-btn-ghost"
-						onClick={() => void refreshIdeas()}
-						disabled={loadingIdeas}
+						className="stu-home-btn stu-home-btn-ghost"
+						onClick={() => void refresh()}
+						disabled={loading}
 					>
-						<IconRefresh size={16} />
-						{loadingIdeas ? "Syncing…" : "Refresh"}
+						<RefreshCw size={16} className={loading ? "stu-home-spin" : undefined} />
+						{loading ? "Syncing…" : "Refresh"}
 					</button>
-					<Link href="/student/research" className="stu-dash-btn-primary">
-						<NavIcon id="research" size={16} />
+					{continueProject ? (
+						<Link href={projectHref(continueProject)} className="stu-home-btn stu-home-btn-light">
+							<BookOpen size={16} />
+							Continue writing
+						</Link>
+					) : (
+						<Link href="/student/projects/new" className="stu-home-btn stu-home-btn-light">
+							<Plus size={16} />
+							New project
+						</Link>
+					)}
+					<Link href="/student/research" className="stu-home-btn stu-home-btn-solid">
+						<Sparkles size={16} />
 						Generate ideas
 					</Link>
 				</div>
-			</header>
-
-			<section className="stu-kpi-panel" aria-label="Workspace overview">
-				<div className="stu-kpi-panel-head">
-					<div>
-						<h2 className="stu-kpi-panel-title">Overview</h2>
-						<p className="stu-kpi-panel-subtitle">Research activity and token usage at a glance.</p>
-					</div>
-					{!loadingIdeas && stats.total > 0 && (
-						<span className="stu-kpi-panel-badge">{completionPercent}% complete</span>
-					)}
-				</div>
-				<div className="stu-kpi-grid">
-					{kpiItems.map((item) => (
-						<KpiCard key={item.tone} {...item} loading={loadingIdeas} />
-					))}
-				</div>
 			</section>
 
-			<div className="stu-dash-body">
-				<div className="stu-dash-main">
-					<section className="stu-pipeline" aria-label="Research progress">
-						<div className="stu-pipeline-head">
-							<div>
-								<h2 className="stu-section-title">Research journey</h2>
-								<p className="stu-section-subtitle">
-									{stats.total === 0
-										? "Start by saving your first research idea."
-										: `${completionPercent}% of your ideas are completed.`}
-								</p>
-							</div>
-							{stats.total > 0 && (
-								<span className="stu-pipeline-badge">{stats.completed} / {stats.total} done</span>
-							)}
-						</div>
-						<div className="stu-pipeline-track">
-							<div className="stu-pipeline-fill" style={{ width: `${completionPercent}%` }} />
-						</div>
-						<div className="stu-pipeline-steps">
-							{STUDENT_BOARD_COLUMNS.map((column) => (
-								<div key={column.id} className={`stu-pipeline-step stu-pipeline-step-${COLUMN_ACCENTS[column.id]}`}>
-									<span className="stu-pipeline-step-icon" aria-hidden>
-										{PIPELINE_ICONS[column.id]}
-									</span>
-									<span className="stu-pipeline-step-count">{ideasByStatus[column.id].length}</span>
-									<span className="stu-pipeline-step-label">{column.label}</span>
-								</div>
-							))}
-						</div>
-					</section>
+			<section className="stu-home-metrics" aria-label="Workspace overview">
+				<MetricCard
+					label="Projects"
+					value={researchProjects.length}
+					hint={
+						researchProjects.length
+							? `${avgProgress}% average progress`
+							: "Start a thesis or paper"
+					}
+					icon={FolderKanban}
+					tone="navy"
+					href="/student/projects"
+					loading={loading}
+				/>
+				<MetricCard
+					label="Assignments"
+					value={assignments.length}
+					hint={dueSoonCount ? `${dueSoonCount} due this week` : "No deadlines this week"}
+					icon={ClipboardList}
+					tone="amber"
+					href="/student/assignments"
+					loading={loading}
+				/>
+				<MetricCard
+					label="Feedback"
+					value={revisionCount}
+					hint={revisionCount ? "Needs your attention" : "No revisions waiting"}
+					icon={MessageSquareText}
+					tone="rose"
+					href="/student/feedback"
+					loading={loading}
+				/>
+				<MetricCard
+					label="Research ideas"
+					value={ideas.length}
+					hint={ideas.length ? `${completionPercent}% marked complete` : "Save ideas from Research"}
+					icon={Lightbulb}
+					tone="violet"
+					href="/student/research/saved"
+					loading={loading}
+				/>
+				<MetricCard
+					label="Updates"
+					value={unreadCount}
+					hint={unreadCount ? "Unread notifications" : "You're up to date"}
+					icon={Bell}
+					tone="teal"
+					href="/student/notifications"
+					loading={loading}
+				/>
+			</section>
 
-					<section className="stu-board-section" aria-labelledby="stu-board-heading">
-						<div className="stu-section-head">
+			<div className="stu-home-layout">
+				<div className="stu-home-main">
+					<section className="stu-home-panel">
+						<div className="stu-home-panel-head">
 							<div>
-								<h2 id="stu-board-heading" className="stu-section-title">
-									Research board
-								</h2>
-								<p className="stu-section-subtitle">
-									Move cards between columns as your work progresses.
-								</p>
+								<h2>Active writing</h2>
+								<p>Pick up where you left off on dissertations, theses, and papers.</p>
 							</div>
+							<Link href="/student/projects" className="stu-home-link">
+								View all
+							</Link>
 						</div>
-
-						{loadingIdeas ? (
-							<BoardSkeleton />
-						) : ideas.length === 0 ? (
-							<div className="stu-empty">
-								<div className="stu-empty-visual" aria-hidden>
-									<NavIcon id="research" size={36} />
-								</div>
-								<h3>Your board is empty</h3>
-								<p>
-									Open the Research Assistant, explore topics in your field, and bookmark ideas you want to
-									develop further.
-								</p>
-								<Link href="/student/research" className="stu-btn stu-btn-primary">
-									<NavIcon id="research" size={18} />
-									Open Research Assistant
-									<IconChevronRight size={16} />
+						{loading ? (
+							<div className="stu-home-stack">
+								<div className="stu-skeleton stu-skeleton-card" />
+								<div className="stu-skeleton stu-skeleton-card" />
+							</div>
+						) : activeProjects.length === 0 ? (
+							<div className="stu-home-empty">
+								<FolderKanban size={28} />
+								<h3>No writing projects yet</h3>
+								<p>Create a thesis, dissertation, or research paper to track chapters and supervisor review.</p>
+								<Link href="/student/projects/new" className="stu-home-btn stu-home-btn-primary">
+									<Plus size={16} />
+									Create project
 								</Link>
 							</div>
 						) : (
-							<div className="stu-board">
+							<ul className="stu-home-project-list">
+								{activeProjects.map((project) => {
+									const pct = Math.min(100, Math.max(0, project.progressPercent ?? 0));
+									return (
+										<li key={project._id}>
+											<Link href={projectHref(project)} className="stu-home-project">
+												<div className="stu-home-project-top">
+													<div>
+														<p className="stu-home-project-type">
+															{projectTypeLabel(project.projectType)}
+														</p>
+														<h3>{project.title}</h3>
+														<p className="stu-home-project-meta">
+															{project.supervisor?.name
+																? `Supervisor · ${project.supervisor.name}`
+																: "No supervisor assigned"}
+															{project.updatedAt ? ` · Updated ${formatRelative(project.updatedAt)}` : ""}
+														</p>
+													</div>
+													<span className="stu-home-project-pct">{pct}%</span>
+												</div>
+												<div
+													className="stu-home-progress"
+													role="progressbar"
+													aria-valuenow={pct}
+													aria-valuemin={0}
+													aria-valuemax={100}
+												>
+													<div className="stu-home-progress-fill" style={{ width: `${pct}%` }} />
+												</div>
+											</Link>
+										</li>
+									);
+								})}
+							</ul>
+						)}
+					</section>
+
+					<div className="stu-home-split">
+						<section className="stu-home-panel">
+							<div className="stu-home-panel-head">
+								<div>
+									<h2>Assignments</h2>
+									<p>Coursework briefs and upcoming due dates.</p>
+								</div>
+								<Link href="/student/assignments" className="stu-home-link">
+									Open
+								</Link>
+							</div>
+							{loading ? (
+								<div className="stu-skeleton stu-skeleton-card" />
+							) : upcomingAssignments.length === 0 ? (
+								<p className="stu-home-quiet">No assignments from lecturers yet.</p>
+							) : (
+								<ul className="stu-home-rows">
+									{upcomingAssignments.map((row) => {
+										const status = assignmentTone(row);
+										return (
+											<li key={row._id}>
+												<Link href={projectHref(row)} className="stu-home-row">
+													<span className="stu-home-row-icon" aria-hidden>
+														<ClipboardList size={16} />
+													</span>
+													<span className="stu-home-row-body">
+														<strong>{row.title}</strong>
+														<span>
+															{row.assignmentBrief?.courseName || "Coursework"}
+															{row.assignmentBrief?.dueAt
+																? ` · Due ${formatShortDate(row.assignmentBrief.dueAt)}`
+																: ""}
+														</span>
+													</span>
+													<span className={`stu-home-status stu-home-status-${status.tone}`}>
+														{status.label}
+													</span>
+												</Link>
+											</li>
+										);
+									})}
+								</ul>
+							)}
+						</section>
+
+						<section className="stu-home-panel">
+							<div className="stu-home-panel-head">
+								<div>
+									<h2>Inbox</h2>
+									<p>Supervisor updates and workspace alerts.</p>
+								</div>
+								<Link href="/student/notifications" className="stu-home-link">
+									All updates
+								</Link>
+							</div>
+							{loading ? (
+								<div className="stu-skeleton stu-skeleton-card" />
+							) : notifications.length === 0 ? (
+								<p className="stu-home-quiet">No notifications yet. Feedback and scores will appear here.</p>
+							) : (
+								<ul className="stu-home-rows">
+									{notifications.map((item) => (
+										<li key={item._id}>
+											<Link href={notificationHref(item) || "/student/notifications"} className="stu-home-row">
+												<span className="stu-home-row-icon" aria-hidden>
+													<Bell size={16} />
+												</span>
+												<span className="stu-home-row-body">
+													<strong>{item.title}</strong>
+													<span>{item.createdAt ? formatRelative(item.createdAt) : "Workspace update"}</span>
+												</span>
+												{!item.readAt ? <span className="stu-home-dot" aria-label="Unread" /> : null}
+											</Link>
+										</li>
+									))}
+								</ul>
+							)}
+						</section>
+					</div>
+
+					<section className="stu-home-panel">
+						<div className="stu-home-panel-head">
+							<div>
+								<h2>Research board</h2>
+								<p>Move saved ideas from bookmark to finished topic.</p>
+							</div>
+							<Link href="/student/research/saved" className="stu-home-link">
+								Saved ideas
+							</Link>
+						</div>
+
+						<div className="stu-home-pipeline">
+							<div className="stu-home-pipeline-track">
+								<div className="stu-home-pipeline-fill" style={{ width: `${completionPercent}%` }} />
+							</div>
+							<div className="stu-home-pipeline-steps">
 								{STUDENT_BOARD_COLUMNS.map((column) => (
-									<div key={column.id} className={`stu-column stu-column-${COLUMN_ACCENTS[column.id]}`}>
-										<div className="stu-column-head">
-											<div className="stu-column-title-wrap">
-												<span className="stu-column-dot" aria-hidden />
-												<div>
-													<h3>{column.label}</h3>
-													<p>{column.hint}</p>
-												</div>
+									<div
+										key={column.id}
+										className={`stu-home-pipeline-step stu-home-pipeline-step-${COLUMN_ACCENTS[column.id]}`}
+									>
+										<span aria-hidden>{PIPELINE_ICONS[column.id]}</span>
+										<strong>{ideasByStatus[column.id].length}</strong>
+										<span>{column.label}</span>
+									</div>
+								))}
+							</div>
+						</div>
+
+						{loading ? (
+							<div className="stu-home-board">
+								{STUDENT_BOARD_COLUMNS.map((column) => (
+									<div key={column.id} className="stu-home-column">
+										<div className="stu-skeleton stu-skeleton-line" />
+										<div className="stu-skeleton stu-skeleton-card" />
+									</div>
+								))}
+							</div>
+						) : ideas.length === 0 ? (
+							<div className="stu-home-empty stu-home-empty-compact">
+								<Lightbulb size={26} />
+								<h3>No ideas on the board</h3>
+								<p>Use Research Assistant to generate topics, then bookmark the ones you want to develop.</p>
+								<Link href="/student/research" className="stu-home-btn stu-home-btn-primary">
+									<Sparkles size={16} />
+									Open Research Assistant
+								</Link>
+							</div>
+						) : (
+							<div className="stu-home-board">
+								{STUDENT_BOARD_COLUMNS.map((column) => (
+									<div
+										key={column.id}
+										className={`stu-home-column stu-home-column-${COLUMN_ACCENTS[column.id]}`}
+									>
+										<div className="stu-home-column-head">
+											<div>
+												<h3>{column.label}</h3>
+												<p>{column.hint}</p>
 											</div>
-											<span className="stu-column-count">{ideasByStatus[column.id].length}</span>
+											<span>{ideasByStatus[column.id].length}</span>
 										</div>
-										<div className="stu-column-body">
+										<div className="stu-home-column-body">
 											{ideasByStatus[column.id].length === 0 ? (
-												<div className="stu-column-empty">
-													<p>No items yet</p>
-												</div>
+												<p className="stu-home-column-empty">Nothing here yet</p>
 											) : (
 												ideasByStatus[column.id].map((idea) => (
 													<BoardCard
@@ -445,128 +704,102 @@ export function StudentDashboard() {
 							</div>
 						)}
 					</section>
-
-					<section className="stu-recent-section" aria-labelledby="stu-recent-heading">
-						<div className="stu-section-head">
-							<h2 id="stu-recent-heading" className="stu-section-title">
-								Recent ideas
-							</h2>
-							{recentIdeas.length > 0 && (
-								<Link href="/student/research/saved" className="stu-section-link">
-									View all saved
-								</Link>
-							)}
-						</div>
-
-						{loadingIdeas ? (
-							<ul className="stu-activity-list" aria-busy="true" aria-label="Loading recent ideas">
-								{[1, 2, 3].map((i) => (
-									<li key={i}>
-										<div className="stu-activity-row stu-activity-row-skeleton">
-											<div className="stu-skeleton stu-skeleton-icon" />
-											<div className="stu-activity-body">
-												<div className="stu-skeleton stu-skeleton-line" />
-												<div className="stu-skeleton stu-skeleton-line stu-skeleton-line-short" />
-											</div>
-										</div>
-									</li>
-								))}
-							</ul>
-						) : recentIdeas.length === 0 ? (
-							<div className="stu-recent-empty">
-								<p>Saved ideas will appear here once you bookmark them from the Research Assistant.</p>
-							</div>
-						) : (
-							<ul className="stu-activity-list">
-								{recentIdeas.map((idea) => {
-									const status = idea.status ?? "saved";
-									return (
-										<li key={`${idea.dbId ?? idea.id}-${idea.savedAt}`}>
-											<div className="stu-activity-row">
-												<span className={`stu-activity-icon stu-activity-icon-${COLUMN_ACCENTS[status]}`} aria-hidden>
-													<NavIcon id="research" size={16} />
-												</span>
-												<span className="stu-activity-body">
-													<p className="stu-activity-title">{idea.title}</p>
-													<p className="stu-activity-meta">
-														{getDisciplineLabel(idea.discipline)} · Saved {formatShortDate(idea.savedAt)}
-													</p>
-												</span>
-												<span className={`stu-activity-tag stu-activity-tag-${COLUMN_ACCENTS[status]}`}>
-													{STATUS_LABELS[status]}
-												</span>
-											</div>
-										</li>
-									);
-								})}
-							</ul>
-						)}
-					</section>
 				</div>
 
-				<aside className="stu-dash-aside" aria-label="Profile and quick access">
-					<div className="stu-profile-card">
-						<div className="stu-profile-top">
-							<span className="stu-profile-avatar" aria-hidden>
-								{initials}
-							</span>
-							<div className="stu-profile-identity">
-								<p className="stu-profile-name">{user.name}</p>
-								<p className="stu-profile-role">{user.department ?? "Student"}</p>
-							</div>
+				<aside className="stu-home-aside" aria-label="Profile and shortcuts">
+					<div className="stu-home-identity">
+						<span className="stu-home-avatar">{initials}</span>
+						<div>
+							<p className="stu-home-identity-name">{user.name}</p>
+							<p className="stu-home-identity-role">{user.programme || user.department || "Student"}</p>
 						</div>
-						<dl className="stu-profile-details">
-							<div className="stu-profile-detail">
+						<dl>
+							<div>
 								<dt>Institution</dt>
 								<dd>{user.institution ?? "Not set"}</dd>
 							</div>
-							<div className="stu-profile-detail">
+							<div>
 								<dt>Email</dt>
 								<dd>{user.email}</dd>
 							</div>
 						</dl>
 					</div>
 
-					<div className="stu-aside-tokens">
-						<div className="stu-aside-tokens-head">
-							<span className="stu-aside-tokens-label">Research tokens</span>
-							<span className="stu-aside-tokens-count">
-								{tokensRemaining.toLocaleString()} left
-							</span>
+					<div className="stu-home-tokens">
+						<TokenRing percentUsed={tokenPercentUsed} remaining={tokensRemaining} />
+						<div>
+							<p className="stu-home-tokens-title">Research tokens</p>
+							<p className="stu-home-tokens-meta">
+								{tokenPercentUsed}% of {allowance.toLocaleString()} used
+							</p>
 						</div>
-						<div
-							className="stu-aside-tokens-track"
-							role="progressbar"
-							aria-valuemin={0}
-							aria-valuemax={100}
-							aria-valuenow={tokenPercentUsed}
-							aria-label={`${tokenPercentUsed}% of research tokens used`}
-						>
-							<div className="stu-aside-tokens-fill" style={{ width: `${tokenPercentUsed}%` }} />
-						</div>
-						<p className="stu-aside-tokens-meta">{allowance.toLocaleString()} allocated</p>
 					</div>
 
-					<div className="stu-aside-tools">
-						<h3 className="stu-aside-tools-title">Quick tools</h3>
-						<ul className="stu-aside-tools-list">
+					{recentIdeas.length > 0 ? (
+						<div className="stu-home-aside-block">
+							<h3>Recent ideas</h3>
+							<ul>
+								{recentIdeas.map((idea) => {
+									const status = idea.status ?? "saved";
+									return (
+										<li key={`${idea.dbId ?? idea.id}-${idea.savedAt}`}>
+											<p>{idea.title}</p>
+											<span>
+												{STATUS_LABELS[status]} · {formatShortDate(idea.savedAt)}
+											</span>
+										</li>
+									);
+								})}
+							</ul>
+						</div>
+					) : null}
+
+					<div className="stu-home-aside-block">
+						<h3>Shortcuts</h3>
+						<ul className="stu-home-shortcuts">
 							{tools.map((tool) => (
 								<li key={tool.id}>
-									<Link href={tool.href} className={`stu-aside-tool stu-aside-tool-${tool.id}`}>
-										<span className="stu-aside-tool-icon" aria-hidden>
-											<NavIcon id={tool.id} size={18} />
+									<Link href={tool.href} className="stu-home-shortcut">
+										<span className={`stu-home-shortcut-icon stu-home-shortcut-${tool.id}`} aria-hidden>
+											<NavIcon id={tool.id} size={16} />
 										</span>
-										<span className="stu-aside-tool-copy">
-											<span className="stu-aside-tool-label">{tool.label}</span>
-											{tool.description && (
-												<span className="stu-aside-tool-desc">{tool.description}</span>
-											)}
+										<span>
+											<strong>{tool.label}</strong>
+											{tool.description ? <em>{tool.description}</em> : null}
 										</span>
-										<IconChevronRight size={14} />
+										<ChevronRight size={14} />
 									</Link>
 								</li>
 							))}
 						</ul>
+					</div>
+
+					<div className="stu-home-next">
+						<div className="stu-home-next-icon" aria-hidden>
+							<CalendarClock size={18} />
+						</div>
+						<div>
+							<p>Suggested next step</p>
+							<strong>
+								{revisionCount
+									? "Review supervisor feedback"
+									: continueProject
+										? `Continue “${continueProject.title}”`
+										: "Generate your first research idea"}
+							</strong>
+						</div>
+						<Link
+							href={
+								revisionCount
+									? "/student/feedback"
+									: continueProject
+										? projectHref(continueProject)
+										: "/student/research"
+							}
+							className="stu-home-btn stu-home-btn-primary"
+						>
+							Go
+						</Link>
 					</div>
 				</aside>
 			</div>

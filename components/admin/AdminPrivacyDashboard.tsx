@@ -240,8 +240,8 @@ export function AdminPrivacyDashboard() {
 	return (
 		<AdminShell
 			title="Research Privacy Controls"
-			subtitle="Data classification, access controls, and consent management for research data"
-			breadcrumb="Admin · Governance"
+			subtitle="Privacy rules that govern access to research data — raw materials stay inaccessible unless policy allows"
+			breadcrumb="Admin · Controls"
 			actions={
 				<>
 					<button

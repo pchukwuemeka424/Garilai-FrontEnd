@@ -15,7 +15,13 @@ import { researchPaperWorkspacePath } from "@/lib/research-generate-routes";
 import { stagePendingResearchPaper } from "@/lib/research-paper-pending";
 import { loadSavedOutline, saveResearchOutline } from "@/lib/research-outline-storage";
 import type { ResearchIdea, ResearchScope } from "@/lib/research-ideas";
-import { formatIdeaForChat, getFeasibilityLabel, getTypeLabel, ideaToEditableDocument } from "@/lib/research-ideas";
+import {
+	formatIdeaForChat,
+	getFeasibilityLabel,
+	getGenerateResearchLabel,
+	getTypeLabel,
+	ideaToEditableDocument,
+} from "@/lib/research-ideas";
 import type { ResearchSourceSelection } from "@/lib/research-assets-api";
 
 type Props = {
@@ -85,6 +91,7 @@ export function ResearchIdeaCard({
 				topic,
 				scope,
 				outline: ideaToEditableDocument(idea, topic, discipline, scope),
+				sources,
 			});
 		}
 
@@ -146,7 +153,9 @@ export function ResearchIdeaCard({
 				projectName: idea.title,
 			});
 			setShowCitationStyleModal(false);
-			router.push(researchPaperWorkspacePath(idea.title, studentUI ? "student" : "lecturer", key));
+			router.push(
+				researchPaperWorkspacePath(idea.title, studentUI ? "student" : "lecturer", key, scope),
+			);
 		},
 		[idea, discipline, topic, scope, sources, hasTokens, router, studentUI],
 	);
@@ -265,12 +274,16 @@ export function ResearchIdeaCard({
 								className="research-action-btn research-action-btn-generate"
 								onClick={openGenerateModal}
 								disabled={!hasTokens}
-								title={!hasTokens ? "Research token limit reached" : undefined}
+								title={
+									!hasTokens
+										? "Research token limit reached"
+										: `Draft a full ${getGenerateResearchLabel(scope).replace(/^Generate\s+/i, "")} from this idea`
+								}
 							>
 								<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
 									<path d="M12 3v12M8 11l4 4 4-4M5 21h14" strokeLinecap="round" strokeLinejoin="round" />
 								</svg>
-								Generate Research
+								{getGenerateResearchLabel(scope)}
 							</button>
 						</div>
 						<div className="research-idea-actions-primary">
@@ -297,13 +310,11 @@ export function ResearchIdeaCard({
 				projectTitle={idea.title}
 				variant={studentUI ? "student" : "lecturer"}
 				note={
-					sources?.projectIds?.length
-						? "A research note is selected — the paper will be drafted from that note. Citations and the References list will use your chosen style."
-						: outline?.trim()
-							? "Your saved research outline will guide section structure. Citations and the References list will use your chosen style."
-							: "Citations and the References list will use your chosen style throughout the generated paper."
+					outline?.trim()
+						? "Your saved research outline will guide section structure. Citations and the References list will use your chosen style."
+						: "Citations and the References list will use your chosen style throughout the generated paper."
 				}
-				confirmLabel="Generate Research"
+				confirmLabel={getGenerateResearchLabel(scope)}
 			/>
 		</article>
 	);

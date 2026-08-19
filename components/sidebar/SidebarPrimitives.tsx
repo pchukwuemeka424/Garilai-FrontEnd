@@ -1,12 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import type { CSSProperties, ReactNode } from "react";
+import { usePathname } from "next/navigation";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 
 import { BrandMark } from "@/components/BrandLogo";
 import { NavIcon } from "@/components/aula/NavIcon";
 import type { AuthUser } from "@/lib/auth";
 import { userInitials } from "@/lib/aula-utils";
+import { isSupervisionPath } from "@/lib/aula-nav";
+import { isStudentAssistantPath } from "@/lib/student-nav";
 import { APP_COMPANY, APP_COMPANY_URL, APP_NAME, APP_TAGLINE } from "@/lib/brand";
 
 import { navIconTone } from "@/lib/colors";
@@ -64,12 +67,27 @@ export function SidebarNavLink({
 	active?: boolean;
 	onNavigate?: () => void;
 }) {
+	const pathname = usePathname() ?? "";
+	const base = href.split("#")[0] ?? href;
+	const isDashboard = base === "/dashboard" || base === "/student/dashboard";
+	let pathActive =
+		pathname === base || (!isDashboard && pathname.startsWith(`${base}/`));
+	if (iconId === "research" && pathname.includes("/research/notebook")) {
+		pathActive = false;
+	}
+	if (iconId === "supervision") {
+		pathActive = isSupervisionPath(pathname);
+	}
+	if (iconId === "assistant") {
+		pathActive = isStudentAssistantPath(pathname);
+	}
+	const isActive = active ?? pathActive;
 	const tone = navIconTone(iconId);
 
 	return (
 		<Link
 			href={href}
-			className={`sb-link${active ? " sb-link-active" : ""}`}
+			className={`sb-link${isActive ? " sb-link-active" : ""}`}
 			onClick={onNavigate}
 			style={
 				{
@@ -92,6 +110,69 @@ export function SidebarNavLink({
 
 export function SidebarNav({ children }: { children: ReactNode }) {
 	return <nav className="sb-nav">{children}</nav>;
+}
+
+function hrefIsActive(pathname: string, href: string) {
+	const base = href.split("#")[0] ?? href;
+	return pathname === base || pathname.startsWith(`${base}/`);
+}
+
+export function SidebarFolder({
+	iconId,
+	label,
+	description,
+	childHrefs,
+	children,
+}: {
+	iconId: string;
+	label: string;
+	description?: string;
+	childHrefs: string[];
+	children: ReactNode;
+}) {
+	const pathname = usePathname() ?? "";
+	const childActive = childHrefs.some((href) => hrefIsActive(pathname, href));
+	const [open, setOpen] = useState(childActive);
+	const tone = navIconTone(iconId);
+
+	useEffect(() => {
+		if (childActive) setOpen(true);
+	}, [childActive]);
+
+	return (
+		<div className={`sb-folder${open ? " sb-folder-open" : ""}${childActive ? " sb-folder-active" : ""}`}>
+			<button
+				type="button"
+				className="sb-link sb-folder-toggle"
+				aria-expanded={open}
+				onClick={() => setOpen((value) => !value)}
+				style={
+					{
+						"--sb-icon-bg": tone.bg,
+						"--sb-icon-fg": tone.fg,
+					} as CSSProperties
+				}
+			>
+				<span className="sb-link-icon" aria-hidden>
+					<NavIcon id={iconId} size={18} />
+				</span>
+				<span className="sb-link-text">
+					<span className="sb-link-label">{label}</span>
+					{description && <span className="sb-link-desc">{description}</span>}
+				</span>
+				<span className="sb-folder-chevron" aria-hidden>
+					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+						<path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+					</svg>
+				</span>
+			</button>
+			{open && (
+				<div className="sb-folder-items" role="group" aria-label={label}>
+					{children}
+				</div>
+			)}
+		</div>
+	);
 }
 
 export function SidebarSignOut({ onLogout }: { onLogout: () => void }) {

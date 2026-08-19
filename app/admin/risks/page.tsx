@@ -1,5 +1,5 @@
-import { AdminRisksDashboard } from "@/components/admin/AdminRisksDashboard";
+import { redirect } from "next/navigation";
 
-export default function AdminRisksPage() {
-	return <AdminRisksDashboard />;
+export default function RemovedAdminModulePage() {
+	redirect("/admin");
 }

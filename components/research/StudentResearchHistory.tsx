@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/ButtonIcon";
 import type { SavedResearchPaper } from "@/lib/chat-research-storage";
 import { getDisciplineLabel } from "@/lib/research-disciplines";
-import { SCOPE_OPTIONS, type ResearchSession } from "@/lib/research-ideas";
+import { getScopeLabel, type ResearchSession } from "@/lib/research-ideas";
 import { savedResearchPagePath } from "@/lib/saved-research-routes";
 
 type Props = {
@@ -94,7 +94,7 @@ export function StudentResearchHistory({
 				) : (
 					<ul className="research-history-list">
 						{sortedSessions.map((session) => {
-							const scopeLabel = SCOPE_OPTIONS.find((s) => s.id === session.scope)?.label ?? session.scope;
+							const scopeLabel = getScopeLabel(session.scope);
 							return (
 								<li key={session.id} className="research-history-row">
 									<button

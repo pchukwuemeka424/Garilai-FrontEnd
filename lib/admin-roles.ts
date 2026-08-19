@@ -48,10 +48,6 @@ export type GovernanceFeature =
 	| "privacy"
 	| "retention"
 	| "policies"
-	| "risks"
-	| "compliance"
-	| "inventory"
-	| "approvals"
 	| "governance_hub"
 	| "sessions"
 	| "backup";
@@ -68,9 +64,6 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, Partial<Record<GovernanceFeature,
 		alerts: ["view"],
 		incidents: ["view"],
 		reports: ["view", "create", "export"],
-		risks: ["view", "create", "edit", "export"],
-		compliance: ["view", "create", "edit", "delete", "export"],
-		inventory: ["view", "export"],
 		policies: ["view"],
 		contributions: ["view"],
 		provenance: ["view"],
@@ -104,7 +97,6 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, Partial<Record<GovernanceFeature,
 		privacy: ["view", "create", "edit", "delete", "export"],
 		retention: ["view", "create", "edit", "delete", "export"],
 		audit: ["view", "export"],
-		compliance: ["view"],
 		governance_hub: ["view"],
 	},
 	research_integrity_officer: {
@@ -128,10 +120,6 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, Partial<Record<GovernanceFeature,
 		privacy: ["view"],
 		retention: ["view"],
 		policies: ["view"],
-		risks: ["view"],
-		compliance: ["view"],
-		inventory: ["view"],
-		approvals: ["view"],
 		governance_hub: ["view"],
 	},
 };

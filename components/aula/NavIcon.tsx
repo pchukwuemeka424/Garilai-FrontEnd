@@ -20,28 +20,8 @@ export function NavIcon({ id, size = 18 }: Props) {
 					<path d="m21 21-4.3-4.3" strokeLinecap="round" />
 				</svg>
 			);
-		case "research-note":
-			return (
-				<svg {...props}>
-					<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-					<path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" strokeLinecap="round" />
-				</svg>
-			);
-		case "references":
-			return (
-				<svg {...props}>
-					<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-					<path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-				</svg>
-			);
-		case "lesson-planner":
-			return (
-				<svg {...props}>
-					<rect x="3" y="4" width="18" height="18" rx="2" />
-					<path d="M16 2v4M8 2v4M3 10h18" strokeLinecap="round" />
-				</svg>
-			);
 		case "notes":
+		case "notebook":
 			return (
 				<svg {...props}>
 					<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -55,6 +35,7 @@ export function NavIcon({ id, size = 18 }: Props) {
 					<path d="M4 20c0-4 3.6-6 8-6s8 2 8 6" strokeLinecap="round" />
 				</svg>
 			);
+		case "students":
 		case "users":
 			return (
 				<svg {...props}>
@@ -69,12 +50,6 @@ export function NavIcon({ id, size = 18 }: Props) {
 					<path d="M22 12h-4l-3 9L9 3l-3 9H2" strokeLinecap="round" strokeLinejoin="round" />
 				</svg>
 			);
-		case "lesson":
-			return (
-				<svg {...props}>
-					<path d="M4 6h16M4 12h16M4 18h10" strokeLinecap="round" />
-				</svg>
-			);
 		case "tokens":
 			return (
 				<svg {...props}>
@@ -82,6 +57,9 @@ export function NavIcon({ id, size = 18 }: Props) {
 					<path d="M12 8v8M9 10.5h5a1.5 1.5 0 0 1 0 3H9a1.5 1.5 0 0 0 0 3h6" strokeLinecap="round" />
 				</svg>
 			);
+		case "supervision":
+		case "assistant":
+		case "projects":
 		case "folder":
 			return (
 				<svg {...props}>
@@ -110,6 +88,7 @@ export function NavIcon({ id, size = 18 }: Props) {
 					<path d="M8 15v-4M12 15V8M16 15v-7" strokeLinecap="round" />
 				</svg>
 			);
+		case "assignments":
 		case "policy":
 			return (
 				<svg {...props}>
@@ -125,6 +104,7 @@ export function NavIcon({ id, size = 18 }: Props) {
 					<path d="M12 13.5V16" strokeLinecap="round" />
 				</svg>
 			);
+		case "reviews":
 		case "approvals":
 			return (
 				<svg {...props}>
@@ -132,6 +112,7 @@ export function NavIcon({ id, size = 18 }: Props) {
 					<path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" strokeLinecap="round" />
 				</svg>
 			);
+		case "feedback":
 		case "reports":
 			return (
 				<svg {...props}>
@@ -166,6 +147,7 @@ export function NavIcon({ id, size = 18 }: Props) {
 					<path d="M3 7l2-3h14l2 3M8 12h8" strokeLinecap="round" />
 				</svg>
 			);
+		case "notifications":
 		case "alert":
 			return (
 				<svg {...props}>

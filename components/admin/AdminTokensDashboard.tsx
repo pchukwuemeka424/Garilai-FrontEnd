@@ -274,9 +274,9 @@ export function AdminTokensDashboard() {
 
 	return (
 		<AdminShell
-			title="Token Usage"
-			subtitle="Token quotas, consumption, anomaly detection, and budget forecasting"
-			breadcrumb="Admin · Tokens"
+			title="Token Usage Tracking"
+			subtitle="Consumption by faculty, department, programme, and user — for cost, high usage, and planning"
+			breadcrumb="Admin · Usage"
 			actions={
 				<>
 					<button type="button" className="ghost-btn" onClick={() => exportTokenReport(records)}>
@@ -376,6 +376,35 @@ export function AdminTokensDashboard() {
 					</div>
 				</AdminPanel>
 			</div>
+
+			<AdminPanel title="Usage by programme" description="Token consumption by programme">
+				<div className="admin-table-scroll">
+					<table className="admin-simple-table">
+						<thead>
+							<tr>
+								<th>Programme</th>
+								<th>Users</th>
+								<th>Used</th>
+								<th>Allowance</th>
+							</tr>
+						</thead>
+						<tbody>
+							{(stats?.byProgramme ?? []).length === 0 ? (
+								<tr><td colSpan={4} className="muted">No data.</td></tr>
+							) : (
+								(stats?.byProgramme ?? []).slice(0, 15).map((row) => (
+									<tr key={row.key}>
+										<td><strong>{row.label}</strong></td>
+										<td>{row.users}</td>
+										<td>{formatTokenCount(row.tokensUsed)}</td>
+										<td>{formatTokenCount(row.allowance)}</td>
+									</tr>
+								))
+							)}
+						</tbody>
+					</table>
+				</div>
+			</AdminPanel>
 
 			{/* Threshold Alerts */}
 			<AdminPanel title="Threshold Alerts" description="Users exceeding quota thresholds">

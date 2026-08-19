@@ -49,10 +49,6 @@
   --color-icon-dashboard-fg: #0D0B61;
   --color-icon-research-bg: #ede9fe;
   --color-icon-research-fg: #7c3aed;
-  --color-icon-references-bg: #dcfce7;
-  --color-icon-references-fg: #16a34a;
-  --color-icon-lesson-planner-bg: #fce8ef;
-  --color-icon-lesson-planner-fg: #711738;
   --color-icon-chat-bg: #ffedd5;
   --color-icon-chat-fg: #ea580c;
   --color-icon-admin-bg: #f1f5f9;
@@ -71,15 +67,6 @@
   --color-research-accent-muted: rgba(13, 11, 97, 0.1);
   --color-research-accent-glow: rgba(13, 11, 97, 0.18);
   --color-research-hero: #060549;
-
-  --color-lp-accent: #711738;
-  --color-lp-accent-hover: #5a1230;
-  --color-lp-accent-light: #8a1f48;
-  --color-lp-accent-muted: rgba(113, 23, 56, 0.1);
-  --color-lp-accent-glow: rgba(113, 23, 56, 0.14);
-  --color-lp-hero-from: #711738;
-  --color-lp-hero-via: #8a1f48;
-  --color-lp-hero-to: #4a0f25;
 
   --color-login-accent: #7c3aed;
   --color-login-accent-hover: #6d28d9;
@@ -212,41 +199,11 @@
   --research-frame-soft: rgba(10, 124, 110, 0.08);
 }
 
-/* —— Lesson planner —— */
-.lp-page {
-  --lp-accent: var(--color-icon-lesson-planner-fg);
-  --lp-accent-hover: var(--color-lp-accent-hover);
-  --lp-accent-light: var(--color-lp-accent-light);
-  --lp-accent-muted: var(--color-icon-lesson-planner-bg);
-  --lp-accent-glow: var(--color-lp-accent-glow);
-  --lp-hero-from: var(--color-lp-hero-from);
-  --lp-hero-via: var(--color-lp-hero-via);
-  --lp-hero-to: var(--color-lp-hero-to);
-  --lp-surface: var(--aula-surface);
-  --lp-border: var(--aula-border);
-  --lp-border-strong: var(--color-slate-300);
-  --lp-text: var(--aula-text);
-  --lp-muted: var(--aula-muted);
-}
-
-/* —— Reference formatter —— */
-.ref-page {
-  --ref-accent: var(--color-icon-references-fg);
-  --ref-accent-hover: #15803d;
-  --ref-accent-muted: var(--color-icon-references-bg);
-  --ref-accent-glow: rgba(22, 163, 74, 0.12);
-  --ref-surface: var(--aula-surface, var(--color-white));
-  --ref-border: var(--aula-border, var(--color-slate-200));
-  --ref-border-strong: var(--color-slate-300);
-  --ref-text: var(--aula-text, var(--color-slate-900));
-  --ref-muted: var(--aula-muted, var(--color-slate-500));
-}
-
 /* —— Student research (teal variant) —— */
 .research-page-student {
-  --research-accent: var(--color-lp-accent);
-  --research-accent-hover: var(--color-lp-accent-hover);
-  --research-accent-light: var(--color-lp-accent-light);
+  --research-accent: #0d9488;
+  --research-accent-hover: #0f766e;
+  --research-accent-light: #14b8a6;
   --research-accent-muted: rgba(13, 148, 136, 0.12);
   --research-hero-bg: #1c2d3d;
 }

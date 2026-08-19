@@ -28,7 +28,7 @@ function storageKey(variant: "lecturer" | "student", userId: string): string {
 }
 
 function emptySources(): ResearchSourceSelection {
-	return { documentIds: [], datasetIds: [], noteIds: [], projectIds: [] };
+	return { documentIds: [], datasetIds: [], questionnaireIds: [], noteIds: [], projectIds: [] };
 }
 
 /** One-time wipe of shared / race-polluted drafts from before per-user isolation. */
@@ -112,6 +112,7 @@ export function loadResearchWizardDraft(
 				...(parsed.selectedSources ?? {}),
 				documentIds: parsed.selectedSources?.documentIds ?? [],
 				datasetIds: parsed.selectedSources?.datasetIds ?? [],
+				questionnaireIds: parsed.selectedSources?.questionnaireIds ?? [],
 				noteIds: parsed.selectedSources?.noteIds ?? [],
 				projectIds: parsed.selectedSources?.projectIds ?? [],
 			},
@@ -169,6 +170,7 @@ export function researchWizardInputKey(input: {
 	const sources = {
 		documentIds: [...(input.sources.documentIds ?? [])].sort(),
 		datasetIds: [...(input.sources.datasetIds ?? [])].sort(),
+		questionnaireIds: [...(input.sources.questionnaireIds ?? [])].sort(),
 		noteIds: [...(input.sources.noteIds ?? [])].sort(),
 		projectIds: [...(input.sources.projectIds ?? [])].sort(),
 	};

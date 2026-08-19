@@ -14,9 +14,11 @@ import { saveChatCitationStyle } from "@/lib/chat-research-citations";
 import { type CitationStyle } from "@/lib/citation-styles";
 import { getDisciplineLabel } from "@/lib/research-disciplines";
 import { researchPaperWorkspacePath } from "@/lib/research-generate-routes";
-import { peekOutlinePageContext, resolveOutlinePageContext } from "@/lib/research-outline-context";
+import { getGenerateResearchLabel, getScopeDocumentLabel, getScopeLabel } from "@/lib/research-ideas";
+import { peekOutlinePageContext, resolveOutlinePageContext, stageOutlinePageContext } from "@/lib/research-outline-context";
 import { loadSavedOutline } from "@/lib/research-outline-storage";
 import { stagePendingResearchPaper } from "@/lib/research-paper-pending";
+import { stagePaperSources } from "@/lib/research-paper-sources";
 
 type Props = {
 	variant?: "lecturer" | "student";
@@ -38,6 +40,9 @@ function ResearchGenerateContent({ variant = "lecturer" }: Props) {
 
 	const researchPath = isStudent ? "/student/research" : "/research";
 	const backHref = context?.returnTo?.trim() || researchPath;
+	const scopeLabel = context ? getScopeLabel(context.scope) : "Research";
+	const documentLabel = getScopeDocumentLabel(context?.scope);
+	const generateLabel = getGenerateResearchLabel(context?.scope);
 	const btnPrimaryClass = isStudent
 		? "stu-paper-btn stu-paper-btn-primary research-generate-submit-btn"
 		: "saved-research-btn saved-research-btn-primary research-generate-submit-btn";
@@ -53,13 +58,28 @@ function ResearchGenerateContent({ variant = "lecturer" }: Props) {
 
 	const handleGenerate = () => {
 		if (!context || !hasTokens || !citationStyle) return;
+		const nextKey = stageOutlinePageContext({
+			idea: context.idea,
+			discipline: context.discipline,
+			topic: context.topic,
+			scope: context.scope,
+			sources: context.sources,
+			returnTo: backHref,
+			assignmentInstructions: context.assignmentInstructions,
+		});
+		stagePaperSources(context.sources);
 		stagePendingResearchPaper({
-			key,
+			key: nextKey,
 			citationStyle,
 			projectName: context.idea.title,
 		});
 		router.push(
-			researchPaperWorkspacePath(context.idea.title, isStudent ? "student" : "lecturer", key),
+			researchPaperWorkspacePath(
+				context.idea.title,
+				isStudent ? "student" : "lecturer",
+				nextKey,
+				context.scope,
+			),
 		);
 	};
 
@@ -71,7 +91,7 @@ function ResearchGenerateContent({ variant = "lecturer" }: Props) {
 				</Link>
 				<div className="saved-research-empty">
 					<h2>Research idea not found</h2>
-					<p>Open paper generation from a research idea card to continue.</p>
+					<p>Open generation from a research idea card to continue.</p>
 				</div>
 			</div>
 		);
@@ -87,18 +107,18 @@ function ResearchGenerateContent({ variant = "lecturer" }: Props) {
 
 			<header className="research-generate-page-head">
 				<div>
-					<p className="research-outline-page-eyebrow">Generate research paper</p>
+					<p className="research-outline-page-eyebrow">{generateLabel}</p>
 					<h1 className="research-outline-page-title">{context.idea.title}</h1>
 					<p className="research-outline-page-meta">
-						{getDisciplineLabel(context.discipline)} · {context.topic}
+						{getDisciplineLabel(context.discipline)} · {scopeLabel} · {context.topic}
 					</p>
 				</div>
 			</header>
 
 			<div className="research-generate-page-card">
 				<p className="research-generate-modal-lead">
-					Draft a full paper for <strong>{context.idea.title}</strong>. Choose how citations and references
-					should be formatted.
+					Draft a full {documentLabel} for <strong>{context.idea.title}</strong>. Choose how citations and
+					references should be formatted.
 				</p>
 
 				<CitationStyleSelect
@@ -111,17 +131,12 @@ function ResearchGenerateContent({ variant = "lecturer" }: Props) {
 				/>
 
 				<div className="research-generate-modal-outline-note">
-					{context.sources?.projectIds?.length ? (
-						<p>
-							A research note is selected — the paper will be drafted from that note (title, abstract, results,
-							and saved figures). No separate outline will be generated.
-						</p>
-					) : outline?.trim() ? (
+					{outline?.trim() ? (
 						<p>Your saved research outline will guide section structure, methodology, and literature themes.</p>
 					) : (
 						<p>
-							No outline yet — one will be generated from arXiv literature on the next page, then used to draft
-							the paper.
+							No outline yet — one will be generated from literature on the next page, then used to draft the{" "}
+							{documentLabel}.
 						</p>
 					)}
 				</div>
@@ -141,7 +156,7 @@ function ResearchGenerateContent({ variant = "lecturer" }: Props) {
 						}
 					>
 						<IconFileText size={14} />
-						Generate paper
+						{generateLabel}
 					</button>
 				</div>
 			</div>

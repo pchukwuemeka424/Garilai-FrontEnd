@@ -6,6 +6,7 @@ import { CitationStyleSelect } from "@/components/aula/CitationStyleSelect";
 import {
 	buildChangeCitationStylePrompt,
 	buildUpdateReferencesPrompt,
+	loadChatResearchScope,
 	saveChatCitationStyle,
 } from "@/lib/chat-research-citations";
 import { getStyleLabel, type CitationStyle } from "@/lib/citation-styles";
@@ -38,12 +39,14 @@ export function ResearchCitationToolbar({
 
 	const handleApplyStyle = useCallback(() => {
 		saveChatCitationStyle(citationStyle);
-		onApplyStyle(buildChangeCitationStylePrompt(citationStyle), citationStyle);
+		const scope = loadChatResearchScope();
+		onApplyStyle(buildChangeCitationStylePrompt(citationStyle, scope), citationStyle);
 	}, [citationStyle, onApplyStyle]);
 
 	const handleUpdateReferences = useCallback(() => {
 		saveChatCitationStyle(citationStyle);
-		onUpdateReferences(buildUpdateReferencesPrompt(citationStyle), citationStyle);
+		const scope = loadChatResearchScope();
+		onUpdateReferences(buildUpdateReferencesPrompt(citationStyle, scope), citationStyle);
 	}, [citationStyle, onUpdateReferences]);
 
 	if (!visible) return null;

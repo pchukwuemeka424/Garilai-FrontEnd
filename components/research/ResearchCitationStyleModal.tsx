@@ -1,12 +1,16 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { CitationStyleSelect } from "@/components/aula/CitationStyleSelect";
 import { IconFileText, IconX } from "@/components/ui/ButtonIcon";
 import { loadChatCitationStyle, saveChatCitationStyle } from "@/lib/chat-research-citations";
-import { type CitationStyle } from "@/lib/citation-styles";
+import {
+	CITATION_STYLE_GROUPS,
+	getStyleLabel,
+	type CitationStyle,
+} from "@/lib/citation-styles";
 
 type Props = {
 	open: boolean;
@@ -19,6 +23,15 @@ type Props = {
 	note?: string;
 	confirmLabel?: string;
 };
+
+const POPULAR_STYLE_IDS: CitationStyle[] = [
+	"apa-7",
+	"harvard",
+	"mla-9",
+	"ieee",
+	"vancouver",
+	"chicago-author-date",
+];
 
 /**
  * Popup shown before research paper generation so the user picks a reference style.
@@ -38,6 +51,21 @@ export function ResearchCitationStyleModal({
 	const [citationStyle, setCitationStyle] = useState<CitationStyle | "">("");
 
 	const isStudent = variant === "student";
+
+	const popularStyles = useMemo(() => {
+		const all = CITATION_STYLE_GROUPS.flatMap((group) => group.styles);
+		return POPULAR_STYLE_IDS.map((id) => all.find((style) => style.id === id)).filter(
+			(style): style is NonNullable<typeof style> => Boolean(style),
+		);
+	}, []);
+
+	const selectedMeta = useMemo(() => {
+		if (!citationStyle) return null;
+		return (
+			CITATION_STYLE_GROUPS.flatMap((group) => group.styles).find((style) => style.id === citationStyle) ??
+			null
+		);
+	}, [citationStyle]);
 
 	useEffect(() => {
 		setMounted(true);
@@ -67,27 +95,40 @@ export function ResearchCitationStyleModal({
 		onConfirm(citationStyle);
 	};
 
+	const chooseStyle = (style: CitationStyle) => {
+		setCitationStyle(style);
+		saveChatCitationStyle(style);
+	};
+
 	return createPortal(
 		<div
-			className={`modal-backdrop research-generate-modal-backdrop${isStudent ? " research-modal-student" : ""}`}
+			className={`research-style-modal-backdrop${isStudent ? " research-style-modal-student" : ""}`}
 			role="presentation"
 			onMouseDown={(event) => {
 				if (event.target === event.currentTarget) onClose();
 			}}
 		>
 			<div
-				className="modal research-generate-modal"
+				className="research-style-modal"
 				role="dialog"
 				aria-modal="true"
 				aria-labelledby={titleId}
 				onMouseDown={(event) => event.stopPropagation()}
 			>
-				<header className="modal-header">
-					<h3 id={titleId}>Select reference style</h3>
+				<header className="research-style-modal-header">
+					<div className="research-style-modal-header-main">
+						<span className="research-style-modal-badge" aria-hidden>
+							<IconFileText size={18} />
+						</span>
+						<div>
+							<p className="research-style-modal-eyebrow">Before you generate</p>
+							<h3 id={titleId}>Choose citation style</h3>
+						</div>
+					</div>
 					<button
 						ref={closeRef}
 						type="button"
-						className="icon-btn"
+						className="research-style-modal-close"
 						aria-label="Close"
 						onClick={onClose}
 					>
@@ -95,53 +136,94 @@ export function ResearchCitationStyleModal({
 					</button>
 				</header>
 
-				<div className="modal-body research-generate-modal-body">
-					<p className="research-generate-modal-lead">
+				<div className="research-style-modal-body">
+					<p className="research-style-modal-lead">
 						{projectTitle?.trim() ? (
 							<>
-								Draft a full paper for <strong>{projectTitle.trim()}</strong>. Choose how
-								citations and references should be formatted before generating.
+								Formatting citations for <strong>{projectTitle.trim()}</strong>. Pick a
+								reference style so in-text cites and the References list stay consistent.
 							</>
 						) : (
-							<>Choose how citations and references should be formatted before generating.</>
+							<>
+								Pick a reference style so in-text cites and the References list stay consistent
+								throughout the document.
+							</>
 						)}
 					</p>
 
-					<CitationStyleSelect
-						id="research-citation-style-modal"
-						value={citationStyle}
-						onChange={(style) => {
-							setCitationStyle(style);
-							if (style) saveChatCitationStyle(style);
-						}}
-					/>
+					<div className="research-style-popular">
+						<div className="research-style-section-label">Popular styles</div>
+						<div className="research-style-popular-grid" role="listbox" aria-label="Popular citation styles">
+							{popularStyles.map((style) => {
+								const active = citationStyle === style.id;
+								return (
+									<button
+										key={style.id}
+										type="button"
+										role="option"
+										aria-selected={active}
+										className={`research-style-card${active ? " is-active" : ""}`}
+										onClick={() => chooseStyle(style.id)}
+									>
+										<span className="research-style-card-title">{style.label}</span>
+										<span className="research-style-card-hint">{style.hint}</span>
+									</button>
+								);
+							})}
+						</div>
+					</div>
+
+					<div className="research-style-all">
+						<div className="research-style-section-label">All styles</div>
+						<CitationStyleSelect
+							id="research-citation-style-modal"
+							value={citationStyle}
+							onChange={(style) => {
+								setCitationStyle(style);
+								if (style) saveChatCitationStyle(style);
+							}}
+							placeholder="Browse every reference style"
+							searchPlaceholder="Search APA, MLA, IEEE…"
+							hideLabel
+						/>
+					</div>
+
+					{selectedMeta ? (
+						<div className="research-style-selected" aria-live="polite">
+							<span className="research-style-selected-label">Selected</span>
+							<span className="research-style-selected-value">{getStyleLabel(selectedMeta.id)}</span>
+							{selectedMeta.hint ? (
+								<span className="research-style-selected-hint">{selectedMeta.hint}</span>
+							) : null}
+						</div>
+					) : null}
 
 					{note?.trim() ? (
-						<div className="research-generate-modal-outline-note">
+						<div className="research-style-note">
 							<p>{note.trim()}</p>
 						</div>
 					) : null}
 
 					{!citationStyle ? (
-						<p className="research-generate-modal-error">Select a reference style to continue.</p>
+						<p className="research-style-error">Select a citation style to continue.</p>
 					) : null}
 				</div>
 
-				<div className="research-generate-modal-actions">
-					<button type="button" className="research-action-btn" onClick={onClose}>
+				<footer className="research-style-modal-footer">
+					<button type="button" className="research-style-btn research-style-btn-ghost" onClick={onClose}>
 						Cancel
 					</button>
 					<button
 						type="button"
-						className="research-action-btn research-action-btn-primary"
+						className="research-style-btn research-style-btn-primary"
 						onClick={handleConfirm}
 						disabled={!citationStyle}
-						title={!citationStyle ? "Select a reference style" : undefined}
+						title={!citationStyle ? "Select a citation style" : undefined}
 					>
-						<IconFileText size={14} />
+						<IconFileText size={15} />
 						{confirmLabel}
 					</button>
-				</div>
+				</footer>
 			</div>
 		</div>,
 		document.body,

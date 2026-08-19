@@ -1,11 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 import { NavIcon } from "@/components/aula/NavIcon";
-import { IconPlus } from "@/components/lesson-planner/LessonPlannerIcons";
+import { IconPlus } from "@/components/ui/ButtonIcon";
 import { AULA_TOPBAR_NAV, aulaTopbarContext, isAulaTopbarItemActive, type AulaTopbarNavItem } from "@/lib/aula-nav";
+import {
+	COMPILE_NOTEBOOK_EVENT,
+	OPEN_CREATE_NOTEBOOK_EVENT,
+	isNotebookDetailPath,
+	isNotebookListPath,
+} from "@/lib/research-notebook";
 
 type Props = {
 	onMenuClick: () => void;
@@ -31,7 +37,23 @@ function TopbarNavLink({ item }: { item: AulaTopbarNavItem }) {
 
 export function AulaTopBar({ onMenuClick }: Props) {
 	const pathname = usePathname() ?? "";
+	const router = useRouter();
 	const { title, tagline, cta } = aulaTopbarContext(pathname);
+	const onNotebookList = isNotebookListPath(pathname);
+	const onNotebookDetail = isNotebookDetailPath(pathname);
+	const onNotebook = onNotebookList || onNotebookDetail;
+
+	function onNotebookCta() {
+		if (onNotebookDetail) {
+			window.dispatchEvent(new Event(COMPILE_NOTEBOOK_EVENT));
+			return;
+		}
+		if (onNotebookList) {
+			window.dispatchEvent(new Event(OPEN_CREATE_NOTEBOOK_EVENT));
+			return;
+		}
+		router.push("/research/notebook?new=1");
+	}
 
 	return (
 		<header className="aula-topbar">
@@ -56,10 +78,17 @@ export function AulaTopBar({ onMenuClick }: Props) {
 				</nav>
 			</div>
 
-			<Link href={cta.href} className="aula-topbar-cta">
-				<IconPlus size={16} />
-				{cta.label}
-			</Link>
+			{onNotebook && cta ? (
+				<button type="button" className="aula-topbar-cta" onClick={onNotebookCta}>
+					<IconPlus size={16} />
+					{cta.label}
+				</button>
+			) : cta ? (
+				<Link href={cta.href} className="aula-topbar-cta">
+					<IconPlus size={16} />
+					{cta.label}
+				</Link>
+			) : null}
 		</header>
 	);
 }

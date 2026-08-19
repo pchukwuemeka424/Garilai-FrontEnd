@@ -6,7 +6,9 @@ import { useCallback, useEffect, useState } from "react";
 import { AulaModal } from "@/components/aula/AulaModal";
 import { useAuth } from "@/hooks/useAuth";
 import { useSmoothProgress } from "@/hooks/useSmoothProgress";
+import { IconStop } from "@/components/ui/ButtonIcon";
 import {
+	cancelResearchJob,
 	fetchActiveResearchJob,
 	fetchResearchJobById,
 	type ResearchJob,
@@ -18,6 +20,7 @@ import {
 	markTrackedResearchJobNotified,
 	type TrackedResearchJob,
 } from "@/lib/research-job-tracker";
+import { isResearchWorkspacePath } from "@/lib/research-generate-routes";
 import { savedResearchPagePath } from "@/lib/saved-research-routes";
 
 const POLL_MS = 4000;
@@ -31,18 +34,15 @@ function savedVariantForRole(role: string | undefined): "lecturer" | "student" {
 	return role === "student" ? "student" : "lecturer";
 }
 
-function isResearchPaperPath(pathname: string | null): boolean {
-	return pathname === "/research/paper" || pathname === "/student/research/paper";
-}
-
 export function ResearchJobWatcher() {
 	const { user, loading } = useAuth();
 	const router = useRouter();
 	const pathname = usePathname();
-	const onPaperWorkspace = isResearchPaperPath(pathname);
+	const onPaperWorkspace = isResearchWorkspacePath(pathname);
 	const [tracked, setTracked] = useState<TrackedResearchJob | null>(null);
 	const [runningJob, setRunningJob] = useState<ResearchJob | null>(null);
 	const [completion, setCompletion] = useState<CompletionState | null>(null);
+	const [stopping, setStopping] = useState(false);
 
 	const refreshTracked = useCallback(() => {
 		setTracked(getTrackedResearchJob());
@@ -132,6 +132,20 @@ export function ResearchJobWatcher() {
 		refreshTracked();
 	}, [completion, refreshTracked]);
 
+	const handleStop = useCallback(async () => {
+		const jobId = runningJob?.id ?? getTrackedResearchJob()?.jobId;
+		if (!jobId || stopping) return;
+		setStopping(true);
+		try {
+			await cancelResearchJob(jobId);
+			clearTrackedResearchJob(jobId);
+			setRunningJob(null);
+			refreshTracked();
+		} finally {
+			setStopping(false);
+		}
+	}, [runningJob?.id, stopping, refreshTracked]);
+
 	const viewPaper = useCallback(() => {
 		if (!completion?.job.savedResearchId) {
 			dismissCompletion();
@@ -169,6 +183,16 @@ export function ResearchJobWatcher() {
 					<span className="research-job-chip-topic" title={runningJob?.topic}>
 						{runningJob?.topic}
 					</span>
+					<button
+						type="button"
+						className="research-job-chip-stop"
+						onClick={() => void handleStop()}
+						disabled={stopping}
+						aria-label={stopping ? "Stopping generation" : "Stop generation"}
+					>
+						<IconStop size={12} />
+						{stopping ? "Stopping…" : "Stop"}
+					</button>
 					<span
 						className="research-job-chip-bar"
 						role="progressbar"

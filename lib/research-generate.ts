@@ -1,6 +1,13 @@
-import { saveChatCitationStyle } from "@/lib/chat-research-citations";
+import { saveChatCitationStyle, saveChatResearchScope } from "@/lib/chat-research-citations";
 import { getStyleLabel, type CitationStyle } from "@/lib/citation-styles";
-import { formatIdeaForChat, SCOPE_OPTIONS, stageChatPrefill, type ResearchIdea, type ResearchScope } from "@/lib/research-ideas";
+import { formatIdeaForChat, stageChatPrefill, type ResearchIdea, type ResearchScope } from "@/lib/research-ideas";
+import { buildScopeBriefPromptLines, getScopeAgentCopy } from "@/lib/research-scope-brief";
+import {
+	formatAcademicIntegrityRules,
+	formatStructureInstructions,
+	getScopeProfile,
+	parseScopeFromPrompt,
+} from "@/lib/research-scope-profiles";
 
 export function buildResearchPaperPrompt(input: {
 	idea: ResearchIdea;
@@ -11,105 +18,206 @@ export function buildResearchPaperPrompt(input: {
 	citationStyle: CitationStyle;
 	sourceContext?: string;
 	visualizationArtifacts?: string;
-	/** User already saved Figures in a research note — do not invent new images. */
+	/** User already provided saved figures — do not invent new images. */
 	hasSavedFigures?: boolean;
-	/** Skip LLM outline — ground the paper in the selected research note. */
-	skipOutline?: boolean;
+	assignmentInstructions?: string;
 }): string {
 	const styleLabel = getStyleLabel(input.citationStyle);
-	const scopeLabel = SCOPE_OPTIONS.find((s) => s.id === input.scope)?.label ?? input.scope;
+	const profile = getScopeProfile(input.scope);
 	const hasCanonicalVisuals = Boolean(input.visualizationArtifacts?.trim());
 	const hasSavedFigures = Boolean(input.hasSavedFigures);
-	const fromNote = Boolean(input.skipOutline);
+	const hasCanonicalCharts = /```research-chart\b/i.test(input.visualizationArtifacts ?? "");
+	const resultsHeading = profile.headings.find((h) =>
+		/result|finding|testing/i.test(h),
+	);
+	const hasMethods = profile.headings.some((h) => /method/i.test(h));
+	const analysisHeading = profile.headings.find((h) => /critical analysis|analysis/i.test(h));
+	const visualSection =
+		resultsHeading ??
+		analysisHeading ??
+		(profile.headings.includes("Discussion") ? "Discussion" : null) ??
+		"Critical Analysis";
 
-	return [
-		formatIdeaForChat(input.idea, input.topic),
-		"",
-		`Discipline: ${input.disciplineLabel}`,
-		`Scope: ${scopeLabel}`,
-		"",
-		`Reference style: ${styleLabel}`,
-		"",
-		fromNote
-			? "Write a complete academic research paper grounded in the selected research note evidence below. Do not wait for or invent a separate research outline."
-			: "Write a complete academic research paper based on the approved outline below.",
-		fromNote
-			? "Derive aims, methods, findings, and claims from the research note (and any study framing listed). Prefer the note over generic assumptions."
-			: "Follow the outline's research question, objectives, methodology, literature themes, expected contributions, and timeline.",
-		"Expand each section into substantive prose with in-text citations and a References section in the selected style.",
-		"Use this exact IMRaD order with bold-only headings on their own lines: **Title**, **Abstract**, **Keywords**, **Study area**, **Introduction**, **Literature Review**, **Methodology**, **Results / Analysis**, **Discussion**, **Conclusion**, **References**.",
-		"After **Keywords**, put terms on the next line separated by middots (term1 · term2 · term3). After **Study area**, put the discipline on the next line. Never merge Keywords and Study area on one line.",
-		"Never skip **Abstract** or **Introduction**; do not merge them with other sections.",
-		"In-text citation floors (distinct author–year from the retrieval bank): Abstract 0 (no cites — never cite Abstract); Introduction 8–12; Literature Review 12–18; Methodology 4–8; Results / Analysis 3–6; Discussion 8–12; Conclusion 3–6. Across the full body, use at least 25 distinct bank papers when the retrieval bank has ≥25 papers (prefer more when larger); if the bank is smaller, cite every retrieved bank paper. Prefer grounded paraphrases over density padding.",
-		"Cite ONLY papers from the conversation literature retrieval / research API bank. Do not invent authors, years, or titles.",
-		"Paraphrase / synthesize bank evidence cards and abstracts into literature claims. Every cited sentence must be supported by the cited paper’s abstract — no decorative cites. Write Introduction, Literature Review, and Discussion from the bank — do not list references that were never cited in prose.",
-		"Citation scope (hard): every literature claim needs a bank in-text cite; prose must not exceed what that cite’s abstract supports; no uncited filler outside Methods/Results study evidence; omit points that cannot be grounded.",
-		"References list: exactly the bank papers cited in the body (matching each in-text cite), minimum 25 entries when the bank has ≥25 papers. A References section that invents different sources or pads uncited entries is invalid.",
-		"Paper quality: state a clear research gap; synthesize literature thematically (not paper-by-paper); include explicit Limitations; use cautious language when evidence is thin; keep questions → methods → findings → discussion coherent.",
-		"Strong academic English: discipline-precise, argumentative, non-formulaic; prefer analytical verbs over vague intensifiers; ban stock AI phrases (e.g. “rapidly evolving”, “delve into”, “landscape of”, “it is worth noting”).",
-		"Anti-repetition: do not recycle the same summary across Abstract, Introduction, Discussion, and Conclusion; Discussion must interpret Results against literature — not restate findings; vary wording within paragraphs.",
-		"Methodology: write a reproducible design → sample/materials → collection → instruments → analysis sequence; cite prior methods/standards from the bank only; follow outline/note methods; no findings in Methodology.",
-		"Results / Analysis: report RQ-aligned findings first; number and discuss every table/figure in prose; use only evidence values; brief bridge to Discussion only — no full literature debate.",
-		"Do not use hash (#) Markdown headings or horizontal rules (---, --).",
-		fromNote
-			? "For Literature Review, use only what is supported by the research note references/findings and bank evidence cards — do not fabricate a long outline-driven literature plan."
-			: "Use sources from the outline's literature review and Sources for further reading only when they also appear in the retrieval bank; paraphrase bank abstracts for in-text cites.",
-		"Create concise Markdown tables for useful comparisons, literature synthesis, methods, or results. Every table/figure needs a numbered title, one-sentence caption, and an in-text reference near first mention.",
-		"Every table must use valid GitHub-flavored Markdown: one pipe-delimited header row, an immediate separator row such as `| --- | --- |`, then pipe-delimited data rows. Never imitate a table with plain text and pipe characters.",
-		"Never create a section titled “Data Source and Variables” (or similar). Dataset samples belong only in Results / Analysis, capped at 5 rows.",
-		...(hasSavedFigures
+	const typeSpecificLines: string[] = [];
+	if (profile.scope === "assignment") {
+		typeSpecificLines.push(
+			`${analysisHeading ?? "Critical Analysis"}: develop the argument with bank-supported evaluation; do not invent Methods, Results, or empirical findings.`,
+		);
+	} else if (profile.scope === "proposal" || profile.scope === "faculty") {
+		typeSpecificLines.push(
+			"Expected Outcomes / Timeline / Budget: plan forward-looking work — do not invent completed empirical results.",
+		);
+		if (hasMethods) {
+			typeSpecificLines.push(
+				"Methodology: describe planned design → sample/materials → collection → instruments → analysis only; no findings.",
+			);
+		}
+	} else if (resultsHeading) {
+		if (hasMethods) {
+			typeSpecificLines.push(
+				"Methodology / Methods sections: write a reproducible design → sample/materials → collection → instruments → analysis sequence; cite prior methods/standards from the bank only; follow outline methods; no findings in Methodology. If the topic is a literature review, Methodology must copy the retrieval protocol only — never invent Scopus/Web of Science/ERIC/IEEE searches, dual reviewers, or unaudited PRISMA counts. Include the supplied selection-flow and extraction tables. Results synthesise the included corpus rather than retelling papers.",
+			);
+		}
+		typeSpecificLines.push(
+			`${resultsHeading}: report RQ-aligned findings first; number and discuss every table/figure in prose; use only evidence values; brief bridge to Discussion only — no full literature debate.`,
+		);
+	} else if (profile.scope === "report") {
+		typeSpecificLines.push(
+			"Findings then Analysis: report evidence first; Recommendations must be actionable and tied to findings.",
+		);
+	}
+
+	const visualLines = hasSavedFigures
+		? [
+				"CRITICAL: The user already provided empirical figures with this document.",
+				"Do NOT invent, generate, or emit any new images, diagrams, `research-image` blocks, or illustrative `research-chart` blocks.",
+				`In **${visualSection}**, discuss the listed saved figures by name (Figure 1, Figure 2, …) with captions stating what each shows.`,
+				"The actual figure images are attached automatically after generation — do not invent placeholders, fake image URLs, or `research-figure` blocks.",
+				...(hasCanonicalCharts
+					? [
+							`Also in **${visualSection}**, insert the provided canonical sample tables (≤5 rows) and \`research-chart\` blocks exactly as written.`,
+							"Do not invent, rewrite, rescale, expand, or replace the numeric values in those canonical artifacts.",
+						]
+					: [
+							"If sample tables are provided in the figure list, insert them exactly (≤5 rows — do not expand to the full dataset).",
+						]),
+			]
+		: hasCanonicalVisuals
 			? [
-					"CRITICAL: The user already saved empirical figures in their research note.",
-					"Do NOT invent, generate, or emit any new images, diagrams, `research-image` blocks, or illustrative `research-chart` blocks.",
-					"In Results / Analysis, discuss the listed saved figures by name (Figure 1, Figure 2, …) with captions stating what each shows, and insert the provided sample tables exactly (≤5 rows — do not expand to the full dataset).",
-					"The actual figure images are attached automatically after generation — do not invent placeholders or fake image URLs.",
+					`In **${visualSection}**, insert the provided canonical sample tables (≤5 rows) and \`research-chart\` blocks exactly as written.`,
+					"Do not invent, rewrite, rescale, expand, or replace the numeric values in those canonical artifacts.",
+					"Discuss them in prose with numbered titles/captions (e.g. Table 1, Figure 1) placed near the first mention.",
+					"Do not create extra illustrative images when canonical artifacts are provided; do not leave orphan visuals.",
 				]
-			: hasCanonicalVisuals
+			: profile.scope === "assignment"
 				? [
-						"In Results / Analysis, insert the provided canonical sample tables (≤5 rows) and `research-chart` blocks exactly as written.",
-						"Do not invent, rewrite, rescale, expand, or replace the numeric values in those canonical artifacts.",
-						"Discuss them in prose with numbered titles/captions (e.g. Table 1, Figure 1) placed near the first mention.",
-						"Do not create extra illustrative images when canonical artifacts are provided; do not leave orphan visuals.",
+						"Optional: one short literature-synthesis table in Literature Review or Critical Analysis if it clarifies themes. Prefer prose over charts.",
+						"Do not invent empirical findings charts; any illustrative table must be labelled Illustrative and not presented as observed results.",
 					]
 				: [
 						"When no dataset or findings are supplied, create useful literature-synthesis tables and clearly labelled illustrative graphs when they clarify the argument.",
 						"Illustrative graph values must be plausible examples only, never presented as observed study findings or cited statistics.",
-						"Label every such title and caption with “Illustrative” and explain in Results / Analysis that the values are synthetic.",
+						`Label every such title and caption with “Illustrative” and explain in **${visualSection}** that the values are synthetic.`,
 						"Emit graphs as fenced `research-chart` JSON blocks with this schema:",
 						'{"type":"bar|line|area|pie|scatter","kind":"illustrative","title":"Illustrative: descriptive title","caption":"Synthetic example—not observed findings.","xKey":"category field","yKeys":["numeric field"],"data":[{"category field":"Label","numeric field":12}]}',
 						"Keep charts to at most 30 data points and tables to the most relevant rows; prefer bar/line/scatter as appropriate.",
-						"Create a conceptual figure only when it materially clarifies a framework (fenced `research-image` JSON); number and caption it; reference it in prose.",
-					]),
+						"When a framework, process, or variable model is discussed, include a conceptual `research-image` JSON figure; number and caption it; reference it in prose.",
+						"When competing literature themes appear, include a short literature-comparison Markdown table.",
+					];
+
+	const userBrief = input.assignmentInstructions?.trim();
+	const agentCopy = getScopeAgentCopy(profile.scope);
+	const scopedBriefBlock =
+		profile.scope === "assignment"
+			? []
+			: buildScopeBriefPromptLines({
+					scope: profile.scope,
+					topic: input.topic,
+					title: input.idea.title,
+					assignmentInstructions: input.assignmentInstructions,
+					researchQuestions: input.idea.researchQuestions,
+				});
+	const assignmentBriefBlock =
+		scopedBriefBlock.length
+			? scopedBriefBlock
+			: profile.scope === "assignment"
+				? [
+						"**Assignment (primary)**",
+						"",
+						`**Topic:** ${input.topic.trim() || input.idea.title}`,
+						"",
+						...(userBrief ? ["**Additional notes:**", "", userBrief, ""] : []),
+						"Write a cited coursework assignment on this topic in the selected discipline. Use Title, Introduction, Literature Review, Critical Analysis, Conclusion, and References. Body length must be 1,900–2,100 words excluding references. Do not invent Methods, Results, or empirical findings.",
+						"Cite at least 20 verified bank papers with real years (never n.d.). Every major factual claim needs an in-text citation. Every References entry must appear as an in-text citation. Prefer direct higher-education evidence when the topic is about universities, students, or faculty. Format References in APA 7. Do not write editorial asides about abstracts or fact-checking.",
+						"If an uploaded file appears below, treat it as additional assignment brief text — not as empirical data.",
+					]
+				: [];
+
+	const ideaForChat = scopedBriefBlock.length
+		? { ...input.idea, rationale: "", researchQuestions: undefined }
+		: input.idea;
+
+	return [
+		...assignmentBriefBlock,
+		...(assignmentBriefBlock.length ? [""] : []),
+		formatIdeaForChat(ideaForChat, input.topic),
+		"",
+		`Discipline: ${input.disciplineLabel}`,
+		`Scope: ${profile.label}`,
+		"",
+		`Reference style: ${styleLabel}`,
+		"",
+		...formatStructureInstructions(profile),
+		profile.scope === "assignment"
+			? "Use the approved outline only to organise literature themes; the assignment topic remains the assignment to write."
+			: scopedBriefBlock.length
+				? `Use the approved outline to organise the ${profile.label}; the intake fields (${agentCopy.outlinePrimary}) remain primary.`
+				: "Follow the outline's research question, objectives, methodology, literature themes, expected contributions, and timeline where they fit this deliverable type.",
+		"Expand each required section into substantive prose with in-text citations and a References section in the selected style.",
+		...formatAcademicIntegrityRules(profile),
+		"Document quality: state a clear gap or focus; synthesize literature thematically (not paper-by-paper); include Limitations where relevant; use cautious language when evidence is thin; keep section jobs coherent for this deliverable type.",
+		...typeSpecificLines,
+		"Use sources from the outline's literature review and Sources for further reading only when they also appear in the retrieval bank; paraphrase bank abstracts for in-text cites.",
+		"Create concise Markdown tables for useful comparisons, literature synthesis, methods, or results when those sections exist. Every table/figure needs a numbered title, one-sentence caption, and an in-text reference near first mention.",
+		"Every table must use valid GitHub-flavored Markdown: one pipe-delimited header row, an immediate separator row such as `| --- | --- |`, then pipe-delimited data rows. Never imitate a table with plain text and pipe characters.",
+		"Never create a section titled “Data Source and Variables” (or similar). Dataset samples belong only in results/findings sections when those exist, capped at 5 rows.",
+		...visualLines,
 		...(input.sourceContext?.trim()
-			? [
-					"Use the selected research note / document evidence below throughout the paper—not only in Results.",
-					"Derive **Title** from the research note's suggested interest topic / study title (refine for academic style if needed; do not invent an unrelated title).",
-					"Write **Abstract** from the note's aims, methods, data/evidence, and findings; keep claims supported by the note.",
-					"Ground Introduction, Methodology, and Discussion in the note's notebook content, data, figures, and findings.",
-					"Use only values present in the selected evidence for numeric tables.",
-					"",
-					"**Selected user evidence**",
-					"",
-					input.sourceContext.trim(),
-				]
+			? profile.scope === "assignment"
+				? [
+						profile.scope === "assignment"
+							? "The uploaded file is additional assignment brief text. Follow it together with the typed topic. Do not treat it as empirical results."
+							: `The uploaded file is additional ${agentCopy.uploadedKind} text. Follow it together with the typed topic and intake fields. Do not treat it as empirical results unless it clearly contains a dataset.`,
+						"",
+						profile.scope === "assignment"
+							? "**Uploaded assignment brief**"
+							: `**Uploaded ${agentCopy.uploadedKind}**`,
+						"",
+						input.sourceContext.trim(),
+					]
+				: [
+						"The user selected a research notebook library and/or uploaded evidence. Use the FULL folder contents below as primary source material: notes, lab log, documents, datasets, surveys, figures, and references.",
+						"Align the study title, claims, variables, methods, and findings with the selected notebook material. Do not contradict notebook evidence, notes, datasets, surveys, lab work, or uploaded documents.",
+						"Do not skip notes or files in the library. Ground Introduction, Methodology, Results, Discussion, and Conclusion in this material whenever it is relevant.",
+						"Use datasets, survey/questionnaire material, response files, lab notes, and notebook pages when present. Use only values present in the selected library for numeric tables and reported findings.",
+						"Treat figures/images as metadata-only context here: titles, captions, filenames, and linked lab references. Do not infer unseen image content or claim raw image analysis.",
+						"Do not invent a different study or ignore the folder in favour of a generic topic.",
+						"",
+						"**Selected research library**",
+						"",
+						input.sourceContext.trim(),
+					]
 			: []),
 		...(hasCanonicalVisuals
 			? [
 					"",
-					"**Canonical research note tables / saved figure list**",
+					"**Canonical tables / figure list**",
 					"",
 					input.visualizationArtifacts!.trim(),
 				]
 			: []),
 		"",
-		fromNote ? "**Study framing (from idea / research note — not an LLM outline)**" : "**Approved research outline**",
+		"**Approved research outline**",
 		"",
 		input.outline.trim(),
 	].join("\n");
 }
 
 /** Stage the full research prompt and citation style before navigating to chat. */
-export function stageResearchGeneration(prompt: string, citationStyle: CitationStyle): void {
+export function stageResearchGeneration(
+	prompt: string,
+	citationStyle: CitationStyle,
+	scope?: ResearchScope,
+): void {
 	saveChatCitationStyle(citationStyle);
+	if (scope) saveChatResearchScope(scope);
+	else {
+		const profile = getScopeProfile(parseScopeMaybe(prompt));
+		saveChatResearchScope(profile.scope);
+	}
 	stageChatPrefill(prompt);
+}
+
+function parseScopeMaybe(prompt: string): ResearchScope {
+	return parseScopeFromPrompt(prompt) || "journal";
 }

@@ -182,8 +182,8 @@ export function AdminAlertsDashboard() {
 	return (
 		<AdminShell
 			title="Governance Alerts"
-			subtitle="Auto-triggered and manual alerts with escalation and notification"
-			breadcrumb="Admin · Safety & Compliance"
+			subtitle="High-risk activity such as sensitive-data exposure or policy breaches, with context to investigate"
+			breadcrumb="Admin · Accountability"
 			actions={
 				<div className="admin-actions-row">
 					<button type="button" className="ghost-btn" onClick={() => setShowCreate(!showCreate)}>

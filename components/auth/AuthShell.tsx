@@ -23,7 +23,7 @@ const FEATURES = [
 
 const ADMIN_FEATURES = [
 	"Manage users, roles & access",
-	"Oversee all saved lectures",
+	"Oversee saved research & sessions",
 	"Monitor research token usage",
 ];
 

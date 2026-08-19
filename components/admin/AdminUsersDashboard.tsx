@@ -11,11 +11,13 @@ import {
 	bulkAdminUserStatus,
 	createAdminUser,
 	deleteAdminUser,
+	fetchAdminUserGovernanceHistory,
 	fetchAdminUsers,
 	resetAdminUserPassword,
 	updateAdminUser,
 } from "@/lib/admin-api";
 import { roleLabel } from "@/lib/admin-roles";
+import type { AuditLogRecord } from "@/lib/admin-governance";
 import type { UserRecord } from "@/lib/dashboard";
 
 const ALL_ROLES = [
@@ -78,6 +80,9 @@ export function AdminUsersDashboard() {
 	const [showCreate, setShowCreate] = useState(false);
 	const [form, setForm] = useState(emptyForm);
 	const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+	const [historyUser, setHistoryUser] = useState<UserRecord | null>(null);
+	const [historyEvents, setHistoryEvents] = useState<AuditLogRecord[]>([]);
+	const [historyLoading, setHistoryLoading] = useState(false);
 
 	const load = useCallback(async () => {
 		setError(null);
@@ -206,6 +211,21 @@ export function AdminUsersDashboard() {
 		}
 	};
 
+	const onHistory = async (user: UserRecord) => {
+		setHistoryUser(user);
+		setHistoryLoading(true);
+		setError(null);
+		try {
+			const data = await fetchAdminUserGovernanceHistory(user.id);
+			setHistoryEvents(data.events);
+		} catch (err) {
+			setError(err instanceof Error ? err.message : String(err));
+			setHistoryEvents([]);
+		} finally {
+			setHistoryLoading(false);
+		}
+	};
+
 	const onDelete = async (user: UserRecord) => {
 		if (!window.confirm(`Delete user ${user.name} (${user.email})? This cannot be undone.`)) return;
 		setWorking(true);
@@ -307,6 +327,7 @@ export function AdminUsersDashboard() {
 							else if (action === "suspend") void onChangeStatus(u, "suspended");
 							else if (action === "deactivate") void onChangeStatus(u, "inactive");
 							else if (action === "role") void onChangeRole(u);
+							else if (action === "history") void onHistory(u);
 							else if (action === "password") void onResetPassword(u);
 							else if (action === "delete") void onDelete(u);
 						}}
@@ -316,6 +337,7 @@ export function AdminUsersDashboard() {
 						{u.status !== "suspended" && <option value="suspend">Suspend</option>}
 						{u.status !== "inactive" && <option value="deactivate">Deactivate</option>}
 						<option value="role">Change role</option>
+						<option value="history">Governance history</option>
 						<option value="password">Reset password</option>
 						<option value="delete">Delete</option>
 					</select>
@@ -327,8 +349,8 @@ export function AdminUsersDashboard() {
 	return (
 		<AdminShell
 			title="User Management"
-			subtitle="Account lifecycle, role assignment, invitations, bulk operations"
-			breadcrumb="Admin · User Management"
+			subtitle="Activate, suspend, or deactivate accounts; view roles and governance history"
+			breadcrumb="Admin · Accountability"
 			actions={
 				<div className="admin-actions-row">
 					<button type="button" className="ghost-btn" onClick={() => setShowCreate(!showCreate)}>
@@ -451,6 +473,33 @@ export function AdminUsersDashboard() {
 				}
 				pagination={pagination}
 			/>
+
+			{historyUser && (
+				<AdminPanel
+					title={`Governance history — ${historyUser.name}`}
+					description={historyUser.email}
+				>
+					<button type="button" className="ghost-btn" onClick={() => setHistoryUser(null)}>
+						Close
+					</button>
+					{historyLoading ? (
+						<p className="muted">Loading history…</p>
+					) : historyEvents.length === 0 ? (
+						<p className="muted">No governance events recorded for this account.</p>
+					) : (
+						<div className="admin-timeline">
+							{historyEvents.map((event) => (
+								<div key={event.id} className="admin-timeline-entry">
+									<span className="admin-timeline-dot" aria-hidden />
+									<span className="admin-timeline-time">{formatAdminRelative(event.createdAt)}</span>
+									<span className="admin-timeline-action">{event.action}</span>
+									<span className="admin-timeline-note">{event.summary}</span>
+								</div>
+							))}
+						</div>
+					)}
+				</AdminPanel>
+			)}
 		</AdminShell>
 	);
 }

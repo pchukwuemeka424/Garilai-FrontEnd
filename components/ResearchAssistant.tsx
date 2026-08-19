@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
@@ -31,6 +30,7 @@ import {
 	IconRefresh,
 	IconRotateCcw,
 	IconSparkles,
+	IconStickyNote,
 	IconStop,
 	IconTarget,
 	IconTrash,
@@ -39,27 +39,31 @@ import { AulaLayout } from "@/components/AulaLayout";
 import { StudentLayout } from "@/components/StudentLayout";
 import { studentHasResearchTokens } from "@/components/StudentTokenQuota";
 import { useAuth } from "@/hooks/useAuth";
-import { useFeynmanSocket } from "@/hooks/useFeynmanSocket";
+import { useGarilSocket } from "@/hooks/useGarilSocket";
 import { DEFAULT_CITATION_STYLE, type CitationStyle } from "@/lib/citation-styles";
 import {
+	fetchDatasets,
 	fetchDocuments,
-	fetchNotebook,
 	fetchProjects,
+	type ResearchDataset,
 	type ResearchDocument,
 	type ResearchProject,
 	type ResearchSourceSelection,
 } from "@/lib/research-assets-api";
 import { fetchResearchIdeasFromApi } from "@/lib/research-api";
 import { getDisciplineLabel } from "@/lib/research-disciplines";
-import { researchPaperWorkspacePath } from "@/lib/research-generate-routes";
+import { researchPaperWorkspacePath, researchScopeBriefPath } from "@/lib/research-generate-routes";
 import {
 	buildResearchIdeasPrompt,
 	FOCUS_OPTIONS,
 	generateLocalResearchIdeas,
+	getScopeLabel,
+	getGenerateResearchLabel,
 	IDEA_GENERATION_PHASES,
 	ideasToMarkdown,
+	normalizeResearchScope,
+	toSelectableResearchScope,
 	parseResearchIdeas,
-	SCOPE_OPTIONS,
 	type IdeaGenerationPhase,
 	type IdeaType,
 	type ResearchIdea,
@@ -76,6 +80,7 @@ import { loadAllSavedPapers, type SavedResearchPaper } from "@/lib/chat-research
 import { loadAllSavedOutlines } from "@/lib/research-outline-storage";
 import { stagePendingResearchPaper } from "@/lib/research-paper-pending";
 import { stagePaperSources } from "@/lib/research-paper-sources";
+import { isAssignmentNotebookProject, notebookLibraryMeta } from "@/lib/research-notebook";
 import {
 	clearSavedIdeas,
 	loadAllRecentSessions,
@@ -97,10 +102,15 @@ import {
 type WizardStep = 1 | 2 | 3;
 
 const SCOPE_ICONS: Record<ResearchScope, ReactNode> = {
-	undergraduate: <IconGraduationCap size={18} />,
-	masters: <IconAward size={18} />,
-	doctoral: <IconMicroscope size={18} />,
+	assignment: <IconStickyNote size={18} />,
+	conference: <IconLayers size={18} />,
+	dissertation: <IconMicroscope size={18} />,
 	faculty: <IconBriefcase size={18} />,
+	journal: <IconBook size={18} />,
+	proposal: <IconEdit size={18} />,
+	report: <IconFileText size={18} />,
+	thesis: <IconAward size={18} />,
+	undergraduate_project: <IconGraduationCap size={18} />,
 };
 
 const FOCUS_PILL_ICONS: Record<IdeaType | "all", ReactNode> = {
@@ -132,7 +142,7 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 	const router = useRouter();
 	const searchParams = useSearchParams();
 	const hasTokens = studentHasResearchTokens(user?.tokenQuota, user?.role);
-	const { status, messages, error, isBusy, sendPrompt, resetSession, clearMessages, abort } = useFeynmanSocket();
+	const { status, messages, error, isBusy, sendPrompt, resetSession, clearMessages, abort } = useGarilSocket();
 	const isStudent = variant === "student";
 	/** Only save drafts after a successful load for this exact user — blocks cross-account writes. */
 	const draftOwnerRef = useRef<string | null>(null);
@@ -161,10 +171,12 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 	const [topicAnalysis, setTopicAnalysis] = useState<ResearchTopicAnalysis | null>(null);
 	const [generateError, setGenerateError] = useState<string | null>(null);
 	const [sourceDocuments, setSourceDocuments] = useState<ResearchDocument[]>([]);
-	const [sourceProjects, setSourceProjects] = useState<ResearchProject[]>([]);
+	const [sourceDatasets, setSourceDatasets] = useState<ResearchDataset[]>([]);
+	const [sourceNotebooks, setSourceNotebooks] = useState<ResearchProject[]>([]);
 	const [selectedSources, setSelectedSources] = useState<ResearchSourceSelection>({
 		documentIds: [],
 		datasetIds: [],
+		questionnaireIds: [],
 		noteIds: [],
 		projectIds: [],
 	});
@@ -195,6 +207,7 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 			setSelectedSources({
 				documentIds: [],
 				datasetIds: [],
+				questionnaireIds: [],
 				noteIds: [],
 				projectIds: [],
 			});
@@ -224,7 +237,7 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 			setStep(draft.step);
 			setDiscipline(draft.discipline);
 			setTopic(topicFromQuick || draft.topic);
-			setScope(draft.scope);
+			setScope(toSelectableResearchScope(draft.scope));
 			setCitationStyle(draft.citationStyle || DEFAULT_CITATION_STYLE);
 			setFocusFilter(draft.focusFilter);
 			setLocalIdeas(draft.localIdeas);
@@ -236,7 +249,7 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 				lastGenerateKeyRef.current = researchWizardInputKey({
 					discipline: draft.discipline,
 					topic: topicFromQuick || draft.topic,
-					scope: draft.scope,
+					scope: normalizeResearchScope(draft.scope) || draft.scope,
 					citationStyle: draft.citationStyle,
 					sources: draft.selectedSources,
 				});
@@ -322,10 +335,11 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 		if (!user?.id) return;
 		setSourcesLoading(true);
 		setSourcesError(null);
-		void Promise.all([fetchDocuments(), fetchProjects()])
-			.then(([documents, projects]) => {
+		void Promise.all([fetchDocuments(), fetchDatasets(), fetchProjects()])
+			.then(([documents, datasets, projects]) => {
 				setSourceDocuments(documents);
-				setSourceProjects(projects);
+				setSourceDatasets(datasets);
+				setSourceNotebooks(projects.filter((project) => !isAssignmentNotebookProject(project)));
 			})
 			.catch((err: unknown) => {
 				setSourcesError(err instanceof Error ? err.message : "Could not load your research library.");
@@ -333,49 +347,17 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 			.finally(() => setSourcesLoading(false));
 	}, [user?.id]);
 
-	const selectedSourceCount =
-		selectedSources.documentIds.length + (selectedSources.projectIds?.length ?? 0);
-
-	/** Publication → Title from Research Note notebook (preferred Interest topic). */
-	const publicationTitleFromNotebook = (notebookData: unknown): string => {
-		if (!notebookData || typeof notebookData !== "object") return "";
-		const drafts = Array.isArray((notebookData as { drafts?: unknown }).drafts)
-			? ((notebookData as { drafts: Array<{ outputType?: string; section?: string | null; content?: string }> }).drafts)
-			: [];
-		const titleDraft = drafts.find(
-			(d) =>
-				d?.outputType === "publication" &&
-				typeof d.section === "string" &&
-				d.section.trim().toLowerCase() === "title",
+	useEffect(() => {
+		if (scope !== "assignment") return;
+		setSelectedSources((current) =>
+			current.projectIds?.length ? { ...current, projectIds: [] } : current,
 		);
-		const raw = typeof titleDraft?.content === "string" ? titleDraft.content : "";
-		if (!raw.trim()) return "";
-		return raw
-			.replace(/<br\s*\/?>/gi, " ")
-			.replace(/<\/p>/gi, " ")
-			.replace(/<[^>]+>/g, "")
-			.replace(/&nbsp;/gi, " ")
-			.replace(/[#*_`>~]+/g, "")
-			.replace(/\s+/g, " ")
-			.trim()
-			.slice(0, 500);
-	};
+	}, [scope]);
 
-	const applyInterestTopicFromNote = async (project: ResearchProject) => {
-		// Prefer Publication → Title; fall back to project name while notebook loads.
-		setTopic((project.title?.trim() ?? "").slice(0, 500));
-		setTopicTouched(false);
-		try {
-			const { notebookData } = await fetchNotebook(project.id);
-			const pubTitle = publicationTitleFromNotebook(notebookData);
-			if (pubTitle) {
-				setTopic(pubTitle);
-				setTopicTouched(false);
-			}
-		} catch {
-			/* Keep project title if notebook is unavailable. */
-		}
-	};
+	const selectedSourceCount =
+		selectedSources.documentIds.length +
+		selectedSources.datasetIds.length +
+		(selectedSources.projectIds?.length ?? 0);
 
 	const toggleSource = (kind: keyof ResearchSourceSelection, id: string) => {
 		setSelectedSources((current) => {
@@ -387,25 +369,6 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 					: [...list, id].slice(0, 5),
 			};
 		});
-	};
-
-	/** Select/deselect a research note and set Interest topic from Publication → Title. */
-	const toggleResearchNote = (project: ResearchProject) => {
-		const wasSelected = (selectedSources.projectIds ?? []).includes(project.id);
-		setSelectedSources((current) => {
-			const list = current.projectIds ?? [];
-			const projectIds = wasSelected
-				? list.filter((value) => value !== project.id)
-				: [...list, project.id].slice(0, 5);
-			return { ...current, projectIds };
-		});
-		if (!wasSelected) {
-			void applyInterestTopicFromNote(project);
-			return;
-		}
-		const remainingIds = (selectedSources.projectIds ?? []).filter((id) => id !== project.id);
-		const remaining = sourceProjects.find((p) => remainingIds.includes(p.id));
-		if (remaining) void applyInterestTopicFromNote(remaining);
 	};
 
 	const assistantContent = useMemo(() => {
@@ -435,6 +398,7 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 	const scopeError = scopeTouched && !scope;
 	const disciplineError = disciplineTouched && !discipline;
 	const disciplineLabel = discipline ? getDisciplineLabel(discipline) : "";
+	const generateLabel = getGenerateResearchLabel(scope);
 
 	const savedIdeaKeys = useMemo(
 		() => new Set(savedIdeas.map((s) => `${s.id}::${s.title}`)),
@@ -583,6 +547,7 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 		setSelectedSources({
 			documentIds: [],
 			datasetIds: [],
+			questionnaireIds: [],
 			noteIds: [],
 			projectIds: [],
 		});
@@ -599,9 +564,10 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 	};
 
 	const loadSession = (session: ResearchSession) => {
+		const scope = toSelectableResearchScope(session.scope) || session.scope;
 		setDiscipline(session.discipline);
 		setTopic(session.topic);
-		setScope(session.scope);
+		setScope(scope);
 		setLocalIdeas(session.ideas);
 		setHasGenerated(true);
 		setShowSaved(false);
@@ -610,7 +576,7 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 		lastGenerateKeyRef.current = researchWizardInputKey({
 			discipline: session.discipline,
 			topic: session.topic,
-			scope: session.scope,
+			scope,
 			citationStyle,
 			sources: selectedSources,
 		});
@@ -663,7 +629,26 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 			setDisciplineTouched(true);
 			setScopeTouched(true);
 			if (!discipline || !scope) return;
-			setStep(2);
+			if (user?.id && draftOwnerRef.current === user.id) {
+				saveResearchWizardDraft(
+					variant,
+					{
+						step: 1,
+						discipline,
+						topic,
+						scope,
+						citationStyle,
+						focusFilter,
+						localIdeas,
+						hasGenerated,
+						topicAnalysis,
+						selectedSources,
+						viewMode,
+					},
+					user.id,
+				);
+			}
+			router.push(researchScopeBriefPath(scope, isStudent ? "student" : "lecturer", discipline));
 			return;
 		}
 		if (step === 2) {
@@ -751,7 +736,9 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 			citationStyle: style,
 			projectName: trimmedTopic,
 		});
-		router.push(researchPaperWorkspacePath(trimmedTopic, isStudent ? "student" : "lecturer", key));
+		router.push(
+			researchPaperWorkspacePath(trimmedTopic, isStudent ? "student" : "lecturer", key, scope),
+		);
 	};
 
 	/** Step Back keeps all wizard inputs, sources, and generated ideas intact. */
@@ -880,7 +867,7 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 								index={i}
 								topic={topic.trim()}
 								discipline={discipline}
-								scope={scope || "masters"}
+								scope={scope || "thesis"}
 								sources={selectedSources}
 								saved={isSavedIdea(idea)}
 								studentUI={variant === "student"}
@@ -1019,7 +1006,7 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 													index={i}
 													topic={idea.topic}
 													discipline={idea.discipline}
-													scope={scope || "masters"}
+													scope={scope || "thesis"}
 													saved
 													studentUI={variant === "student"}
 													inSavedList
@@ -1054,17 +1041,6 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 							</>
 						) : step === 1 ? (
 							<>
-								<div className="research-wizard-head">
-									<div className="research-wizard-head-main">
-										<span className="research-wizard-step-badge research-wizard-step-badge-indigo" aria-hidden>
-											<IconBook size={16} />
-										</span>
-										<div>
-											<h2 className="research-wizard-title">Your field &amp; scope</h2>
-											<p className="research-wizard-subtitle">Tell us about your academic background and research level.</p>
-										</div>
-									</div>
-								</div>
 								<div className="research-wizard-body">
 									<div className="research-form-section research-form-section-indigo">
 										<DisciplineSelect
@@ -1073,24 +1049,28 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 												setDiscipline(id);
 												setDisciplineTouched(true);
 											}}
-											label="Your field or discipline"
+											label="Department/Course"
 											labelIcon={<IconLayers size={15} />}
 											wrapClassName="research-discipline-wrap"
 											selectClassName="research-form-select"
+											placeholder="Select department or course"
 											hint="Choose the academic area closest to your research interest."
 										/>
-										{disciplineError && <p className="error-text">Please select your field or discipline.</p>}
+										{disciplineError && <p className="error-text">Please select your department or course.</p>}
 										<ResearchScopeSelect
 											value={scope}
 											onChange={(next) => {
 												setScope(next);
 												setScopeTouched(true);
 											}}
+											label="Research Type"
 											labelIcon={<IconGraduationCap size={15} />}
 											wrapClassName="research-scope-wrap"
 											selectClassName="research-form-select"
+											placeholder="Select research type"
+											hint="Select the output type that best matches your project."
 										/>
-										{scopeError && <p className="error-text">Please select a research scope.</p>}
+										{scopeError && <p className="error-text">Please select a research type.</p>}
 									</div>
 								</div>
 							</>
@@ -1111,20 +1091,43 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 									</div>
 								</div>
 								<div className="research-wizard-body">
-									<div className="research-summary-pill">
-										{disciplineLabel ? (
-											<span className="research-summary-chip research-summary-chip-indigo">
-												<IconLayers size={13} />
-												{disciplineLabel}
-											</span>
-										) : null}
-										{scope ? (
-											<span className="research-summary-chip research-summary-chip-violet">
-												{SCOPE_ICONS[scope as ResearchScope]}
-												{SCOPE_OPTIONS.find((s) => s.id === scope)?.label}
-											</span>
-										) : null}
-									</div>
+									<section className="research-selection-summary" aria-label="Selected department and research type">
+										<div className="research-selection-summary-head">
+											<p className="research-selection-summary-eyebrow">Selected for this project</p>
+											<button
+												type="button"
+												className="research-selection-change"
+												onClick={() => setStep(1)}
+											>
+												<IconEdit size={14} />
+												Change
+											</button>
+										</div>
+										<div className="research-selection-summary-grid">
+											<div className="research-selection-item research-selection-item-dept">
+												<span className="research-selection-item-icon" aria-hidden>
+													<IconLayers size={16} />
+												</span>
+												<div className="research-selection-item-copy">
+													<span className="research-selection-item-label">Department</span>
+													<span className="research-selection-item-value">
+														{disciplineLabel || "Not selected"}
+													</span>
+												</div>
+											</div>
+											<div className="research-selection-item research-selection-item-type">
+												<span className="research-selection-item-icon" aria-hidden>
+													{scope ? SCOPE_ICONS[scope as ResearchScope] : <IconGraduationCap size={16} />}
+												</span>
+												<div className="research-selection-item-copy">
+													<span className="research-selection-item-label">Research type</span>
+													<span className="research-selection-item-value">
+														{scope ? getScopeLabel(scope) : "Not selected"}
+													</span>
+												</div>
+											</div>
+										</div>
+									</section>
 									<div className="research-form-section research-form-section-violet">
 										<div className="research-field">
 											<label className="research-field-label research-field-label-row" htmlFor="research-topic">
@@ -1163,10 +1166,9 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 													)}
 												</h3>
 												<p className="research-source-picker-help">
-													Optional: select research notes for the agent to read. Selecting a note
-													sets Interest topic from Manuscript → Title. The agent uses the note’s
-													Materials pages, drafts, data, and figures to generate titles, abstracts,
-													and the full paper.
+													{scope === "assignment"
+														? "Optional: select uploaded documents and datasets for the agent to read as grounded context. Research notebooks are not used for assignments."
+														: "Optional: select research notebooks, uploaded documents, and datasets. A selected notebook uses the whole folder (notes, files, data, surveys, lab work). Assignment work is not listed."}
 												</p>
 											</div>
 										</div>
@@ -1174,54 +1176,43 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 											<p className="research-source-picker-state">Loading your library…</p>
 										) : sourcesError ? (
 											<p className="research-source-picker-error" role="alert">{sourcesError}</p>
-										) : sourceDocuments.length + sourceProjects.length === 0 ? (
+										) : sourceDocuments.length === 0 &&
+										  sourceDatasets.length === 0 &&
+										  (scope === "assignment" || sourceNotebooks.length === 0) ? (
 											<p className="research-source-picker-state">
-												No research notes yet.{" "}
-												<Link
-													href={isStudent ? "/student/research/note" : "/research/note"}
-													className="research-source-picker-link"
-												>
-													Open Research Note
-												</Link>{" "}
-												to create one, then return here to use it as grounded context.
+												No notebooks, documents, or datasets yet. You can still generate ideas from your interest
+												topic alone.
 											</p>
 										) : (
 											<div className="research-source-groups">
-												{sourceProjects.length > 0 && (
+												{scope !== "assignment" ? (
 													<fieldset className="research-source-group">
-														<legend>Research notes</legend>
-														{sourceProjects.map((project) => (
-															<label key={project.id} className="research-source-option">
-																<input
-																	type="checkbox"
-																	checked={(selectedSources.projectIds ?? []).includes(project.id)}
-																	onChange={() => toggleResearchNote(project)}
-																/>
-																<span>
-																	<strong>{project.title}</strong>
-																	<small>
-																		{[
-																			project.description?.trim() || null,
-																			`${project.progress}% complete`,
-																			project.counts.datasets
-																				? `${project.counts.datasets} datasets`
-																				: null,
-																			project.counts.documents
-																				? `${project.counts.documents} documents`
-																				: null,
-																		]
-																			.filter(Boolean)
-																			.join(" · ")}
-																	</small>
-																</span>
-															</label>
-														))}
+														<legend>Notebooks</legend>
+														{sourceNotebooks.length === 0 ? (
+															<p className="research-source-picker-state">No research notebooks yet.</p>
+														) : (
+															sourceNotebooks.map((notebook) => (
+																<label key={notebook.id} className="research-source-option">
+																	<input
+																		type="checkbox"
+																		checked={selectedSources.projectIds?.includes(notebook.id) ?? false}
+																		onChange={() => toggleSource("projectIds", notebook.id)}
+																	/>
+																	<span>
+																		<strong>{notebook.title || "Untitled notebook"}</strong>
+																		<small>{notebookLibraryMeta(notebook)}</small>
+																	</span>
+																</label>
+															))
+														)}
 													</fieldset>
-												)}
-												{sourceDocuments.length > 0 && (
-													<fieldset className="research-source-group">
-														<legend>Documents</legend>
-														{sourceDocuments.map((document) => (
+												) : null}
+												<fieldset className="research-source-group">
+													<legend>Documents</legend>
+													{sourceDocuments.length === 0 ? (
+														<p className="research-source-picker-state">No documents uploaded yet.</p>
+													) : (
+														sourceDocuments.map((document) => (
 															<label key={document.id} className="research-source-option">
 																<input
 																	type="checkbox"
@@ -1233,9 +1224,29 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 																	<small>{document.fileName}</small>
 																</span>
 															</label>
-														))}
-													</fieldset>
-												)}
+														))
+													)}
+												</fieldset>
+												<fieldset className="research-source-group">
+													<legend>Datasets</legend>
+													{sourceDatasets.length === 0 ? (
+														<p className="research-source-picker-state">No datasets uploaded yet.</p>
+													) : (
+														sourceDatasets.map((dataset) => (
+															<label key={dataset.id} className="research-source-option">
+																<input
+																	type="checkbox"
+																	checked={selectedSources.datasetIds.includes(dataset.id)}
+																	onChange={() => toggleSource("datasetIds", dataset.id)}
+																/>
+																<span>
+																	<strong>{dataset.title || dataset.fileName || "Untitled dataset"}</strong>
+																	<small>{dataset.fileName || dataset.format || "Dataset"}</small>
+																</span>
+															</label>
+														))
+													)}
+												</fieldset>
 											</div>
 										)}
 									</section>
@@ -1280,7 +1291,7 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 										</h2>
 										{topic.trim() && (
 											<p className="research-wizard-subtitle">
-												{disciplineLabel} · {SCOPE_OPTIONS.find((s) => s.id === scope)?.label} · &ldquo;{topic.trim()}&rdquo;
+												{disciplineLabel} · {getScopeLabel(scope)} · &ldquo;{topic.trim()}&rdquo;
 											</p>
 										)}
 									</div>
@@ -1400,10 +1411,14 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 												className="research-nav-btn research-nav-btn-generate"
 												onClick={handleGenerateResearch}
 												disabled={isGenerating || isBusy || !hasTokens}
-												title={!hasTokens ? "Research token limit reached" : "Draft a full research paper from this topic"}
+												title={
+													!hasTokens
+														? "Research token limit reached"
+														: `Draft a full ${getScopeLabel(scope) || "research"} document from this topic`
+												}
 											>
 												<IconFileText size={16} />
-												Generate Research
+												{generateLabel}
 											</button>
 										)}
 										<button
@@ -1431,12 +1446,8 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 				onConfirm={confirmGenerateResearch}
 				projectTitle={topic.trim()}
 				variant={isStudent ? "student" : "lecturer"}
-				note={
-					selectedSources.projectIds?.length
-						? "A research note is selected — the paper will be drafted from that note. Citations and the References list will use your chosen style."
-						: "Citations and the References list will use your chosen style throughout the generated paper."
-				}
-				confirmLabel="Generate Research"
+				note="Citations and the References list will use your chosen style throughout the generated document."
+				confirmLabel={generateLabel}
 			/>
 		</>
 	);

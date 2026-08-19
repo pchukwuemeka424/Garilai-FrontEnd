@@ -27,52 +27,111 @@ export const AULA_QUICK_ACCESS: QuickAccessTool[] = [
 		iconColor: "blue",
 	},
 	{
-		id: "research-note",
-		label: "Research Note",
-		href: "/research/note",
-		description: "Notes, data, lab log, and AI drafts in one notebook.",
+		id: "notebook",
+		label: "Research Notebook",
+		href: "/research/notebook",
+		description: "Capture notes, datasets, figures, and lab work.",
 		iconColor: "teal",
 	},
 	{
-		id: "references",
-		label: "References",
-		href: "/references",
-		description: "Format citations and validate bibliographies before submission.",
+		id: "projects",
+		label: "Projects",
+		href: "/supervision/projects",
+		description: "Supervise theses, dissertations, and student research folders.",
+		iconColor: "orange",
+	},
+	{
+		id: "reviews",
+		label: "Reviews",
+		href: "/reviews",
+		description: "Review submitted chapters and assignment drafts.",
 		iconColor: "green",
 	},
 	{
-		id: "lesson-planner",
-		label: "Lesson Planner",
-		href: "/lesson-planner",
-		description: "Build course outlines, session plans, activity sheets, and rubrics.",
+		id: "assignments",
+		label: "Assignments",
+		href: "/assignments",
+		description: "Publish briefs, mark submissions, and export scores.",
+		iconColor: "purple",
+	},
+	{
+		id: "students",
+		label: "Students",
+		href: "/students",
+		description: "Track supervisees and their progress.",
+		iconColor: "teal",
+	},
+	{
+		id: "analytics",
+		label: "Analytics",
+		href: "/analytics",
+		description: "A snapshot of supervision activity in this workspace.",
 		iconColor: "pink",
 	},
 ];
 
-/** Post-login hub cards on /dashboard — three primary workspace entry points. */
-export const AULA_HUB_TOOLS: QuickAccessTool[] = [
-	{
-		id: "research",
-		label: "Research Assistant",
-		href: "/research",
-		description: "Develop research ideas with cited references in your house style.",
-		iconColor: "blue",
-	},
-	{
-		id: "research-note",
-		label: "Research Notebook",
-		href: "/research/note",
-		description: "Notes, data, lab log, and AI drafts in one notebook.",
-		iconColor: "teal",
-	},
-	{
-		id: "lesson-planner",
-		label: "Lesson Planner",
-		href: "/lesson-planner",
-		description: "Build course outlines, session plans, activity sheets, and rubrics.",
-		iconColor: "pink",
-	},
+const AULA_PROJECT_FOLDER_IDS = [
+	"projects",
+	"reviews",
+	"assignments",
+	"students",
+	"analytics",
+] as const;
+
+const AULA_SUPERVISION_NOTIFICATION: QuickAccessTool = {
+	id: "notifications",
+	label: "Notifications",
+	href: "/notifications",
+	description: "Alerts from student submissions and project activity.",
+	iconColor: "pink",
+};
+
+/** Supervision tools shown on the Supervision Assistant hub (not nested in the sidebar). */
+export const AULA_PROJECT_FOLDER_ITEMS: QuickAccessTool[] = [
+	...AULA_QUICK_ACCESS.filter((tool) =>
+		(AULA_PROJECT_FOLDER_IDS as readonly string[]).includes(tool.id),
+	),
+	AULA_SUPERVISION_NOTIFICATION,
 ];
+
+export const AULA_SUPERVISION_ITEM: AulaNavItem = {
+	id: "supervision",
+	label: "Supervision Assistant",
+	href: "/supervision",
+	description: "Projects, reviews, assignments, students, and analytics.",
+};
+
+const SUPERVISION_ACTIVE_PREFIXES = [
+	"/supervision",
+	"/reviews",
+	"/assignments",
+	"/students",
+	"/analytics",
+	"/notifications",
+] as const;
+
+export function isSupervisionPath(pathname: string): boolean {
+	return SUPERVISION_ACTIVE_PREFIXES.some(
+		(prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+	);
+}
+
+export const AULA_RESEARCH_ITEM: AulaNavItem = {
+	id: "research",
+	label: "Research Assistant",
+	href: "/research",
+	description: AULA_QUICK_ACCESS.find((t) => t.id === "research")?.description,
+};
+
+export const AULA_NOTEBOOK_ITEM: AulaNavItem = {
+	id: "notebook",
+	label: "Research Notebook",
+	href: "/research/notebook",
+	description: AULA_QUICK_ACCESS.find((t) => t.id === "notebook")?.description,
+};
+
+/** Post-login hub cards on /dashboard — primary workspace entry points. */
+export const AULA_HUB_TOOLS: QuickAccessTool[] = AULA_QUICK_ACCESS;
 
 export type AulaTopbarNavItem = AulaNavItem & {
 	/** `exact` matches only the path; `prefix` also matches nested routes. */
@@ -88,13 +147,12 @@ export const AULA_DASHBOARD_ITEM: AulaNavItem = {
 export type AulaTopbarContext = {
 	title: string;
 	tagline: string;
-	cta: { label: string; href: string };
+	cta?: { label: string; href: string };
 };
 
 const AULA_TOPBAR_DEFAULT: AulaTopbarContext = {
 	title: "Dashboard",
 	tagline: "Teaching and research workspace for higher institutions",
-	cta: { label: "New Lecture", href: "/lesson-planner" },
 };
 
 /** Primary navigation shown in the dashboard top bar — one item per lecturer workspace page. */
@@ -107,13 +165,6 @@ export const AULA_TOPBAR_NAV: AulaTopbarNavItem[] = [
 		description: AULA_TOPBAR_DEFAULT.tagline,
 	},
 	{
-		id: "lesson-planner",
-		label: "Planner",
-		href: "/lesson-planner",
-		match: "prefix",
-		description: AULA_QUICK_ACCESS.find((t) => t.id === "lesson-planner")?.description,
-	},
-	{
 		id: "research",
 		label: "Research",
 		href: "/research",
@@ -121,18 +172,39 @@ export const AULA_TOPBAR_NAV: AulaTopbarNavItem[] = [
 		description: AULA_QUICK_ACCESS.find((t) => t.id === "research")?.description,
 	},
 	{
-		id: "research-note",
-		label: "Notes",
-		href: "/research/note",
+		id: "projects",
+		label: "Projects",
+		href: "/supervision/projects",
 		match: "prefix",
-		description: AULA_QUICK_ACCESS.find((t) => t.id === "research-note")?.description,
+		description: AULA_QUICK_ACCESS.find((t) => t.id === "projects")?.description,
 	},
 	{
-		id: "references",
-		label: "References",
-		href: "/references",
+		id: "reviews",
+		label: "Reviews",
+		href: "/reviews",
 		match: "prefix",
-		description: AULA_QUICK_ACCESS.find((t) => t.id === "references")?.description,
+		description: AULA_QUICK_ACCESS.find((t) => t.id === "reviews")?.description,
+	},
+	{
+		id: "assignments",
+		label: "Assignments",
+		href: "/assignments",
+		match: "prefix",
+		description: AULA_QUICK_ACCESS.find((t) => t.id === "assignments")?.description,
+	},
+	{
+		id: "students",
+		label: "Students",
+		href: "/students",
+		match: "prefix",
+		description: AULA_QUICK_ACCESS.find((t) => t.id === "students")?.description,
+	},
+	{
+		id: "analytics",
+		label: "Analytics",
+		href: "/analytics",
+		match: "prefix",
+		description: AULA_QUICK_ACCESS.find((t) => t.id === "analytics")?.description,
 	},
 ];
 
@@ -141,11 +213,6 @@ export function isAulaTopbarItemActive(pathname: string, item: AulaTopbarNavItem
 
 	if (item.id === "research" && (pathname === "/dashboard/research" || pathname.startsWith("/dashboard/research/"))) {
 		return true;
-	}
-
-	// Keep Research Assistant active only on its routes — not Research Note.
-	if (item.id === "research" && (pathname === "/research/note" || pathname.startsWith("/research/note/"))) {
-		return false;
 	}
 
 	if (item.match === "prefix") {
@@ -164,43 +231,73 @@ function topbarTitleForItem(item: AulaTopbarNavItem): string {
 
 function topbarCtaForItem(item: AulaTopbarNavItem): AulaTopbarContext["cta"] {
 	switch (item.id) {
-		case "lesson-planner":
-			return { label: "New Lecture", href: "/lesson-planner" };
 		case "research":
-			return { label: "New Research", href: "/research" };
-		case "research-note":
-			return { label: "New Research Note", href: "/research/note" };
-		case "references":
-			return { label: "References", href: "/references" };
+			return undefined;
+		case "projects":
+			return undefined;
+		case "reviews":
+			return undefined;
+		case "assignments":
+			return { label: "New Assignment", href: "/assignments/new" };
+		case "students":
+			return undefined;
+		case "analytics":
+			return undefined;
 		default:
-			return AULA_TOPBAR_DEFAULT.cta;
+			return undefined;
 	}
 }
 
 export function aulaTopbarContext(pathname: string): AulaTopbarContext {
+	if (pathname === "/supervision" || pathname === "/supervision/") {
+		return {
+			title: "Supervision Assistant",
+			tagline: AULA_SUPERVISION_ITEM.description ?? AULA_TOPBAR_DEFAULT.tagline,
+		};
+	}
+
+	if (pathname === "/notifications" || pathname.startsWith("/notifications/")) {
+		return {
+			title: "Notifications",
+			tagline: AULA_SUPERVISION_NOTIFICATION.description ?? AULA_TOPBAR_DEFAULT.tagline,
+			cta: { label: "Open inbox", href: "/notifications" },
+		};
+	}
+
+	const onNotebook =
+		pathname === "/research/notebook" || pathname.startsWith("/research/notebook/");
+	if (onNotebook) {
+		const onDetail = pathname.startsWith("/research/notebook/");
+		return {
+			title: "Research Notebook",
+			tagline: "Capture notes, surveys, datasets, figures, and lab work",
+			cta: onDetail
+				? { label: "Compile note", href: pathname }
+				: { label: "Create notebook", href: "/research/notebook?new=1" },
+		};
+	}
+
 	const activeItem = AULA_TOPBAR_NAV.find((item) => isAulaTopbarItemActive(pathname, item));
 	if (!activeItem) return AULA_TOPBAR_DEFAULT;
 	if (activeItem.id === "dashboard") return AULA_TOPBAR_DEFAULT;
 
+	const onAssignmentsList = pathname === "/assignments" || pathname === "/assignments/";
+	const onSupervision = pathname === "/supervision" || pathname.startsWith("/supervision/");
+
 	return {
 		title: topbarTitleForItem(activeItem),
 		tagline: activeItem.description ?? AULA_TOPBAR_DEFAULT.tagline,
-		cta: topbarCtaForItem(activeItem),
+		cta:
+			onSupervision || (activeItem.id === "assignments" && onAssignmentsList)
+				? undefined
+				: topbarCtaForItem(activeItem),
 	};
 }
 
 export const AULA_MAIN_NAV: AulaNavGroup = {
 	id: "main",
 	label: "Main",
-	items: [
-		AULA_DASHBOARD_ITEM,
-		...AULA_QUICK_ACCESS.map(({ id, label, href, badge }) => ({
-			id,
-			label,
-			href,
-			...(badge ? { badge } : {}),
-		})),
-	],
+	items: [AULA_DASHBOARD_ITEM, AULA_RESEARCH_ITEM, AULA_NOTEBOOK_ITEM, AULA_SUPERVISION_ITEM],
 };
 
 export const AULA_ADMIN_ITEM: AulaNavItem = {

@@ -18,7 +18,10 @@ export function StudentLayout({ children }: Props) {
 	const pathname = usePathname();
 	const { user, loading } = useAuth();
 	const [sidebarOpen, setSidebarOpen] = useState(false);
-	const isFluid = pathname.startsWith("/student/research");
+	const isFluid =
+		pathname.startsWith("/student/research") ||
+		pathname.includes("/pages/") ||
+		/^\/student\/projects\/[^/]+$/.test(pathname);
 
 	useEffect(() => {
 		if (!loading && !user) router.replace("/login");

@@ -14,43 +14,30 @@ import type { GovernanceReportAudience, GovernanceReportRecord } from "@/lib/adm
 
 type ReportType =
 	| "executive_summary"
-	| "compliance_status"
-	| "incident_summary"
 	| "usage_statistics"
+	| "incident_summary"
 	| "policy_effectiveness"
-	| "token_consumption"
-	| "risk_posture";
+	| "token_consumption";
 
 type ReportFormat = "pdf" | "docx" | "csv";
-type ReportStatus = "draft" | "review" | "approved" | "published";
-
-type ExtendedAudience = GovernanceReportAudience | "external_auditors" | "regulatory";
 
 const REPORT_TYPE_OPTIONS: Array<{ value: ReportType; label: string }> = [
-	{ value: "executive_summary", label: "Executive Summary" },
-	{ value: "compliance_status", label: "Compliance Status" },
-	{ value: "incident_summary", label: "Incident Summary" },
-	{ value: "usage_statistics", label: "Usage Statistics" },
-	{ value: "policy_effectiveness", label: "Policy Effectiveness" },
-	{ value: "token_consumption", label: "Token Consumption" },
-	{ value: "risk_posture", label: "Risk Posture" },
+	{ value: "executive_summary", label: "Executive summary" },
+	{ value: "usage_statistics", label: "Platform usage" },
+	{ value: "incident_summary", label: "Incidents" },
+	{ value: "policy_effectiveness", label: "Policy compliance" },
+	{ value: "token_consumption", label: "AI adoption & tokens" },
 ];
 
-const AUDIENCE_OPTIONS: Array<{ value: ExtendedAudience; label: string }> = [
+const AUDIENCE_OPTIONS: Array<{ value: GovernanceReportAudience; label: string }> = [
 	{ value: "management", label: "Management" },
 	{ value: "senate", label: "Senate" },
 	{ value: "both", label: "Management & Senate" },
-	{ value: "external_auditors", label: "External Auditors" },
-	{ value: "regulatory", label: "Regulatory Bodies" },
+	{ value: "external_auditors", label: "External auditors" },
 ];
 
-const STATUS_FLOW: ReportStatus[] = ["draft", "review", "approved", "published"];
-
-const SCHEDULED_REPORTS = [
-	{ name: "Weekly Usage Summary", frequency: "Weekly (Monday)", audience: "management", status: "active" },
-	{ name: "Monthly Compliance Report", frequency: "Monthly (1st)", audience: "senate", status: "active" },
-	{ name: "Quarterly Risk Posture", frequency: "Quarterly", audience: "both", status: "paused" },
-];
+const STATUS_FLOW = ["draft", "review", "approved", "published"] as const;
+type ReportStatus = (typeof STATUS_FLOW)[number];
 
 function downloadBlob(content: string, filename: string, mime: string) {
 	const blob = new Blob([content], { type: mime });
@@ -137,7 +124,7 @@ export function AdminReportsDashboard() {
 
 	const [reportType, setReportType] = useState<ReportType>("executive_summary");
 	const [format, setFormat] = useState<ReportFormat>("pdf");
-	const [audience, setAudience] = useState<ExtendedAudience>("both");
+	const [audience, setAudience] = useState<GovernanceReportAudience>("both");
 	const [periodStart, setPeriodStart] = useState("");
 	const [periodEnd, setPeriodEnd] = useState("");
 	const [faculty, setFaculty] = useState("");
@@ -187,10 +174,8 @@ export function AdminReportsDashboard() {
 		setWorking(true);
 		setError(null);
 		try {
-			const apiAudience: GovernanceReportAudience =
-				audience === "external_auditors" || audience === "regulatory" ? "both" : audience;
 			const report = await generateAdminReport({
-				audience: apiAudience,
+				audience,
 				reportType,
 				format,
 				periodStart: periodStart || undefined,
@@ -233,9 +218,9 @@ export function AdminReportsDashboard() {
 
 	return (
 		<AdminShell
-			title="Governance Reports"
-			subtitle="Generate, review, and publish governance reports for stakeholders"
-			breadcrumb="Admin · Reports"
+			title="Governance Reporting"
+			subtitle="Reports for Management, Senate, and external auditors"
+			breadcrumb="Admin · Reporting"
 			actions={
 				<button type="button" className="ghost-btn" onClick={() => void load()}>
 					Refresh
@@ -252,7 +237,7 @@ export function AdminReportsDashboard() {
 				<AdminStatCard label="This Quarter" value={thisQuarter} />
 				<AdminStatCard label="Management" value={byAudience["management"] ?? 0} />
 				<AdminStatCard label="Senate" value={byAudience["senate"] ?? 0} />
-				<AdminStatCard label="Both" value={byAudience["both"] ?? 0} />
+				<AdminStatCard label="Auditors" value={byAudience["external_auditors"] ?? 0} />
 			</section>
 
 			<div className="admin-gov-grid">
@@ -264,7 +249,7 @@ export function AdminReportsDashboard() {
 							<select
 								className="topic-input"
 								value={audience}
-								onChange={(e) => setAudience(e.target.value as ExtendedAudience)}
+								onChange={(e) => setAudience(e.target.value as GovernanceReportAudience)}
 							>
 								{AUDIENCE_OPTIONS.map((opt) => (
 									<option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -342,39 +327,6 @@ export function AdminReportsDashboard() {
 							{working ? "Generating…" : "Generate Report"}
 						</button>
 					</div>
-				</AdminPanel>
-
-				{/* Scheduled Reports (Placeholder) */}
-				<AdminPanel title="Scheduled Reports" description="Auto-generation schedules (placeholder — configuration coming soon)">
-					<div className="admin-table-scroll">
-						<table className="admin-simple-table">
-							<thead>
-								<tr>
-									<th>Report</th>
-									<th>Frequency</th>
-									<th>Audience</th>
-									<th>Status</th>
-								</tr>
-							</thead>
-							<tbody>
-								{SCHEDULED_REPORTS.map((sr) => (
-									<tr key={sr.name}>
-										<td><strong>{sr.name}</strong></td>
-										<td>{sr.frequency}</td>
-										<td><span className="admin-chip">{sr.audience}</span></td>
-										<td>
-											<span className={`admin-chip ${sr.status === "active" ? "admin-sev-low" : ""}`}>
-												{sr.status}
-											</span>
-										</td>
-									</tr>
-								))}
-							</tbody>
-						</table>
-					</div>
-					<p className="muted" style={{ marginTop: "0.5rem" }}>
-						Scheduled report generation will be configurable in a future release. Contact governance admins to set up recurring reports.
-					</p>
 				</AdminPanel>
 			</div>
 

@@ -147,8 +147,8 @@ export function AdminAuditDashboard() {
 	return (
 		<AdminShell
 			title="Immutable Audit Log"
-			subtitle="Tamper-resistant, hash-chained event log for accountability and compliance"
-			breadcrumb="Admin · Safety & Compliance"
+			subtitle="Searchable, filterable, tamper-resistant record of governance and administrative actions"
+			breadcrumb="Admin · Accountability"
 			actions={
 				<div className="admin-actions-row">
 					<button

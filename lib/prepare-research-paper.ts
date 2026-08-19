@@ -5,35 +5,29 @@ import {
 	fetchResearchVisualizationsFromApi,
 } from "@/lib/research-api";
 import { getDisciplineLabel } from "@/lib/research-disciplines";
-import { stageResearchFigureAppendix } from "@/lib/research-figure-appendix";
 import { buildResearchPaperPrompt } from "@/lib/research-generate";
-import type { ResearchIdea } from "@/lib/research-ideas";
 import { peekOutlinePageContext, resolveOutlinePageContext } from "@/lib/research-outline-context";
 import { loadSavedOutline, saveResearchOutline } from "@/lib/research-outline-storage";
 import { stagePaperSources } from "@/lib/research-paper-sources";
 import type { StudentTokenQuota } from "@/lib/student-tokens";
 
-/** Lightweight framing from the idea card — not an LLM outline. */
-function framingFromIdea(idea: ResearchIdea, topic: string): string {
-	const questions = (idea.researchQuestions ?? []).filter((q) => q.trim().length > 8);
-	return [
-		`**Study title / focus:** ${idea.title || topic}`,
-		idea.rationale?.trim() ? `**Rationale:** ${idea.rationale.trim()}` : "",
-		idea.approach?.trim() ? `**Suggested approach:** ${idea.approach.trim()}` : "",
-		questions.length
-			? `**Research questions:**\n${questions.map((q, i) => `${i + 1}. ${q}`).join("\n")}`
-			: "",
-		idea.outline?.trim() ? `**Focus points:**\n${idea.outline.trim()}` : "",
-	]
-		.filter(Boolean)
-		.join("\n\n");
-}
+export type PreparedResearchPaper = {
+	prompt: string;
+	figureDocumentIds: string[];
+};
+
+const EMPTY_VIZ = {
+	artifacts: "",
+	figureAppendix: "",
+	hasSavedFigures: false,
+	figureDocumentIds: [] as string[],
+};
 
 export async function prepareResearchPaperPrompt(
 	key: string,
 	citationStyle: CitationStyle,
-	options?: { onTokenQuota?: (quota: StudentTokenQuota) => void },
-): Promise<string | null> {
+	options?: { onTokenQuota?: (quota: StudentTokenQuota) => void; signal?: AbortSignal },
+): Promise<PreparedResearchPaper | null> {
 	const context = resolveOutlinePageContext(key) ?? peekOutlinePageContext(key);
 	if (!context) return null;
 
@@ -41,70 +35,49 @@ export async function prepareResearchPaperPrompt(
 
 	const datasetIds = context.sources?.datasetIds ?? [];
 	const projectIds = context.sources?.projectIds ?? [];
-	const fromResearchNote = projectIds.length > 0;
+	const documentIds = context.sources?.documentIds ?? [];
 	const hasSelectedSources = Boolean(
 		context.sources &&
-			(context.sources.documentIds.length ||
+			(documentIds.length ||
 				datasetIds.length ||
-				context.sources.noteIds.length ||
-				fromResearchNote),
+				(context.sources.questionnaireIds?.length ?? 0) ||
+				projectIds.length),
 	);
 
 	const disciplineLabel = getDisciplineLabel(context.discipline);
 	const topic = context.idea.title || context.topic;
 
 	const vizTask =
-		datasetIds.length || projectIds.length
-			? fetchResearchVisualizationsFromApi({
-					datasetIds,
-					projectIds,
-					topic,
-				}).catch(() => ({
-					artifacts: "",
-					figureAppendix: "",
-					hasSavedFigures: false,
-				}))
-			: Promise.resolve({
-					artifacts: "",
-					figureAppendix: "",
-					hasSavedFigures: false,
-				});
+		datasetIds.length || projectIds.length || documentIds.length
+			? fetchResearchVisualizationsFromApi(
+					{
+						datasetIds,
+						projectIds,
+						documentIds,
+						topic,
+					},
+					{ signal: options?.signal },
+				).catch(() => EMPTY_VIZ)
+			: Promise.resolve(EMPTY_VIZ);
 
-	// Research note selected → never call outline generation.
-	if (fromResearchNote) {
-		const [sourceContext, vizResult] = await Promise.all([
-			context.sources
-				? fetchResearchSourceContextFromApi(context.sources).catch(() => "")
-				: Promise.resolve(""),
-			vizTask,
-		]);
-		stageResearchFigureAppendix(vizResult.figureAppendix);
-		return buildResearchPaperPrompt({
-			idea: context.idea,
-			topic: context.topic,
-			disciplineLabel,
-			scope: context.scope,
-			outline: framingFromIdea(context.idea, context.topic),
-			citationStyle,
-			sourceContext: sourceContext || undefined,
-			visualizationArtifacts: vizResult.artifacts || undefined,
-			hasSavedFigures: vizResult.hasSavedFigures,
-			skipOutline: true,
-		});
-	}
-
-	// No research note: reuse cached outline, or generate one when missing.
-	let outline = loadSavedOutline(context.idea, context.discipline, context.topic, context.scope);
+	let outline =
+		context.scope === "assignment"
+			? null
+			: loadSavedOutline(context.idea, context.discipline, context.topic, context.scope);
 	let sourceContext: string | undefined;
 
 	const outlineTask = !outline?.trim()
-		? fetchResearchOutlineFromApi({
-				idea: context.idea,
-				disciplineLabel,
-				topic: context.topic,
-				scope: context.scope,
-				sources: context.sources,
-			}).then((result) => {
+		? fetchResearchOutlineFromApi(
+				{
+					idea: context.idea,
+					disciplineLabel,
+					topic: context.topic,
+					scope: context.scope,
+					sources: context.sources,
+					assignmentInstructions: context.assignmentInstructions,
+				},
+				{ signal: options?.signal },
+			).then((result) => {
 				if (result.tokenQuota) options?.onTokenQuota?.(result.tokenQuota);
 				saveResearchOutline({
 					idea: context.idea,
@@ -112,11 +85,13 @@ export async function prepareResearchPaperPrompt(
 					topic: context.topic,
 					scope: context.scope,
 					outline: result.outline,
+					sources: context.sources,
+					assignmentInstructions: context.assignmentInstructions,
 				});
 				return result;
 			})
 		: hasSelectedSources
-			? fetchResearchSourceContextFromApi(context.sources!).then((ctx) => ({
+			? fetchResearchSourceContextFromApi(context.sources!, { signal: options?.signal }).then((ctx) => ({
 					outline: outline!,
 					sourceContext: ctx,
 				}))
@@ -127,18 +102,19 @@ export async function prepareResearchPaperPrompt(
 	outline = outlineResult.outline;
 	sourceContext = outlineResult.sourceContext;
 
-	stageResearchFigureAppendix(vizResult.figureAppendix);
-
-	return buildResearchPaperPrompt({
-		idea: context.idea,
-		topic: context.topic,
-		disciplineLabel,
-		scope: context.scope,
-		outline,
-		citationStyle,
-		sourceContext,
-		visualizationArtifacts: vizResult.artifacts || undefined,
-		hasSavedFigures: vizResult.hasSavedFigures,
-		skipOutline: false,
-	});
+	return {
+		prompt: buildResearchPaperPrompt({
+			idea: context.idea,
+			topic: context.topic,
+			disciplineLabel,
+			scope: context.scope,
+			outline,
+			citationStyle,
+			sourceContext,
+			visualizationArtifacts: vizResult.artifacts || undefined,
+			hasSavedFigures: vizResult.hasSavedFigures,
+			assignmentInstructions: context.assignmentInstructions,
+		}),
+		figureDocumentIds: vizResult.figureDocumentIds,
+	};
 }

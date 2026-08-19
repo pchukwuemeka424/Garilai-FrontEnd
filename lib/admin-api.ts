@@ -2,23 +2,15 @@ import { apiUrl } from "@/lib/api";
 import type {
 	AdminBackupFile,
 	AdminBackupTable,
-	AdminLectureRecord,
 	AdminTokenRecord,
-	LectureAdminStats,
 	TokenAdminStats,
 	UpdateTokenInput,
 } from "@/lib/admin";
 import type {
 	AiContributionStatementRecord,
-	AiSystemRecord,
-	AiSystemStats,
 	AlertStats,
-	ApprovalRequestRecord,
-	ApprovalStats,
 	AuditAlertStats,
 	AuditLogRecord,
-	ComplianceControlRecord,
-	ComplianceStats,
 	ContributionStats,
 	DeletionRequestRecord,
 	GovernanceAlertRecord,
@@ -27,7 +19,6 @@ import type {
 	GovernancePolicyRecord,
 	GovernanceReportAudience,
 	GovernanceReportRecord,
-	GovernanceRiskRecord,
 	IncidentStats,
 	PolicyEvaluation,
 	PolicyStats,
@@ -37,7 +28,6 @@ import type {
 	ResearchProvenanceRecord,
 	RetentionPolicyRecord,
 	RetentionStats,
-	RiskStats,
 	UsageAnalytics,
 } from "@/lib/admin-governance";
 import type {
@@ -144,6 +134,13 @@ export async function fetchAdminUsers(): Promise<UserRecord[]> {
 export async function fetchAdminUser(id: string): Promise<UserRecord> {
 	const data = await adminJson<{ user: UserRecord }>(`/api/admin/users/${encodeURIComponent(id)}`);
 	return data.user;
+}
+
+export async function fetchAdminUserGovernanceHistory(id: string): Promise<{
+	user: UserRecord;
+	events: AuditLogRecord[];
+}> {
+	return adminJson(`/api/admin/users/${encodeURIComponent(id)}/governance-history`);
 }
 
 export async function fetchAdminConsoleAdmins(): Promise<UserRecord[]> {
@@ -355,21 +352,6 @@ export async function bulkAdminDeleteUsers(ids: string[]): Promise<number> {
 		body: JSON.stringify({ ids }),
 	});
 	return data.deleted;
-}
-
-export async function fetchAdminLectures(): Promise<{
-	lectures: AdminLectureRecord[];
-	stats: LectureAdminStats;
-}> {
-	const data = await adminJson<{
-		lectures: AdminLectureRecord[];
-		stats: LectureAdminStats;
-	}>("/api/admin/lectures");
-	return { lectures: data.lectures ?? [], stats: data.stats! };
-}
-
-export async function deleteAdminLecture(id: string): Promise<void> {
-	await adminJson(`/api/admin/lectures/${id}`, { method: "DELETE" });
 }
 
 export async function fetchAdminTokens(): Promise<{
@@ -600,46 +582,6 @@ export async function flagAdminAuditLog(
 	return data.log;
 }
 
-export async function fetchAdminApprovals(params?: {
-	status?: string;
-	kind?: string;
-}): Promise<{ approvals: ApprovalRequestRecord[]; stats: ApprovalStats }> {
-	const qs = new URLSearchParams();
-	if (params?.status) qs.set("status", params.status);
-	if (params?.kind) qs.set("kind", params.kind);
-	const suffix = qs.toString() ? `?${qs.toString()}` : "";
-	const data = await adminJson<{ approvals: ApprovalRequestRecord[]; stats: ApprovalStats }>(
-		`/api/admin/approvals${suffix}`,
-	);
-	return { approvals: data.approvals ?? [], stats: data.stats! };
-}
-
-export async function createAdminApproval(input: {
-	title: string;
-	description?: string;
-	kind: string;
-	justification?: string;
-	riskNotes?: string;
-}): Promise<ApprovalRequestRecord> {
-	const data = await adminJson<{ approval: ApprovalRequestRecord }>("/api/admin/approvals", {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(input),
-	});
-	return data.approval;
-}
-
-export async function reviewAdminApproval(
-	id: string,
-	input: { status: string; reviewNotes?: string },
-): Promise<ApprovalRequestRecord> {
-	const data = await adminJson<{ approval: ApprovalRequestRecord }>(`/api/admin/approvals/${id}`, {
-		method: "PATCH",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(input),
-	});
-	return data.approval;
-}
 
 export async function fetchAdminReports(): Promise<GovernanceReportRecord[]> {
 	const data = await adminJson<{ reports: GovernanceReportRecord[] }>("/api/admin/reports");
@@ -691,88 +633,6 @@ export function exportGovernanceReportText(report: GovernanceReportRecord): void
 	URL.revokeObjectURL(url);
 }
 
-/* ── Risk / compliance / incidents / inventory ───────────────────────── */
-
-export async function fetchAdminRisks(params?: {
-	status?: string;
-	category?: string;
-}): Promise<{ risks: GovernanceRiskRecord[]; stats: RiskStats }> {
-	const qs = new URLSearchParams();
-	if (params?.status) qs.set("status", params.status);
-	if (params?.category) qs.set("category", params.category);
-	const suffix = qs.toString() ? `?${qs.toString()}` : "";
-	const data = await adminJson<{ risks: GovernanceRiskRecord[]; stats: RiskStats }>(
-		`/api/admin/risks${suffix}`,
-	);
-	return { risks: data.risks ?? [], stats: data.stats! };
-}
-
-export async function createAdminRisk(input: Record<string, unknown>): Promise<GovernanceRiskRecord> {
-	const data = await adminJson<{ risk: GovernanceRiskRecord }>("/api/admin/risks", {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(input),
-	});
-	return data.risk;
-}
-
-export async function updateAdminRisk(
-	id: string,
-	input: Record<string, unknown>,
-): Promise<GovernanceRiskRecord> {
-	const data = await adminJson<{ risk: GovernanceRiskRecord }>(`/api/admin/risks/${id}`, {
-		method: "PATCH",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(input),
-	});
-	return data.risk;
-}
-
-export async function deleteAdminRisk(id: string): Promise<void> {
-	await adminJson(`/api/admin/risks/${id}`, { method: "DELETE" });
-}
-
-export async function fetchAdminCompliance(params?: {
-	framework?: string;
-	status?: string;
-}): Promise<{ controls: ComplianceControlRecord[]; stats: ComplianceStats }> {
-	const qs = new URLSearchParams();
-	if (params?.framework) qs.set("framework", params.framework);
-	if (params?.status) qs.set("status", params.status);
-	const suffix = qs.toString() ? `?${qs.toString()}` : "";
-	const data = await adminJson<{ controls: ComplianceControlRecord[]; stats: ComplianceStats }>(
-		`/api/admin/compliance${suffix}`,
-	);
-	return { controls: data.controls ?? [], stats: data.stats! };
-}
-
-export async function createAdminCompliance(
-	input: Record<string, unknown>,
-): Promise<ComplianceControlRecord> {
-	const data = await adminJson<{ control: ComplianceControlRecord }>("/api/admin/compliance", {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(input),
-	});
-	return data.control;
-}
-
-export async function updateAdminCompliance(
-	id: string,
-	input: Record<string, unknown>,
-): Promise<ComplianceControlRecord> {
-	const data = await adminJson<{ control: ComplianceControlRecord }>(`/api/admin/compliance/${id}`, {
-		method: "PATCH",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(input),
-	});
-	return data.control;
-}
-
-export async function deleteAdminCompliance(id: string): Promise<void> {
-	await adminJson(`/api/admin/compliance/${id}`, { method: "DELETE" });
-}
-
 export async function fetchAdminIncidents(params?: {
 	status?: string;
 	severity?: string;
@@ -813,48 +673,6 @@ export async function updateAdminIncident(
 	return data.incident;
 }
 
-export async function fetchAdminInventory(params?: {
-	status?: string;
-	riskTier?: string;
-}): Promise<{ systems: AiSystemRecord[]; stats: AiSystemStats }> {
-	const qs = new URLSearchParams();
-	if (params?.status) qs.set("status", params.status);
-	if (params?.riskTier) qs.set("riskTier", params.riskTier);
-	const suffix = qs.toString() ? `?${qs.toString()}` : "";
-	const data = await adminJson<{ systems: AiSystemRecord[]; stats: AiSystemStats }>(
-		`/api/admin/inventory${suffix}`,
-	);
-	return { systems: data.systems ?? [], stats: data.stats! };
-}
-
-export async function createAdminInventorySystem(
-	input: Record<string, unknown>,
-): Promise<AiSystemRecord> {
-	const data = await adminJson<{ system: AiSystemRecord }>("/api/admin/inventory", {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(input),
-	});
-	return data.system;
-}
-
-export async function updateAdminInventorySystem(
-	id: string,
-	input: Record<string, unknown>,
-): Promise<AiSystemRecord> {
-	const data = await adminJson<{ system: AiSystemRecord }>(`/api/admin/inventory/${id}`, {
-		method: "PATCH",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(input),
-	});
-	return data.system;
-}
-
-export async function deleteAdminInventorySystem(id: string): Promise<void> {
-	await adminJson(`/api/admin/inventory/${id}`, { method: "DELETE" });
-}
-
-/* ── Alerts / contributions / provenance / privacy / retention ───────── */
 
 export async function fetchAdminAlerts(params?: {
 	status?: string;
@@ -1113,11 +931,9 @@ export type AdminResearchOwner = {
 
 export type AdminResearchStats = {
 	papers: number;
-	notebooks: number;
 	documents: number;
 	datasets: number;
 	uploads: number;
-	notebooksWithSync: number;
 };
 
 export type AdminResearchPaperRecord = {
@@ -1142,39 +958,6 @@ export type AdminResearchPaperDetail = AdminResearchPaperRecord & {
 		noteIds: string[];
 		projectIds: string[];
 	};
-};
-
-export type AdminResearchNotebookRecord = {
-	id: string;
-	title: string;
-	description: string;
-	projectType: string;
-	status: string;
-	progress: number;
-	favorite: boolean;
-	hasNotebook: boolean;
-	notebookBytes: number;
-	pageCount: number;
-	draftCount: number;
-	sectionCount: number;
-	documentCount: number;
-	datasetCount: number;
-	noteCount: number;
-	owner: AdminResearchOwner;
-	startedAt: string | null;
-	createdAt: string;
-	updatedAt: string;
-};
-
-export type AdminResearchNotebookDetail = AdminResearchNotebookRecord & {
-	sections: Array<{ id: string; title: string; contentLength: number }>;
-	notebookSummary: {
-		pages: Array<{ id: string; title: string }>;
-		drafts: Array<{ id: string; title: string }>;
-		datasets: Array<{ id: string; title: string }>;
-		references: number;
-		assets: number;
-	} | null;
 };
 
 export type AdminResearchUploadKind = "document" | "dataset";
@@ -1237,36 +1020,6 @@ export async function deleteAdminResearchPaper(id: string): Promise<void> {
 
 export async function bulkDeleteAdminResearchPapers(ids: string[]): Promise<number> {
 	const data = await adminJson<{ deleted: number }>("/api/admin/research/papers/bulk-delete", {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ ids }),
-	});
-	return data.deleted;
-}
-
-export async function fetchAdminResearchNotebooks(params?: {
-	universityId?: string;
-	limit?: number;
-}): Promise<AdminResearchNotebookRecord[]> {
-	const data = await adminJson<{ notebooks: AdminResearchNotebookRecord[] }>(
-		`/api/admin/research/notebooks${researchQuery(params)}`,
-	);
-	return data.notebooks ?? [];
-}
-
-export async function fetchAdminResearchNotebook(id: string): Promise<AdminResearchNotebookDetail> {
-	const data = await adminJson<{ notebook: AdminResearchNotebookDetail }>(
-		`/api/admin/research/notebooks/${id}`,
-	);
-	return data.notebook;
-}
-
-export async function deleteAdminResearchNotebook(id: string): Promise<void> {
-	await adminJson(`/api/admin/research/notebooks/${id}`, { method: "DELETE" });
-}
-
-export async function bulkDeleteAdminResearchNotebooks(ids: string[]): Promise<number> {
-	const data = await adminJson<{ deleted: number }>("/api/admin/research/notebooks/bulk-delete", {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({ ids }),

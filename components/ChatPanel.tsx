@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 
 import type { ChatMessage } from "@/lib/agent-events";
 import { APP_NAME } from "@/lib/brand";
+import { getScopeDocumentLabel } from "@/lib/research-ideas";
 import { promoteBoldSectionsForDisplay } from "@/lib/research-paper-sections";
 import { formatTokenUsage } from "@/lib/token-usage";
 import { ResearchPaperMarkdown } from "@/components/research/ResearchPaperMarkdown";
@@ -17,6 +18,7 @@ const SUGGESTIONS = [
 type Props = {
 	messages: ChatMessage[];
 	isBusy: boolean;
+	scope?: string | null;
 	onSuggestionClick?: (text: string) => void;
 };
 
@@ -43,11 +45,12 @@ function roleLabel(msg: ChatMessage): string {
 	return "System";
 }
 
-export function ChatPanel({ messages, isBusy, onSuggestionClick }: Props) {
+export function ChatPanel({ messages, isBusy, scope = null, onSuggestionClick }: Props) {
 	const endRef = useRef<HTMLDivElement>(null);
 	const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
 	const assistantHasText = Boolean(lastAssistant?.content.trim());
 	const showEmpty = messages.length === 0 && !isBusy;
+	const documentLabel = getScopeDocumentLabel(scope);
 
 	useEffect(() => {
 		endRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -58,10 +61,10 @@ export function ChatPanel({ messages, isBusy, onSuggestionClick }: Props) {
 			<div className="chat-welcome">
 				<div className="chat-welcome-inner">
 					<div className="chat-welcome-badge">Research workspace</div>
-					<h2 className="chat-welcome-title">Generate a cited academic paper</h2>
+					<h2 className="chat-welcome-title">Generate a cited {documentLabel}</h2>
 					<p className="chat-welcome-lead">
-						Enter a research topic below. {APP_NAME} produces a structured paper with in-text citations and a
-						reference list in your chosen style.
+						Enter a research topic below. {APP_NAME} produces a structured {documentLabel} with in-text
+						citations and a reference list in your chosen style.
 					</p>
 
 					{onSuggestionClick && (
@@ -87,8 +90,8 @@ export function ChatPanel({ messages, isBusy, onSuggestionClick }: Props) {
 	}
 
 	const generatingLabel = assistantHasText
-		? "Still writing your research paper…"
-		: "Generating your research paper…";
+		? `Still writing your ${documentLabel}…`
+		: `Generating your ${documentLabel}…`;
 	const generatingDetail = assistantHasText
 		? "Text appears below as each section is drafted."
 		: "This may take a minute. Sections and citations will stream in shortly.";
@@ -104,7 +107,7 @@ export function ChatPanel({ messages, isBusy, onSuggestionClick }: Props) {
 						<header className="chat-turn-header">
 							<span className={`chat-turn-label chat-turn-label-${msg.role}`}>{roleLabel(msg)}</span>
 							{msg.role === "assistant" && msg.tokenUsage && !isBusy && (
-								<span className="chat-turn-meta" title="LLM tokens used to generate this paper">
+								<span className="chat-turn-meta" title={`LLM tokens used to generate this ${documentLabel}`}>
 									{formatTokenUsage(msg.tokenUsage)}
 								</span>
 							)}

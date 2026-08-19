@@ -1,6 +1,7 @@
 import { getStoredUserId } from "@/lib/auth";
 import { deleteSavedOutlineFromApi, fetchSavedOutlinesFromApi } from "@/lib/research-outlines-api";
 import type { ResearchIdea, ResearchScope } from "@/lib/research-ideas";
+import type { ResearchSourceSelection } from "@/lib/research-assets-api";
 
 const OUTLINE_KEY_PREFIX = "aula.research.outlines";
 const LEGACY_OUTLINE_KEY = "aula.research.outlines";
@@ -15,6 +16,8 @@ export type SavedOutline = {
 	topic: string;
 	scope: ResearchScope;
 	outline: string;
+	sources?: ResearchSourceSelection;
+	assignmentInstructions?: string;
 	savedAt: string;
 };
 
@@ -61,8 +64,18 @@ function writeOutlinesLocal(outlines: SavedOutline[]): SavedOutline[] {
 export async function loadAllSavedOutlines(): Promise<SavedOutline[]> {
 	const fromApi = await fetchSavedOutlinesFromApi();
 	if (fromApi !== null) {
-		writeOutlinesLocal(fromApi);
-		return fromApi;
+		const merged = fromApi.map((outline) => {
+			const existing = getSavedOutlineByKey(outline.key);
+			return {
+				...outline,
+				...(existing?.sources ? { sources: existing.sources } : {}),
+				...(existing?.assignmentInstructions
+					? { assignmentInstructions: existing.assignmentInstructions }
+					: {}),
+			};
+		});
+		writeOutlinesLocal(merged);
+		return merged;
 	}
 	return loadAllOutlinesLocal();
 }
@@ -87,6 +100,8 @@ export function saveResearchOutline(input: {
 	topic: string;
 	scope: ResearchScope;
 	outline: string;
+	sources?: ResearchSourceSelection;
+	assignmentInstructions?: string;
 }): SavedOutline {
 	const key = outlineStorageKey(input.idea, input.discipline, input.topic, input.scope);
 	const entry: SavedOutline = {
@@ -97,6 +112,10 @@ export function saveResearchOutline(input: {
 		topic: input.topic.trim(),
 		scope: input.scope,
 		outline: input.outline.trim(),
+		...(input.sources ? { sources: input.sources } : {}),
+		...(input.assignmentInstructions?.trim()
+			? { assignmentInstructions: input.assignmentInstructions.trim() }
+			: {}),
 		savedAt: new Date().toISOString(),
 	};
 	const next = [entry, ...loadAllOutlinesLocal().filter((item) => item.key !== key)];
@@ -132,7 +151,14 @@ export function mergeOutlinesFromApi(outlines: SavedOutline[]): void {
 	if (!outlines.length) return;
 	const byKey = new Map(loadAllOutlinesLocal().map((item) => [item.key, item]));
 	for (const outline of outlines) {
-		byKey.set(outline.key, outline);
+		const existing = byKey.get(outline.key);
+		byKey.set(outline.key, {
+			...outline,
+			...(existing?.sources ? { sources: existing.sources } : {}),
+			...(existing?.assignmentInstructions
+				? { assignmentInstructions: existing.assignmentInstructions }
+				: {}),
+		});
 	}
 	writeOutlinesLocal([...byKey.values()].sort((a, b) => b.savedAt.localeCompare(a.savedAt)));
 }

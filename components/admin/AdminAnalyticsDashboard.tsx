@@ -194,8 +194,8 @@ export function AdminAnalyticsDashboard() {
 	return (
 		<AdminShell
 			title="Usage Analytics"
-			subtitle="Comprehensive usage analytics across faculties, departments, and roles"
-			breadcrumb="Admin · Analytics"
+			subtitle="Adoption and engagement by faculty, department, programme, and cohort — no private research content"
+			breadcrumb="Admin · Usage"
 			actions={
 				<>
 					{analytics && (

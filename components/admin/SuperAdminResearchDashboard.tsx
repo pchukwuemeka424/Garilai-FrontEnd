@@ -16,21 +16,15 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useAdminTable } from "@/hooks/useAdminTable";
 import { useSuperAdminGuard } from "@/hooks/useAdminGuard";
 import {
-	bulkDeleteAdminResearchNotebooks,
 	bulkDeleteAdminResearchPapers,
 	bulkDeleteAdminResearchUploads,
-	deleteAdminResearchNotebook,
 	deleteAdminResearchPaper,
 	deleteAdminResearchUpload,
-	fetchAdminResearchNotebook,
-	fetchAdminResearchNotebooks,
 	fetchAdminResearchPaper,
 	fetchAdminResearchPapers,
 	fetchAdminResearchStats,
 	fetchAdminResearchUploads,
 	fetchAdminUniversities,
-	type AdminResearchNotebookDetail,
-	type AdminResearchNotebookRecord,
 	type AdminResearchPaperDetail,
 	type AdminResearchPaperRecord,
 	type AdminResearchStats,
@@ -39,14 +33,12 @@ import {
 	type UniversityRecord,
 } from "@/lib/admin-api";
 
-type TabId = "papers" | "notebooks" | "uploads";
+type TabId = "papers" | "uploads";
 
 type PendingDelete =
 	| { type: "paper"; id: string; label: string }
-	| { type: "notebook"; id: string; label: string }
 	| { type: "upload"; id: string; kind: AdminResearchUploadKind; label: string }
 	| { type: "bulk-papers"; ids: string[] }
-	| { type: "bulk-notebooks"; ids: string[] }
 	| { type: "bulk-uploads"; items: Array<{ id: string; kind: AdminResearchUploadKind }> };
 
 function formatBytes(n: number): string {
@@ -146,7 +138,6 @@ export function SuperAdminResearchDashboard() {
 	const [stats, setStats] = useState<AdminResearchStats | null>(null);
 	const [universities, setUniversities] = useState<UniversityRecord[]>([]);
 	const [papers, setPapers] = useState<AdminResearchPaperRecord[]>([]);
-	const [notebooks, setNotebooks] = useState<AdminResearchNotebookRecord[]>([]);
 	const [uploads, setUploads] = useState<AdminResearchUploadRecord[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [working, setWorking] = useState(false);
@@ -157,11 +148,9 @@ export function SuperAdminResearchDashboard() {
 	const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 	const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
 	const [paperDetail, setPaperDetail] = useState<AdminResearchPaperDetail | null>(null);
-	const [notebookDetail, setNotebookDetail] = useState<AdminResearchNotebookDetail | null>(null);
 	const [detailLoading, setDetailLoading] = useState(false);
 	const [detailError, setDetailError] = useState<string | null>(null);
 	const [viewingPaperId, setViewingPaperId] = useState<string | null>(null);
-	const [viewingNotebookId, setViewingNotebookId] = useState<string | null>(null);
 
 	const uniNameById = useMemo(
 		() => new Map(universities.map((u) => [u.id, u.name])),
@@ -172,11 +161,10 @@ export function SuperAdminResearchDashboard() {
 		setError(null);
 		try {
 			const uniId = universityFilter || undefined;
-			const [statsData, uniList, paperList, notebookList, uploadList] = await Promise.all([
+			const [statsData, uniList, paperList, uploadList] = await Promise.all([
 				fetchAdminResearchStats(uniId),
 				fetchAdminUniversities(),
 				fetchAdminResearchPapers({ universityId: uniId }),
-				fetchAdminResearchNotebooks({ universityId: uniId }),
 				fetchAdminResearchUploads({
 					universityId: uniId,
 					kind: uploadKindFilter || "all",
@@ -185,7 +173,6 @@ export function SuperAdminResearchDashboard() {
 			setStats(statsData);
 			setUniversities(uniList);
 			setPapers(paperList);
-			setNotebooks(notebookList);
 			setUploads(uploadList);
 			setSelectedIds(new Set());
 		} catch (err) {
@@ -218,20 +205,6 @@ export function SuperAdminResearchDashboard() {
 		}
 	};
 
-	const openNotebook = async (id: string) => {
-		setViewingNotebookId(id);
-		setNotebookDetail(null);
-		setDetailLoading(true);
-		setDetailError(null);
-		try {
-			setNotebookDetail(await fetchAdminResearchNotebook(id));
-		} catch (err) {
-			setDetailError(err instanceof Error ? err.message : String(err));
-		} finally {
-			setDetailLoading(false);
-		}
-	};
-
 	const confirmDelete = async () => {
 		if (!pendingDelete) return;
 		setWorking(true);
@@ -243,19 +216,11 @@ export function SuperAdminResearchDashboard() {
 					setViewingPaperId(null);
 					setPaperDetail(null);
 					break;
-				case "notebook":
-					await deleteAdminResearchNotebook(pendingDelete.id);
-					setViewingNotebookId(null);
-					setNotebookDetail(null);
-					break;
 				case "upload":
 					await deleteAdminResearchUpload(pendingDelete.kind, pendingDelete.id);
 					break;
 				case "bulk-papers":
 					await bulkDeleteAdminResearchPapers(pendingDelete.ids);
-					break;
-				case "bulk-notebooks":
-					await bulkDeleteAdminResearchNotebooks(pendingDelete.ids);
 					break;
 				case "bulk-uploads":
 					await bulkDeleteAdminResearchUploads(pendingDelete.items);
@@ -283,19 +248,6 @@ export function SuperAdminResearchDashboard() {
 		);
 	}, [papers, search]);
 
-	const filteredNotebooks = useMemo(() => {
-		const q = search.trim().toLowerCase();
-		if (!q) return notebooks;
-		return notebooks.filter(
-			(n) =>
-				n.title.toLowerCase().includes(q) ||
-				n.description.toLowerCase().includes(q) ||
-				n.owner.name.toLowerCase().includes(q) ||
-				n.owner.email.toLowerCase().includes(q) ||
-				n.projectType.toLowerCase().includes(q),
-		);
-	}, [notebooks, search]);
-
 	const filteredUploads = useMemo(() => {
 		const q = search.trim().toLowerCase();
 		if (!q) return uploads;
@@ -310,7 +262,6 @@ export function SuperAdminResearchDashboard() {
 	}, [uploads, search]);
 
 	const paperTable = useAdminTable(filteredPapers, { resetDeps: [search, universityFilter] });
-	const notebookTable = useAdminTable(filteredNotebooks, { resetDeps: [search, universityFilter] });
 	const uploadTable = useAdminTable(filteredUploads, {
 		resetDeps: [search, universityFilter, uploadKindFilter],
 	});
@@ -327,9 +278,7 @@ export function SuperAdminResearchDashboard() {
 	const visibleKeys =
 		tab === "papers"
 			? paperTable.pageItems.map((r) => r.id)
-			: tab === "notebooks"
-				? notebookTable.pageItems.map((r) => r.id)
-				: uploadTable.pageItems.map((r) => `${r.kind}:${r.id}`);
+			: uploadTable.pageItems.map((r) => `${r.kind}:${r.id}`);
 
 	const allVisibleSelected =
 		visibleKeys.length > 0 && visibleKeys.every((id) => selectedIds.has(id));
@@ -412,75 +361,6 @@ export function SuperAdminResearchDashboard() {
 		},
 	];
 
-	const notebookColumns: AdminTableColumn<AdminResearchNotebookRecord>[] = [
-		{
-			key: "title",
-			header: "Notebook",
-			cell: (row) => (
-				<div>
-					<button type="button" className="admin-link-btn" onClick={() => void openNotebook(row.id)}>
-						{row.title}
-					</button>
-					<div className="muted" style={{ fontSize: "0.8rem" }}>
-						{row.projectType.replace(/_/g, " ")} · {row.status.replace(/_/g, " ")}
-					</div>
-				</div>
-			),
-		},
-		{
-			key: "owner",
-			header: "Owner",
-			cell: (row) => <OwnerCell name={row.owner.name} email={row.owner.email} />,
-		},
-		{
-			key: "university",
-			header: "University",
-			cell: (row) =>
-				row.owner.universityId
-					? (uniNameById.get(row.owner.universityId) ?? row.owner.institution ?? "—")
-					: (row.owner.institution ?? "—"),
-		},
-		{
-			key: "sync",
-			header: "Notebook",
-			cell: (row) =>
-				row.hasNotebook
-					? `${row.pageCount} pages · ${formatBytes(row.notebookBytes)}`
-					: "Not synced",
-		},
-		{
-			key: "assets",
-			header: "Uploads",
-			cell: (row) => `${row.documentCount} docs · ${row.datasetCount} datasets`,
-		},
-		{
-			key: "updated",
-			header: "Updated",
-			cell: (row) => formatAdminRelative(row.updatedAt),
-		},
-		{
-			key: "actions",
-			header: "",
-			align: "right",
-			cell: (row) => (
-				<div className="admin-actions-row" style={{ justifyContent: "flex-end" }}>
-					<button type="button" className="ghost-btn" onClick={() => void openNotebook(row.id)}>
-						View
-					</button>
-					<button
-						type="button"
-						className="ghost-btn"
-						onClick={() =>
-							setPendingDelete({ type: "notebook", id: row.id, label: row.title })
-						}
-					>
-						Delete
-					</button>
-				</div>
-			),
-		},
-	];
-
 	const uploadColumns: AdminTableColumn<AdminResearchUploadRecord>[] = [
 		{
 			key: "title",
@@ -548,14 +428,10 @@ export function SuperAdminResearchDashboard() {
 		switch (pendingDelete.type) {
 			case "paper":
 				return `Permanently delete the research paper “${pendingDelete.label}”? This cannot be undone.`;
-			case "notebook":
-				return `Permanently delete the notebook “${pendingDelete.label}” and its linked documents, datasets, notes, and references? File storage will also be cleared.`;
 			case "upload":
 				return `Permanently delete the uploaded ${pendingDelete.kind} “${pendingDelete.label}”?`;
 			case "bulk-papers":
 				return `Permanently delete ${pendingDelete.ids.length} research papers?`;
-			case "bulk-notebooks":
-				return `Permanently delete ${pendingDelete.ids.length} notebooks and their linked uploads?`;
 			case "bulk-uploads":
 				return `Permanently delete ${pendingDelete.items.length} uploaded items?`;
 		}
@@ -564,7 +440,7 @@ export function SuperAdminResearchDashboard() {
 	return (
 		<SuperAdminShell
 			title="Research content"
-			subtitle="Manage papers, research notebooks, and uploaded files across the platform"
+			subtitle="Manage papers and uploaded files across the platform"
 			breadcrumb="Platform"
 			actions={
 				<button type="button" className="ghost-btn" disabled={working} onClick={() => void load()}>
@@ -576,11 +452,6 @@ export function SuperAdminResearchDashboard() {
 
 			<section className="admin-stats">
 				<AdminStatCard label="Papers" value={stats?.papers ?? 0} />
-				<AdminStatCard label="Notebooks" value={stats?.notebooks ?? 0} />
-				<AdminStatCard
-					label="Synced notebooks"
-					value={stats?.notebooksWithSync ?? 0}
-				/>
 				<AdminStatCard label="Uploads" value={stats?.uploads ?? 0} />
 			</section>
 
@@ -588,7 +459,6 @@ export function SuperAdminResearchDashboard() {
 				{(
 					[
 						["papers", "Research papers"],
-						["notebooks", "Notebooks"],
 						["uploads", "Uploads"],
 					] as const
 				).map(([id, label]) => (
@@ -604,19 +474,11 @@ export function SuperAdminResearchDashboard() {
 			</div>
 
 			<AdminPanel
-				title={
-					tab === "papers"
-						? "Saved research papers"
-						: tab === "notebooks"
-							? "Research notebooks"
-							: "Uploaded documents & datasets"
-				}
+				title={tab === "papers" ? "Saved research papers" : "Uploaded documents & datasets"}
 				description={
 					tab === "papers"
 						? "AI-generated and edited papers saved by users."
-						: tab === "notebooks"
-							? "Research projects and CanvAtlas notebook snapshots."
-							: "Files attached to research projects (documents and datasets)."
+						: "Files attached to research projects (documents and datasets)."
 				}
 			>
 				<div className="admin-actions-row" style={{ marginBottom: "0.75rem", gap: "0.5rem", flexWrap: "wrap" }}>
@@ -676,48 +538,6 @@ export function SuperAdminResearchDashboard() {
 										onClick={() =>
 											setPendingDelete({
 												type: "bulk-papers",
-												ids: Array.from(selectedIds),
-											})
-										}
-									>
-										Delete selected
-									</button>
-								</>
-							) : null
-						}
-					/>
-				)}
-
-				{tab === "notebooks" && (
-					<AdminDataTable
-						columns={notebookColumns}
-						data={notebookTable.pageItems}
-						rowKey={(row) => row.id}
-						loading={loading}
-						emptyMessage="No research notebooks found."
-						emptyFilteredMessage="No notebooks match your filters."
-						hasActiveFilters={Boolean(search || universityFilter)}
-						search={search}
-						onSearchChange={setSearch}
-						searchPlaceholder="Search notebooks, owners…"
-						pagination={notebookTable.pagination}
-						selectable={{
-							selectedIds,
-							onToggle: toggleId,
-							onToggleAll: toggleAllVisible,
-							allVisibleSelected,
-						}}
-						bulkBar={
-							selectedIds.size > 0 ? (
-								<>
-									<span>{selectedIds.size} selected</span>
-									<button
-										type="button"
-										className="ghost-btn"
-										disabled={working}
-										onClick={() =>
-											setPendingDelete({
-												type: "bulk-notebooks",
 												ids: Array.from(selectedIds),
 											})
 										}
@@ -836,104 +656,6 @@ export function SuperAdminResearchDashboard() {
 							>
 								{paperDetail.content}
 							</pre>
-						</div>
-					)}
-				</ResearchDetailModal>
-			)}
-
-			{viewingNotebookId && (
-				<ResearchDetailModal
-					title={notebookDetail?.title ?? "Research notebook"}
-					subtitle={
-						notebookDetail
-							? `${notebookDetail.owner.name} · ${notebookDetail.status.replace(/_/g, " ")}`
-							: undefined
-					}
-					loading={detailLoading}
-					error={detailError}
-					onClose={() => {
-						setViewingNotebookId(null);
-						setNotebookDetail(null);
-					}}
-					onDelete={
-						notebookDetail
-							? () =>
-									setPendingDelete({
-										type: "notebook",
-										id: notebookDetail.id,
-										label: notebookDetail.title,
-									})
-							: undefined
-					}
-				>
-					{notebookDetail && (
-						<div className="dash-form">
-							{notebookDetail.description && (
-								<p style={{ marginTop: 0 }}>{notebookDetail.description}</p>
-							)}
-							<section className="admin-stats" style={{ marginBottom: "1rem" }}>
-								<div>
-									<p className="muted" style={{ margin: 0, fontSize: "0.8rem" }}>
-										Pages
-									</p>
-									<strong>{notebookDetail.pageCount}</strong>
-								</div>
-								<div>
-									<p className="muted" style={{ margin: 0, fontSize: "0.8rem" }}>
-										Drafts
-									</p>
-									<strong>{notebookDetail.draftCount}</strong>
-								</div>
-								<div>
-									<p className="muted" style={{ margin: 0, fontSize: "0.8rem" }}>
-										Docs / datasets
-									</p>
-									<strong>
-										{notebookDetail.documentCount} / {notebookDetail.datasetCount}
-									</strong>
-								</div>
-								<div>
-									<p className="muted" style={{ margin: 0, fontSize: "0.8rem" }}>
-										Snapshot
-									</p>
-									<strong>
-										{notebookDetail.hasNotebook
-											? formatBytes(notebookDetail.notebookBytes)
-											: "None"}
-									</strong>
-								</div>
-							</section>
-							{notebookDetail.notebookSummary?.pages.length ? (
-								<>
-									<p className="muted" style={{ marginBottom: "0.35rem" }}>
-										Pages in synced notebook
-									</p>
-									<ul style={{ marginTop: 0, paddingLeft: "1.1rem" }}>
-										{notebookDetail.notebookSummary.pages.map((p) => (
-											<li key={p.id}>{p.title}</li>
-										))}
-									</ul>
-								</>
-							) : (
-								<p className="muted">No synced notebook pages.</p>
-							)}
-							{notebookDetail.sections.length > 0 && (
-								<>
-									<p className="muted" style={{ marginBottom: "0.35rem" }}>
-										Project sections
-									</p>
-									<ul style={{ marginTop: 0, paddingLeft: "1.1rem" }}>
-										{notebookDetail.sections.map((s) => (
-											<li key={s.id}>
-												{s.title}{" "}
-												<span className="muted">
-													({formatBytes(s.contentLength)})
-												</span>
-											</li>
-										))}
-									</ul>
-								</>
-							)}
 						</div>
 					)}
 				</ResearchDetailModal>
