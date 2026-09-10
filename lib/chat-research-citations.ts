@@ -103,6 +103,8 @@ export function buildChangeCitationStylePrompt(
 	const label = getStyleLabel(style);
 	const profile = getScopeProfile(resolveScope(scope));
 	return [
+		`Reference style: ${label}`,
+		"",
 		`Reformat the entire ${profile.label} in this conversation to use ${label} for all in-text citations and the References section.`,
 		"Preserve all section headings, arguments, data, and approximate length.",
 		"Use bold-only section titles — never hash (#) headings or horizontal rules (---, --).",
@@ -110,10 +112,10 @@ export function buildChangeCitationStylePrompt(
 		"Keep sources from the literature retrieval bank only — do not invent new papers.",
 		`If the document has fewer than ${profile.minDistinctCites} bank references, expand body cites from unused bank papers so both the body and References reach at least ${profile.minDistinctCites} (write from bank abstracts). Only if retrieval returned fewer than ${profile.minDistinctCites} papers may you cite every retrieved paper. Never invent fillers. Every References entry must appear as an in-text citation — no uncited list padding.`,
 		"Do not add in-text citations to Abstract / Executive Summary / front matter where the type marks 0 cites.",
-		"In the References section, format each entry as Author (Year). Title. [Source](url). Source links only in References — never in the body.",
+		`In the References section, format each entry according to ${label} referencing rules. Source links only in References — never in the body.`,
 		"Do not mention preprint servers, repository names, or paper ID numbers.",
 		"Do not add meta-commentary — return the full revised document in Markdown.",
-	].join(" ");
+	].join("\n");
 }
 
 export function buildUpdateReferencesPrompt(
@@ -123,17 +125,19 @@ export function buildUpdateReferencesPrompt(
 	const label = getStyleLabel(style);
 	const profile = getScopeProfile(resolveScope(scope));
 	return [
+		`Reference style: ${label}`,
+		"",
 		`Update and complete the References section of the ${profile.label} above using ${label}.`,
 		"Use ONLY papers from the conversation literature retrieval / research API bank.",
 		"Ensure every in-text citation has a matching full reference entry from that bank, and every References entry is cited in the body; remove invented or uncited entries.",
 		`If the body cites fewer than ${profile.minDistinctCites} distinct bank papers, revise body sections to cite and synthesize more bank abstracts until at least ${profile.minDistinctCites} bank papers appear in both the body and References. Prefer more when the bank is larger. Only if retrieval returned fewer than ${profile.minDistinctCites} papers may you cite every retrieved paper. Never invent fillers or pad uncited References.`,
 		"Do not invent authors, years, titles, or DOIs.",
-		"Format each entry as: Author (Year). Title. [Source](url). Put Source links only under References.",
+		`Format each entry according to ${label} reference list rules. Put Source links only under References.`,
 		"Do not mention preprint servers, repository names, or paper ID numbers.",
 		"Align in-text citations with the reference list where needed — every body cite must match its References entry.",
 		"Keep all other sections unchanged unless citation density edits are required to reach the minimum.",
 		"Return the full document in Markdown.",
-	].join(" ");
+	].join("\n");
 }
 
 /** Follow-up: insert missing in-text citations across body sections. */
@@ -144,17 +148,19 @@ export function buildEnsureInTextCitationsPrompt(
 	const label = getStyleLabel(style);
 	const profile = getScopeProfile(resolveScope(scope));
 	return [
+		`Reference style: ${label}`,
+		"",
 		`Revise the ${profile.label} above to meet strong ${label} in-text citation density in every body section.`,
 		`In-text citation floors: ${formatCitationFloorsForPrompt(profile)}.`,
 		`Across the full body, cite at least ${profile.minDistinctCites} distinct bank papers. Use the retrieval bank until this floor is met; only if retrieval returned fewer than ${profile.minDistinctCites} papers may you cite every retrieved paper.`,
 		"Cite ONLY papers from the conversation literature retrieval / research API bank. Do not invent authors, years, titles, or DOIs.",
 		"Every cited sentence must paraphrase or synthesize the matching bank abstract/evidence card — no decorative cites.",
 		"Write from the bank — do not pad References with uncited entries. Every References entry must appear as an in-text citation.",
-		`References: list exactly the bank papers cited in the body (≥${profile.minDistinctCites} unless the bank is smaller); format as Author (Year). Title. [Source](url).`,
+		`References: list exactly the bank papers cited in the body (≥${profile.minDistinctCites} unless the bank is smaller); format entries according to ${label}.`,
 		"Preserve section headings, arguments, tables, charts, and approximate length.",
 		"Use bold-only section titles — never hash (#) headings or horizontal rules.",
 		"Return the full revised document in Markdown with no meta-commentary.",
-	].join(" ");
+	].join("\n");
 }
 
 export function isIntegratedResearchPrompt(text: string): boolean {

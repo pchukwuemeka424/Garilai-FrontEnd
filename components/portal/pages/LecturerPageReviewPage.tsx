@@ -3,25 +3,33 @@
 import Link from "next/link";
 import {
   useEffect,
+  useMemo,
   useState,
   type ReactNode,
 } from "react";
 import { useParams } from "next/navigation";
 import {
+  AlertTriangle,
   ArrowLeft,
-  Award,
-  Bot,
-  Check,
-  FileText,
+  Brain,
+  CircleCheck,
+  ClipboardList,
+  Highlighter,
   Loader2,
+  MessageSquarePlus,
   Paperclip,
   PenLine,
   RotateCcw,
+  Save,
+  ScanSearch,
+  ShieldCheck,
   Sparkles,
+  WandSparkles,
   X,
 } from "lucide-react";
 import { Button } from "@/components/portal/ui/button";
 import { Input } from "@/components/portal/ui/input";
+import { Badge } from "@/components/portal/ui/badge";
 import { ConfirmModal } from "@/components/portal/ui/confirm-modal";
 import { LoadingPage } from "@/components/portal/feedback/loading-page";
 import {
@@ -38,15 +46,29 @@ import {
 import { apiFetch } from "@/lib/portal-api";
 import {
   computeAreaScores,
+  hasReviewHighlightQuotes,
   mergeHighlightQuotes,
   pickFallbackHighlightQuotes,
-  stripReviewMarks,
+  quotesFromFactCheckClaims,
   type AreaScores,
   type ReviewTextHighlights,
 } from "@/lib/portal/apply-highlights";
+import {
+  analyzeDocumentClaimsAndCitations,
+  type FactCheckAuditReport,
+} from "@/lib/portal/fact-check-citations";
+import {
+  buildSectionReviewNotes,
+  formatSectionReviewRemarks,
+} from "@/lib/portal/section-review-remarks";
 import { isSinglePageProjectType } from "@/lib/portal/project-types";
 import { AssignmentBriefPanel } from "@/components/portal/features/assignment/assignment-brief-panel";
 import type { AssignmentBriefView } from "@/components/portal/features/assignment/assignment-brief-panel";
+import { ReviewTrailPanel } from "@/components/portal/features/review/review-trail-panel";
+import {
+  isAwaitingNewReview,
+  type ReviewTrailEvent,
+} from "@/lib/portal/review-trail";
 import { Select } from "@/components/portal/ui/select";
 import { cn } from "@/lib/portal/cn";
 
@@ -65,6 +87,7 @@ type PageDetail = {
   reviewRemark?: string;
   reviewAnnotatedHtml?: string;
   reviewedAt?: string;
+  reviewTrail?: ReviewTrailEvent[];
   aiCorrectionFindings?: AiReportData["correctionFindings"];
   aiCorrectionSummary?: string;
   aiCorrectionChecks?: AiReportData["correctionChecks"];
@@ -89,6 +112,8 @@ type PageAiSummary = AiReportData & {
   model?: string;
   highlightQuotes?: ReviewTextHighlights;
   areaScores?: AreaScores;
+  factCheckAudit?: FactCheckAuditReport;
+  aiReviewedAt?: string | null;
 };
 
 type PagePayload = {
@@ -133,30 +158,56 @@ function reviewStatus(status?: string) {
   return { label: "Not reviewed", tone: "mid" as const };
 }
 
-function formatAiIntoRemark(summary: PageAiSummary) {
-  if (summary.markingSkipped && summary.remarksSummary?.trim()) {
-    return summary.remarksSummary.trim();
+function formatAiIntoRemark(
+  summary: PageAiSummary,
+  sourceHtml?: string,
+): string {
+  let overall =
+    summary.remarksSummary?.trim() ||
+    (summary.markingSkipped
+      ? summary.assignmentGate?.reason?.trim()
+      : "") ||
+    summary.reviewerReport?.trim() ||
+    summary.correctionSummary?.trim() ||
+    [summary.executiveSummary, summary.supervisorRecommendation]
+      .filter(Boolean)
+      .join("\n\n");
+  const sectionIdx = overall.indexOf("Section-by-section review");
+  if (sectionIdx >= 0) {
+    overall = overall.slice(0, sectionIdx).trim();
   }
-  if (summary.markingSkipped && summary.assignmentGate?.reason?.trim()) {
-    return summary.assignmentGate.reason.trim();
-  }
-  if (summary.reviewerReport?.trim()) {
-    return summary.reviewerReport.trim();
-  }
-  if (summary.correctionSummary?.trim()) {
-    return summary.correctionSummary.trim();
-  }
-  if (summary.remarksSummary?.trim()) {
-    return summary.remarksSummary.trim();
-  }
-  const lines: string[] = [];
-  if (summary.executiveSummary) {
-    lines.push(summary.executiveSummary);
-  }
-  if (summary.supervisorRecommendation) {
-    lines.push(summary.supervisorRecommendation);
-  }
-  return lines.join("\n\n");
+  const section = buildClientSectionRemarks(summary, sourceHtml);
+  return [overall, section].filter(Boolean).join("\n\n");
+}
+
+function buildClientSectionRemarks(
+  summary: PageAiSummary,
+  sourceHtml?: string,
+): string {
+  const html = sourceHtml || "";
+  if (!html.trim() && !summary.highlightQuotes) return "";
+  const quotes = mergeHighlightQuotes(
+    summary.highlightQuotes,
+    mergeHighlightQuotes(
+      quotesFromFactCheckClaims(summary.factCheckAudit?.claims),
+      pickFallbackHighlightQuotes(
+        html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim(),
+      ),
+    ),
+  );
+  const missing = (summary.requirementChecks || [])
+    .filter((c) => !c.met)
+    .map((c) => c.item);
+  return formatSectionReviewRemarks(
+    buildSectionReviewNotes({
+      htmlOrText: html,
+      quotes,
+      factCheck: summary.factCheckAudit,
+      missingRequirements: missing,
+      strengths: summary.strengths,
+      weaknesses: summary.weaknesses,
+    }),
+  );
 }
 
 function countWords(html: string) {
@@ -200,16 +251,7 @@ function ReviewModal({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, escapeDisabled, onClose]);
-
-  useEffect(() => {
-    if (!open) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [open]);
+  }, [open, onClose, escapeDisabled]);
 
   if (!open) return null;
 
@@ -220,11 +262,10 @@ function ReviewModal({
       aria-modal="true"
       aria-labelledby={labelledBy}
     >
-      <button
-        type="button"
+      <div
         className="portal-review-modal-scrim"
-        aria-label="Close dialog"
         onClick={onClose}
+        aria-hidden="true"
       />
       <div
         className={cn(
@@ -237,11 +278,9 @@ function ReviewModal({
         <div className="portal-review-modal-head">
           <div className="portal-review-modal-head-main">
             {icon ? (
-              <span className="portal-review-modal-icon" aria-hidden>
-                {icon}
-              </span>
+              <span className="portal-review-modal-icon">{icon}</span>
             ) : null}
-            <div className="min-w-0">
+            <div>
               {kicker ? (
                 <p className="portal-review-modal-kicker">{kicker}</p>
               ) : null}
@@ -292,7 +331,6 @@ export default function SupervisorPageReviewPage() {
   const [busy, setBusy] = useState(false);
   const [scoreBusy, setScoreBusy] = useState(false);
   const [scoreInput, setScoreInput] = useState("");
-  const [scoreNote, setScoreNote] = useState("");
   const [criterionInputs, setCriterionInputs] = useState<
     Record<string, string>
   >({});
@@ -302,12 +340,11 @@ export default function SupervisorPageReviewPage() {
   const [aiBusy, setAiBusy] = useState(false);
   const [briefModalOpen, setBriefModalOpen] = useState(false);
   const [aiModalOpen, setAiModalOpen] = useState(false);
-  const [scoreModalOpen, setScoreModalOpen] = useState(false);
   const [attachModalOpen, setAttachModalOpen] = useState(false);
   const [remarkModalOpen, setRemarkModalOpen] = useState(false);
+  const [factCheckModalOpen, setFactCheckModalOpen] = useState(false);
   const [confirmAction, setConfirmAction] = useState<PendingConfirm>(null);
   const [aiSummary, setAiSummary] = useState<PageAiSummary | null>(null);
-  const [annotatorKey] = useState(0);
   const [highlightToken, setHighlightToken] = useState(0);
   const [highlightQuotes, setHighlightQuotes] =
     useState<ReviewTextHighlights | null>(null);
@@ -330,31 +367,13 @@ export default function SupervisorPageReviewPage() {
         )) as PagePayload;
         if (cancelled) return;
         setData(payload);
-        setRemark(payload.page.reviewRemark || "");
         setScoreInput(
           typeof payload.project.score === "number"
             ? String(payload.project.score)
             : "",
         );
-        setScoreNote(payload.project.scoreNote || "");
         const criteria = payload.project.assignmentBrief?.rubric || [];
         const existing = payload.project.criterionScores || [];
-        const inputs: Record<string, string> = {};
-        for (const row of criteria) {
-          const found = existing.find((c) => c.name === row.name);
-          inputs[row.name] =
-            found && typeof found.score === "number" ? String(found.score) : "";
-        }
-        setCriterionInputs(inputs);
-        // Show plain content on load — AI highlights apply only after "AI review".
-        const initialHtml = stripReviewMarks(
-          payload.page.reviewAnnotatedHtml || payload.page.content || "",
-        );
-        setAnnotatedHtml(initialHtml);
-
-        const pageFindings = payload.page.aiCorrectionFindings;
-        const pageSummary = payload.page.aiCorrectionSummary;
-        const pageChecks = payload.page.aiCorrectionChecks;
         const snapshot = payload.project.aiReviewSnapshot as
           | (PageAiSummary & { pageId?: string })
           | null
@@ -364,80 +383,84 @@ export default function SupervisorPageReviewPage() {
           typeof snapshot === "object" &&
           String(snapshot.pageId || "") === String(payload.page._id)
             ? snapshot
-            : null;
+            : snapshot && typeof snapshot === "object"
+              ? snapshot
+              : null;
+        const snapshotCriteria = snapshotForPage?.criterionScores || [];
 
+        const inputs: Record<string, string> = {};
+        for (const row of criteria) {
+          const found =
+            existing.find((c) => c.name === row.name) ||
+            snapshotCriteria.find((c) => c.name === row.name);
+          inputs[row.name] =
+            found && typeof found.score === "number" ? String(Math.round(found.score)) : "";
+        }
+        setCriterionInputs(inputs);
         const isAssignmentProject = isSinglePageProjectType(
           payload.project.projectType,
         );
 
-        if (pageFindings?.length || pageSummary || pageChecks?.length) {
-          const fromPage: PageAiSummary = {
-            ...(snapshotForPage || {}),
+        const pageFindings = payload.page.aiCorrectionFindings;
+        const pageSummary = payload.page.aiCorrectionSummary;
+        const pageChecks = payload.page.aiCorrectionChecks;
+
+        const activeSnapshot =
+          snapshotForPage ||
+          (isAssignmentProject && snapshot && typeof snapshot === "object"
+            ? snapshot
+            : null);
+
+        if (activeSnapshot) {
+          setAiSummary(activeSnapshot);
+          if (activeSnapshot.areaScores) {
+            setAreaScores(activeSnapshot.areaScores);
+          }
+          if (activeSnapshot.highlightQuotes) {
+            setHighlightQuotes(activeSnapshot.highlightQuotes);
+            setHighlightToken((t) => t + 1);
+          }
+        } else if (pageSummary || (pageFindings && pageFindings.length > 0)) {
+          setAiSummary({
             correctionFindings: pageFindings,
             correctionSummary: pageSummary,
-            reviewerReport: pageSummary || snapshotForPage?.reviewerReport,
-            // Do not restore Correction check UI
-            correctionChecks: undefined,
-            addressedCount: undefined,
-            partialCount: undefined,
-            outstandingCount: undefined,
-            priorFindingsCount: undefined,
-            remarksSummary: pageSummary || snapshotForPage?.remarksSummary,
-            hideTopicAlignment: true,
-            topicAlignment: undefined,
-            projectTopic: undefined,
+            correctionChecks: pageChecks,
+            aiReviewedAt: payload.page.aiReviewedAt,
+            model: payload.page.aiReviewModel,
             highlightQuotes: undefined,
-          };
-          setAiSummary(fromPage);
-          if (fromPage.areaScores) setAreaScores(fromPage.areaScores);
-        } else if (snapshotForPage) {
-          // Restore report UI from matching page snapshot only (no highlights).
-          const cleaned: PageAiSummary = isAssignmentProject
-            ? {
-                ...snapshotForPage,
-                hideTopicAlignment: false,
-                correctionChecks: undefined,
-                addressedCount: undefined,
-                partialCount: undefined,
-                outstandingCount: undefined,
-                priorFindingsCount: undefined,
-                highlightQuotes: undefined,
-              }
-            : {
-                ...snapshotForPage,
-                hideTopicAlignment: true,
-                correctionChecks: undefined,
-                addressedCount: undefined,
-                partialCount: undefined,
-                outstandingCount: undefined,
-                priorFindingsCount: undefined,
-                topicAlignment: undefined,
-                projectTopic: undefined,
-                highlightQuotes: undefined,
-              };
-          setAiSummary(cleaned);
-          if (cleaned.areaScores) setAreaScores(cleaned.areaScores);
+          });
         }
 
-        if (isAssignmentProject && !payload.project.assignmentBrief) {
-          try {
-            const list = (await apiFetch(
-              "/api/v1/assignment-briefs",
-            )) as BriefOption[];
-            if (!cancelled) {
-              setMyBriefs(list.filter((b) => b.status === "published"));
-            }
-          } catch {
-            if (!cancelled) setMyBriefs([]);
-          }
-        } else if (!cancelled) {
-          setMyBriefs([]);
+        const awaitingReview = isAwaitingNewReview(payload.page.reviewTrail);
+        const initialHtml = awaitingReview
+          ? payload.page.content || ""
+          : payload.page.reviewAnnotatedHtml || payload.page.content || "";
+        setAnnotatedHtml(initialHtml);
+
+        const scoreVal =
+          typeof payload.project.score === "number"
+            ? payload.project.score
+            : typeof activeSnapshot?.aiSuggestedScore === "number"
+              ? activeSnapshot.aiSuggestedScore
+              : null;
+        setScoreInput(scoreVal != null ? String(scoreVal) : "");
+
+        const snapshotRemarks =
+          (snapshotForPage?.remarksSummary ||
+            (isAssignmentProject && snapshot?.remarksSummary) ||
+            "") as string;
+        if (awaitingReview && !isAssignmentProject) {
+          setRemark("");
+        } else if (payload.page.reviewRemark?.trim()) {
+          setRemark(payload.page.reviewRemark);
+        } else if (snapshotRemarks.trim()) {
+          setRemark(toEditorHtml(snapshotRemarks));
+        } else {
+          setRemark("");
         }
       } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load page");
-          setData(null);
-        }
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : "Could not load page");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -448,11 +471,32 @@ export default function SupervisorPageReviewPage() {
     };
   }, [params.projectId, params.pageId]);
 
+  useEffect(() => {
+    let cancelled = false;
+    async function loadBriefs() {
+      try {
+        const rows = (await apiFetch(
+          "/api/v1/assignment-briefs",
+        )) as BriefOption[];
+        if (cancelled) return;
+        setMyBriefs(Array.isArray(rows) ? rows : []);
+      } catch {
+        if (cancelled) return;
+        setMyBriefs([]);
+      }
+    }
+    void loadBriefs();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const anyModalOpen =
     briefModalOpen ||
     aiModalOpen ||
-    scoreModalOpen ||
     attachModalOpen ||
+    factCheckModalOpen ||
+    remarkModalOpen ||
     Boolean(confirmAction);
 
   useEffect(() => {
@@ -463,6 +507,18 @@ export default function SupervisorPageReviewPage() {
       document.body.style.overflow = prev;
     };
   }, [anyModalOpen]);
+
+  // Live fact-check and citation audit calculation
+  const factCheckAudit: FactCheckAuditReport = useMemo(() => {
+    if (aiSummary?.factCheckAudit) {
+      return aiSummary.factCheckAudit;
+    }
+    const source = annotatedHtml || data?.page.content || "";
+    return analyzeDocumentClaimsAndCitations(
+      source,
+      data?.project.topic || data?.project.title,
+    );
+  }, [aiSummary, annotatedHtml, data?.page.content, data?.project.topic, data?.project.title]);
 
   async function runAiSummary() {
     setAiBusy(true);
@@ -484,8 +540,15 @@ export default function SupervisorPageReviewPage() {
         .replace(/\s+/g, " ")
         .trim();
 
-      const local = pickFallbackHighlightQuotes(plain);
-      const quotes = mergeHighlightQuotes(summary.highlightQuotes, local);
+      const hasValidAiQuotes = hasReviewHighlightQuotes(summary.highlightQuotes);
+
+      const quotes = mergeHighlightQuotes(
+        hasValidAiQuotes ? summary.highlightQuotes : null,
+        mergeHighlightQuotes(
+          quotesFromFactCheckClaims(summary.factCheckAudit?.claims),
+          pickFallbackHighlightQuotes(plain),
+        ),
+      );
 
       setHighlightQuotes(quotes);
       setHighlightToken((t) => t + 1);
@@ -510,23 +573,116 @@ export default function SupervisorPageReviewPage() {
             }
           : prev,
       );
-      // Prefill lecturer remark with the overall AI remarks summary.
-      const remarksBlock = formatAiIntoRemark(summary);
-      if (remarksBlock.trim()) {
-        setRemark(toEditorHtml(remarksBlock));
+
+      // Auto-prefill rubric criterion inputs and score input from AI review assessment
+      const nextCriterionInputs: Record<string, string> = {};
+      if (Array.isArray(summary.criterionScores) && summary.criterionScores.length > 0) {
+        for (const c of summary.criterionScores) {
+          nextCriterionInputs[c.name] = String(Math.round(c.score));
+        }
+        setCriterionInputs(nextCriterionInputs);
       }
+      if (typeof summary.aiSuggestedScore === "number") {
+        setScoreInput(String(summary.aiSuggestedScore));
+      }
+
+      // Prefill lecturer remark with overall AI remarks plus section annotations.
+      const remarksBlock = formatAiIntoRemark(
+        { ...summary, highlightQuotes: quotes },
+        sourceHtml,
+      );
+      const editorRemarks = remarksBlock.trim() ? toEditorHtml(remarksBlock) : "";
+      if (editorRemarks) {
+        setRemark(editorRemarks);
+      }
+
       const isAssignmentRun = data
         ? isSinglePageProjectType(data.project.projectType)
         : false;
+
+      // Automatically persist all changes (score, criteria, remarks, and annotations)
+      // to avoid repetitive clicking of the AI review assignment button.
+      try {
+        if (isAssignmentRun && typeof summary.aiSuggestedScore === "number") {
+          const autoCriterionScores =
+            Array.isArray(summary.criterionScores) && summary.criterionScores.length > 0
+              ? summary.criterionScores.map((c) => ({
+                  name: c.name,
+                  score: Math.round(c.score),
+                  maxMarks: c.maxMarks,
+                }))
+              : undefined;
+
+          const savedPayload = (await apiFetch(
+            `/api/v1/projects/${params.projectId}/score`,
+            {
+              method: "POST",
+              body: JSON.stringify({
+                acceptAiScore: true,
+                remark: stripRemarkHtml(editorRemarks) ? editorRemarks : undefined,
+                annotatedHtml: sourceHtml || undefined,
+                ...(autoCriterionScores ? { criterionScores: autoCriterionScores } : {}),
+              }),
+            },
+          )) as {
+            score?: number | null;
+            scoredAt?: string | null;
+            scoreSource?: string;
+            criterionScores?: CriterionScore[];
+            assignmentBrief?: AssignmentBriefView | null;
+          };
+
+          const savedScore =
+            typeof savedPayload.score === "number"
+              ? savedPayload.score
+              : summary.aiSuggestedScore;
+
+          setData((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  project: {
+                    ...prev.project,
+                    score: savedScore,
+                    scoredAt: savedPayload.scoredAt ?? new Date().toISOString(),
+                    scoreSource: savedPayload.scoreSource ?? "ai_approved",
+                    criterionScores:
+                      savedPayload.criterionScores ??
+                      autoCriterionScores ??
+                      prev.project.criterionScores,
+                    assignmentBrief:
+                      savedPayload.assignmentBrief ?? prev.project.assignmentBrief,
+                  },
+                }
+              : prev,
+          );
+        } else if (editorRemarks || sourceHtml) {
+          // For chapter research pages, auto-save the page review annotation and remark
+          await apiFetch(
+            `/api/v1/projects/${params.projectId}/pages/${params.pageId}/review`,
+            {
+              method: "POST",
+              body: JSON.stringify({
+                action: "remark_only",
+                remark: stripRemarkHtml(editorRemarks) ? editorRemarks : "",
+                annotatedHtml: sourceHtml,
+              }),
+            },
+          ).catch(() => {});
+        }
+      } catch (saveErr) {
+        console.warn("Auto-save after AI review:", saveErr);
+      }
+
       if (isAssignmentRun) {
         setMessage(
           summary.markingSkipped
-            ? `Assignment is out of scope. Marking stopped — remarks prefilled. Recommended mark ${summary.aiSuggestedScore ?? "—"}/${summary.maxScore ?? 100}.`
-            : "AI review ready. Remarks prefilled. Open the report, then approve the mark or enter your own.",
+            ? `Assignment out of scope. Auto-saved marks & remarks (${summary.aiSuggestedScore ?? "—"}/${summary.maxScore ?? 100}).`
+            : `AI review completed & auto-saved! Scored ${summary.aiSuggestedScore ?? "—"}/${summary.maxScore ?? 100} with remarks and rubric breakdown.`,
         );
       } else {
         setMessage(
-          "AI chapter review ready. Reviewer report and remarks prefilled.",
+          "AI chapter review completed and auto-saved to remarks and annotations.",
         );
       }
       setAiModalOpen(true);
@@ -541,9 +697,14 @@ export default function SupervisorPageReviewPage() {
 
   function insertAiIntoRemark() {
     if (!aiSummary) return;
-    const block = toEditorHtml(formatAiIntoRemark(aiSummary));
+    const source =
+      annotatedHtml || data?.page.reviewAnnotatedHtml || data?.page.content || "";
+    const block = toEditorHtml(formatAiIntoRemark(aiSummary, source));
     setRemark((prev) => {
       if (!stripRemarkHtml(prev)) return block;
+      if (stripRemarkHtml(prev).includes("Section-by-section review")) {
+        return block;
+      }
       return `${toEditorHtml(prev)}${block}`;
     });
     setMessage("AI remarks added to the Word editor.");
@@ -591,6 +752,67 @@ export default function SupervisorPageReviewPage() {
     }
   }
 
+  function handleCriterionChange(name: string, value: string) {
+    setCriterionInputs((prev) => {
+      const next = { ...prev, [name]: value };
+      const rubricList = data?.project.assignmentBrief?.rubric || [];
+      let sum = 0;
+      let anyFilled = false;
+      for (const r of rubricList) {
+        const val = next[r.name];
+        if (val != null && val.trim() !== "") {
+          const num = Number(val);
+          if (Number.isFinite(num)) {
+            sum += num;
+            anyFilled = true;
+          }
+        }
+      }
+      if (anyFilled) {
+        const maxScoreVal =
+          typeof data?.project.maxScore === "number"
+            ? data.project.maxScore
+            : typeof data?.project.assignmentBrief?.maxScore === "number"
+              ? data.project.assignmentBrief.maxScore
+              : 100;
+        setScoreInput(String(Math.min(sum, maxScoreVal)));
+      }
+      return next;
+    });
+  }
+
+  function insertFactCheckClaimsIntoRemark() {
+    const flagged = factCheckAudit.claims.filter(
+      (c) =>
+        c.status === "needs_citation" ||
+        c.status === "wrong_claim" ||
+        c.status === "mismatched_citation" ||
+        Boolean(c.suggestedAction),
+    );
+    if (flagged.length === 0) {
+      setMessage("No uncited or flagged claims found in the fact-check audit.");
+      return;
+    }
+    const bullets = flagged
+      .map(
+        (c) =>
+          `<li><strong>“${c.sentence.slice(0, 120)}${c.sentence.length > 120 ? "…" : ""}”</strong> — ${c.explanation || ""}${c.suggestedAction ? ` (Action: ${c.suggestedAction})` : ""}</li>`,
+      )
+      .join("");
+    const snippet = `<h3>Scholarly Integrity & Citation Issues</h3><ul>${bullets}</ul>`;
+    setRemark((prev) => (prev ? `${prev}<br/><br/>${snippet}` : snippet));
+    setMessage("Inserted citation and claim audit findings into remarks.");
+    setFactCheckModalOpen(false);
+    setRemarkModalOpen(true);
+  }
+
+  function autoAnnotateFactCheckClaims() {
+    const quotes = quotesFromFactCheckClaims(factCheckAudit.claims);
+    setHighlightQuotes(quotes);
+    setHighlightToken((c) => c + 1);
+    setMessage("Fact-check claim highlights applied to document editor.");
+  }
+
   async function saveScore(opts?: { acceptAi?: boolean }) {
     const maxScore =
       typeof data?.project.maxScore === "number"
@@ -626,7 +848,23 @@ export default function SupervisorPageReviewPage() {
     let criterionScores:
       | Array<{ name: string; score: number; maxMarks: number }>
       | undefined;
-    if (!acceptAi && rubric.length > 0) {
+    if (acceptAi) {
+      if (
+        Array.isArray(aiSummary?.criterionScores) &&
+        aiSummary.criterionScores.length > 0
+      ) {
+        criterionScores = aiSummary.criterionScores.map((c) => ({
+          name: c.name,
+          score: Math.round(c.score),
+          maxMarks: c.maxMarks,
+        }));
+        const nextInputs: Record<string, string> = {};
+        for (const c of aiSummary.criterionScores) {
+          nextInputs[c.name] = String(Math.round(c.score));
+        }
+        setCriterionInputs(nextInputs);
+      }
+    } else if (rubric.length > 0) {
       criterionScores = [];
       for (const row of rubric) {
         const raw = criterionInputs[row.name] ?? "";
@@ -661,7 +899,8 @@ export default function SupervisorPageReviewPage() {
             ...(acceptAi
               ? { acceptAiScore: true }
               : { score: parsed }),
-            scoreNote: scoreNote.trim() || undefined,
+            remark: stripRemarkHtml(remark) ? remark : undefined,
+            annotatedHtml: annotatedHtml || undefined,
             ...(criterionScores ? { criterionScores } : {}),
           }),
         },
@@ -682,7 +921,6 @@ export default function SupervisorPageReviewPage() {
               project: {
                 ...prev.project,
                 score: savedScore,
-                scoreNote: updated.scoreNote ?? scoreNote.trim(),
                 scoredAt: updated.scoredAt ?? new Date().toISOString(),
                 scoreSource:
                   updated.scoreSource ??
@@ -698,14 +936,12 @@ export default function SupervisorPageReviewPage() {
           : prev,
       );
       setScoreInput(String(savedScore));
-      setScoreNote(updated.scoreNote ?? scoreNote.trim());
       setMessage(
         acceptAi
           ? `AI mark approved: ${savedScore}/${maxScore}. Student notified.`
           : `Manual score saved: ${savedScore}/${maxScore}. Student notified.`,
       );
       setConfirmAction(null);
-      setScoreModalOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save score");
     } finally {
@@ -818,14 +1054,13 @@ export default function SupervisorPageReviewPage() {
       : typeof project.assignmentBrief?.maxScore === "number"
         ? project.assignmentBrief.maxScore
         : 100;
-  const rubric = project.assignmentBrief?.rubric || [];
   const status = reviewStatus(page.reviewStatus);
-  const pageList = [...(data.pages || [])].sort(
-    (a, b) => (a.order ?? 0) - (b.order ?? 0),
-  );
   const words = countWords(annotatedHtml || page.content || "");
+  const latestTrail = page.reviewTrail?.[page.reviewTrail.length - 1];
+  const latestTrailKey = `${latestTrail?.type || "none"}-${latestTrail?.at || ""}`;
   const remarkPreview = stripRemarkHtml(remark);
   const remarkWords = countWordsFromHtml(remark);
+
   const suggestedScore =
     typeof project.aiSuggestedScore === "number"
       ? project.aiSuggestedScore
@@ -837,9 +1072,10 @@ export default function SupervisorPageReviewPage() {
   const confirmCopy =
     confirmAction === "approve"
       ? {
-          title: "Approve this submission?",
-          description: `${project.student?.name || "The student"} will be notified that ${isAssignment ? "the assignment" : "this page"} is approved.${stripRemarkHtml(remark) ? " Your remarks and highlights will be shared." : ""}`,
-          confirmLabel: "Approve and notify",
+          title: "Approve this assignment?",
+          description:
+            "This confirms the student's work meets requirements. You can still leave remarks.",
+          confirmLabel: "Approve submission",
           loadingLabel: "Approving…",
           variant: "primary" as const,
         }
@@ -854,7 +1090,7 @@ export default function SupervisorPageReviewPage() {
           }
         : {
             title: "Approve the AI mark?",
-            description: `Apply the suggested mark of ${suggestedScore ?? "—"}\/${maxScore}. The student will be notified. You can still change this later.`,
+            description: `Apply the suggested mark of ${suggestedScore ?? "—"}/${maxScore}. The student will be notified. You can still change this later.`,
             confirmLabel: "Approve AI mark",
             loadingLabel: "Saving…",
             variant: "primary" as const,
@@ -867,127 +1103,230 @@ export default function SupervisorPageReviewPage() {
         {backLabel}
       </Link>
 
-      <header className="portal-students-hero">
-        <div className="min-w-0">
-          <p className="portal-students-kicker">
-            {isAssignment ? "Assignment review" : "Chapter review"}
-          </p>
-          <h1 className="portal-students-title">{page.title}</h1>
-          <p className="portal-students-lead">
-            {project.student?.name || "Student"}
-            {project.student?.email ? ` · ${project.student.email}` : ""}
-            {" · "}
-            {project.title}
-          </p>
-          <div className="portal-review-meta">
-            <span className={cn("portal-students-status", `is-${status.tone}`)}>
-              {status.label}
-            </span>
-            {isAssignment && typeof project.score === "number" ? (
-              <span className="portal-students-status is-ok">
-                Score {project.score}/{maxScore}
-                {project.scoreSource === "ai_approved" ? " · AI" : ""}
-              </span>
-            ) : isAssignment ? (
-              <span className="portal-students-status is-mid">Not scored</span>
-            ) : null}
-            {isAssignment &&
-            typeof project.aiGeneratedPercent === "number" ? (
-              <span
-                className={cn(
-                  "portal-students-status",
-                  project.aiGeneratedPercent >= 45 ? "is-review" : "is-mid",
-                )}
-              >
-                AI content {project.aiGeneratedPercent}%
-              </span>
-            ) : null}
-            {aiSummary?.assignmentStatus ? (
-              <span
-                className={cn(
-                  "portal-students-status",
-                  aiSummary.assignmentStatus === "FULL_MATCH"
-                    ? "is-ok"
-                    : aiSummary.assignmentStatus === "PARTIAL_MATCH"
-                      ? "is-topic"
-                      : "is-risk",
-                )}
-              >
-                {aiSummary.assignmentStatus.replace(/_/g, " ")}
-              </span>
+      <header
+        className={cn(
+          "portal-students-hero",
+          isAssignment && "is-scoring",
+        )}
+      >
+        <div className="portal-review-hero-top">
+          <div className="min-w-0">
+            <p className="portal-students-kicker">
+              {isAssignment ? "Assignment review" : "Chapter review"}
+            </p>
+            <h1 className="portal-students-title">{page.title}</h1>
+            <p className="portal-students-lead">
+              {project.student?.name || "Student"}
+              {project.student?.email ? ` · ${project.student.email}` : ""}
+              {" · "}
+              {project.title}
+            </p>
+            {!isAssignment ? (
+              <div className="portal-review-meta">
+                <span className={cn("portal-students-status", `is-${status.tone}`)}>
+                  {status.label}
+                </span>
+                <span
+                  className={cn(
+                    "portal-students-status",
+                    factCheckAudit.integrityScore >= 80
+                      ? "is-ok"
+                      : factCheckAudit.integrityScore >= 50
+                        ? "is-topic"
+                        : "is-risk",
+                  )}
+                >
+                  Fact-Check {factCheckAudit.integrityScore}%
+                </span>
+              </div>
             ) : null}
           </div>
-        </div>
-        <div className="portal-students-hero-actions">
-          {isAssignment && project.assignmentBrief ? (
+          <div className="portal-students-hero-actions">
+            {isAssignment && project.assignmentBrief ? (
+              <Button
+                type="button"
+                variant="info"
+                onClick={() => setBriefModalOpen(true)}
+              >
+                <ClipboardList className="size-4" />
+                Brief
+              </Button>
+            ) : null}
+            {isAssignment && !project.assignmentBrief ? (
+              <Button
+                type="button"
+                variant="warning"
+                onClick={() => setAttachModalOpen(true)}
+              >
+                <Paperclip className="size-4" />
+                Attach brief
+              </Button>
+            ) : null}
             <Button
               type="button"
-              variant="outline"
-              onClick={() => setBriefModalOpen(true)}
+              variant="ai"
+              disabled={!aiSummary}
+              onClick={() => setAiModalOpen(true)}
             >
-              <FileText className="size-4" />
-              Brief
+              <Brain className="size-4" />
+              {aiReportLabel}
             </Button>
-          ) : null}
-          {isAssignment && !project.assignmentBrief ? (
             <Button
-              type="button"
-              variant="outline"
-              onClick={() => setAttachModalOpen(true)}
+              variant="ai"
+              disabled={aiBusy || !hasContent}
+              onClick={() => void runAiSummary()}
             >
-              <Paperclip className="size-4" />
-              Attach brief
-            </Button>
-          ) : null}
-          <Button
-            type="button"
-            variant="outline"
-            disabled={!aiSummary}
-            onClick={() => setAiModalOpen(true)}
-          >
-            <Sparkles className="size-4" />
-            {aiReportLabel}
-          </Button>
-          {isAssignment ? (
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setScoreModalOpen(true)}
-            >
-              <Award className="size-4" />
-              {typeof project.score === "number" ? "Update score" : "Set score"}
-            </Button>
-          ) : null}
-          <Button
-            disabled={aiBusy || !hasContent}
-            onClick={() => void runAiSummary()}
-          >
-            {aiBusy ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Bot className="size-4" />
-            )}
-            {aiBusy ? "Analysing…" : aiReviewLabel}
-          </Button>
-        </div>
-      </header>
-
-      {pageList.length > 1 ? (
-        <nav className="portal-review-pages" aria-label="Project pages">
-          {pageList.map((item, index) => (
-            <Link
-              key={item._id}
-              href={`/supervision/projects/${project._id}/pages/${item._id}`}
-              className={cn(
-                "portal-review-page-link",
-                item._id === page._id && "is-active",
+              {aiBusy ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <WandSparkles className="size-4" />
               )}
-            >
-              {index + 1}. {item.title}
-            </Link>
-          ))}
-        </nav>
-      ) : null}
+              {aiBusy ? "Analysing…" : aiReviewLabel}
+            </Button>
+          </div>
+        </div>
+        {isAssignment ? (
+          <div className="portal-review-scorebar">
+            <div className="portal-review-scorebar-top">
+              <div className="portal-review-scorebar-main">
+                <div className="portal-review-scorebar-mark">
+                  <span>Score</span>
+                  <div className="portal-review-scorebar-input">
+                    <Input
+                      type="number"
+                      min={0}
+                      max={maxScore}
+                      step={1}
+                      inputMode="numeric"
+                      placeholder="0"
+                      aria-label={`Manual score out of ${maxScore}`}
+                      value={scoreInput}
+                      onChange={(e) => setScoreInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          void saveScore({ acceptAi: false });
+                        }
+                      }}
+                    />
+                    <span className="portal-review-scorebar-max">/{maxScore}</span>
+                  </div>
+                </div>
+                <div className="portal-review-scorebar-actions">
+                  <Button
+                    variant="success"
+                    disabled={scoreBusy || scoreInput.trim() === ""}
+                    onClick={() => void saveScore({ acceptAi: false })}
+                  >
+                    {scoreBusy ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <Save className="size-4" />
+                    )}
+                    {scoreBusy ? "Saving…" : "Save mark"}
+                  </Button>
+                  {suggestedScore != null ? (
+                    <Button
+                      type="button"
+                      variant="ai"
+                      disabled={scoreBusy}
+                      onClick={() => void saveScore({ acceptAi: true })}
+                    >
+                      <Sparkles className="size-4" />
+                      Apply AI {suggestedScore}
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+              <div className="portal-review-scorebar-meta">
+                {typeof project.score === "number" ? (
+                  <span className="portal-students-status is-ok">
+                    Saved {project.score}/{maxScore}
+                    {project.scoreSource === "ai_approved" ? " · AI" : ""}
+                  </span>
+                ) : (
+                  <span className="portal-students-status is-mid">Not scored</span>
+                )}
+                {typeof project.assignmentBrief?.wordCountMin === "number" ? (
+                  <span
+                    className={cn(
+                      "portal-students-status",
+                      words >= project.assignmentBrief.wordCountMin
+                        ? "is-ok"
+                        : "is-risk",
+                    )}
+                    title={`Submission word count vs requirement (${words}/${project.assignmentBrief.wordCountMin} words)`}
+                  >
+                    {words >= project.assignmentBrief.wordCountMin
+                      ? `Target met (${words.toLocaleString()}/${project.assignmentBrief.wordCountMin}w)`
+                      : `Under min (${words.toLocaleString()}/${project.assignmentBrief.wordCountMin}w)`}
+                  </span>
+                ) : (
+                  <span className="portal-students-status is-mid">
+                    {words.toLocaleString()} words
+                  </span>
+                )}
+                {project.assignmentBrief?.dueAt ? (() => {
+                  const dueDate = new Date(project.assignmentBrief.dueAt);
+                  const isValid = !Number.isNaN(dueDate.getTime());
+                  if (!isValid) return null;
+                  const isOverdue = dueDate.getTime() < Date.now();
+                  return (
+                    <span
+                      className={cn(
+                        "portal-students-status",
+                        isOverdue ? "is-review" : "is-ok",
+                      )}
+                      title={`Due: ${dueDate.toLocaleString()}`}
+                    >
+                      Due {dueDate.toLocaleDateString(undefined, { month: "short", day: "numeric" })} · {isOverdue ? "Overdue" : "On time"}
+                    </span>
+                  );
+                })() : null}
+                {typeof project.aiGeneratedPercent === "number" ? (
+                  <span
+                    className={cn(
+                      "portal-students-status",
+                      project.aiGeneratedPercent >= 45 ? "is-review" : "is-mid",
+                    )}
+                  >
+                    AI content {project.aiGeneratedPercent}%
+                  </span>
+                ) : null}
+                {aiSummary?.assignmentStatus ? (
+                  <span
+                    className={cn(
+                      "portal-students-status",
+                      aiSummary.assignmentStatus === "FULL_MATCH"
+                        ? "is-ok"
+                        : aiSummary.assignmentStatus === "PARTIAL_MATCH"
+                          ? "is-topic"
+                          : "is-risk",
+                    )}
+                  >
+                    {aiSummary.assignmentStatus.replace(/_/g, " ")}
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => setFactCheckModalOpen(true)}
+                  className={cn(
+                    "portal-students-status cursor-pointer hover:opacity-80 transition",
+                    factCheckAudit.integrityScore >= 80
+                      ? "is-ok"
+                      : factCheckAudit.integrityScore >= 50
+                        ? "is-topic"
+                        : "is-risk",
+                  )}
+                  title="Click to view detailed citation and claim fact-check audit"
+                >
+                  Fact-Check {factCheckAudit.integrityScore}%
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </header>
 
       {error ? (
         <p className="portal-students-error portal-review-toast" role="alert">
@@ -1024,54 +1363,49 @@ export default function SupervisorPageReviewPage() {
               <p>
                 {words.toLocaleString()} {words === 1 ? "word" : "words"}
                 {" · "}
-                Select text to highlight, then send a decision.
+                Select text to annotate. Headers and references are protected from over-marking.
               </p>
             </div>
-            {aiSummary ? (
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => setAiModalOpen(true)}
-              >
-                <Sparkles className="size-3.5" />
-                View AI report
-              </Button>
-            ) : null}
+            <button
+              type="button"
+              onClick={() => setFactCheckModalOpen(true)}
+              className={cn(
+                "portal-review-audit-btn",
+                factCheckAudit.flaggedClaimsCount > 0
+                  ? "is-warn"
+                  : factCheckAudit.integrityScore >= 80
+                    ? "is-ok"
+                    : "is-risk",
+              )}
+              title="View detailed claims and citation audit"
+            >
+              <ShieldCheck className="size-3.5" />
+              <span>
+                {factCheckAudit.flaggedClaimsCount > 0
+                  ? `${factCheckAudit.flaggedClaimsCount} claim flags`
+                  : `Fact-check ${factCheckAudit.integrityScore}%`}
+              </span>
+              <ScanSearch className="size-3.5 opacity-70" />
+            </button>
           </div>
-          {aiSummary ? (
-            <div className="portal-review-ai-strip">
-              <div className="min-w-0">
-                <p className="portal-review-ai-strip-kicker">AI review ready</p>
-                <p>
-                  {aiSummary.markingSkipped
-                    ? "Marking stopped — submission is out of scope."
-                    : isAssignment
-                      ? "Gatekeeper, marker, and moderator have finished."
-                      : "Chapter review is ready for your decision."}
-                  {suggestedScore != null
-                    ? ` Recommended ${suggestedScore}/${maxScore}.`
-                    : ""}
-                </p>
-              </div>
-              <Button
-                type="button"
-                size="sm"
-                onClick={() => setAiModalOpen(true)}
-              >
-                Open report
-              </Button>
-            </div>
-          ) : null}
+
           {hasContent || annotatedHtml.trim() ? (
             <ReviewAnnotator
-              key={`${page._id}-${annotatorKey}`}
-              contentKey={`${page._id}-${annotatorKey}`}
+              key={`${page._id}-${latestTrailKey}`}
+              contentKey={`${page._id}-${latestTrailKey}`}
               value={annotatedHtml || page.content || ""}
               onChange={setAnnotatedHtml}
               highlightToken={highlightToken}
               highlightQuotes={highlightQuotes}
               areaScores={areaScores}
+              footerMeta={{
+                wordCount: words,
+                lastSaved: page.reviewedAt || null,
+                version: latestTrail?.versionNumber
+                  ? `v${latestTrail.versionNumber}`
+                  : "v1",
+                authorName: project.student?.name || "Student",
+              }}
             />
           ) : (
             <div className="portal-students-empty">
@@ -1082,541 +1416,438 @@ export default function SupervisorPageReviewPage() {
         </section>
 
         <aside className="portal-review-aside">
-          <section className="portal-review-card">
-            <div className="portal-review-card-head">
-              <h2>Snapshot</h2>
-              <p>Status at a glance before you decide.</p>
-            </div>
-            <div className="portal-review-stat-grid">
-              <div className="portal-review-stat">
-                <span>Decision</span>
-                <strong>{status.label}</strong>
-              </div>
-              {isAssignment ? (
-                <div className="portal-review-stat">
-                  <span>Score</span>
-                  <strong>
-                    {typeof project.score === "number"
-                      ? `${project.score}/${maxScore}`
-                      : "—"}
-                  </strong>
-                </div>
-              ) : (
-                <div className="portal-review-stat">
-                  <span>Words</span>
-                  <strong>{words.toLocaleString()}</strong>
-                </div>
-              )}
-              <div className="portal-review-stat">
-                <span>AI content</span>
-                <strong>
-                  {typeof project.aiGeneratedPercent === "number"
-                    ? `${project.aiGeneratedPercent}%`
-                    : "—"}
-                </strong>
-              </div>
-            </div>
-            {page.reviewedAt ? (
-              <p className="portal-review-hint">
-                Last reviewed {new Date(page.reviewedAt).toLocaleString()}
-              </p>
-            ) : (
-              <p className="portal-review-hint">No decision recorded yet.</p>
-            )}
-          </section>
+          {!isAssignment ? (
+            <ReviewTrailPanel
+              trail={page.reviewTrail}
+              currentWordCount={words}
+            />
+          ) : null}
 
           <section className="portal-review-card">
-            <button
-              type="button"
-              className="portal-review-card-head is-button"
-              onClick={() => setRemarkModalOpen(true)}
-            >
-              <div>
-                <h2>Decision</h2>
-                <p>Approve the page or request a rewrite.</p>
-              </div>
-              <PenLine className="size-4 shrink-0 text-foreground/40" />
-            </button>
-            <div className="portal-review-field">
-              <span>Remarks for the student</span>
               <button
                 type="button"
-                className="portal-review-remark-trigger"
+                className="portal-review-card-head is-button"
                 onClick={() => setRemarkModalOpen(true)}
               >
-                {remarkPreview ? (
-                  <span className="portal-review-remark-preview">
-                    {remarkPreview}
-                  </span>
-                ) : (
-                  <span className="portal-review-remark-placeholder">
-                    Click to open the Word editor — tell the student what to
-                    improve…
-                  </span>
-                )}
+                <div>
+                  <h2>{isAssignment ? "Remarks" : "Decision"}</h2>
+                  <p>
+                    {isAssignment
+                      ? "Section notes on Strength, Weakness, Needs citation, and Wrong claim."
+                      : "Approve the page or request a rewrite."}
+                  </p>
+                </div>
+                <span className="portal-review-mark is-citation h-7 px-2.5 text-[11px]">
+                  <PenLine className="size-3" />
+                  Word editor
+                </span>
               </button>
-              <em>
-                {remarkWords.toLocaleString()}{" "}
-                {remarkWords === 1 ? "word" : "words"} · Required when
-                requesting a rewrite. Highlights are shared with the student.
-              </em>
+              <div className="portal-review-field">
+                <span>Remarks for the student</span>
+                <button
+                  type="button"
+                  className="portal-review-remark-trigger"
+                  onClick={() => setRemarkModalOpen(true)}
+                >
+                  {remarkPreview ? (
+                    <span className="portal-review-remark-preview">
+                      {remarkPreview}
+                    </span>
+                  ) : (
+                    <span className="portal-review-remark-placeholder">
+                      {isAssignment
+                        ? "Run AI review assignment to prefill Strength, Weakness, Needs citation, and Wrong claim notes…"
+                        : "Click to open the Word editor — tell the student what to improve…"}
+                    </span>
+                  )}
+                </button>
+                <em>
+                  {remarkWords.toLocaleString()}{" "}
+                  {remarkWords === 1 ? "word" : "words"}
+                  {isAssignment
+                    ? " · Sent with the mark. Yellow = Weakness · Orange = Needs citation · Red = Wrong claim · Green = Strength."
+                    : " · Required when requesting a rewrite. Highlights are shared with the student."}
+                </em>
+              </div>
+              {aiSummary ? (
+                <Button
+                  type="button"
+                  variant="ai"
+                  size="sm"
+                  onClick={insertAiIntoRemark}
+                >
+                  <Sparkles className="size-3.5" />
+                  Insert AI remarks
+                </Button>
+              ) : null}
+              {!isAssignment ? (
+                <div className="portal-review-actions">
+                  <Button
+                    variant="success"
+                    disabled={busy}
+                    onClick={() => setConfirmAction("approve")}
+                  >
+                    <CircleCheck className="size-4" />
+                    Approve
+                  </Button>
+                  <Button
+                    variant="warning"
+                    disabled={busy}
+                    onClick={requestRewrite}
+                  >
+                    <RotateCcw className="size-4" />
+                    Request rewrite
+                  </Button>
+                </div>
+              ) : null}
+            </section>
+
+        </aside>
+      </div>
+
+      {/* Fact-Check and Citation Verification Modal */}
+      <ReviewModal
+        open={factCheckModalOpen}
+        labelledBy="factcheck-modal-title"
+        title="Fact-Check & Citation Audit"
+        subtitle="Automated analysis of claims, in-text citations, and bibliography integrity"
+        kicker="Scholarly Integrity"
+        icon={<ShieldCheck className="size-5 text-emerald-600" />}
+        size="wide"
+        onClose={() => setFactCheckModalOpen(false)}
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="slate"
+              onClick={() => setFactCheckModalOpen(false)}
+            >
+              <X className="size-3.5" />
+              Close
+            </Button>
+            <Button
+              type="button"
+              variant="warning"
+              onClick={autoAnnotateFactCheckClaims}
+              title="Apply citation and claim highlights across the document editor"
+            >
+              <Highlighter className="size-3.5" />
+              Highlight in editor
+            </Button>
+            <Button
+              type="button"
+              variant="ai"
+              onClick={insertFactCheckClaimsIntoRemark}
+              title="Append uncited and flagged claims to lecturer remarks"
+            >
+              <MessageSquarePlus className="size-3.5" />
+              Insert into remarks
+            </Button>
+            <Button
+              type="button"
+              variant="success"
+              onClick={() => setFactCheckModalOpen(false)}
+            >
+              <CircleCheck className="size-3.5" />
+              Done
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-center">
+              <p className="text-xs font-semibold text-slate-500 uppercase">Integrity Score</p>
+              <p className="text-2xl font-bold text-slate-900 mt-1">
+                {factCheckAudit.integrityScore}%
+              </p>
             </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-center">
+              <p className="text-xs font-semibold text-slate-500 uppercase">Claims Checked</p>
+              <p className="text-2xl font-bold text-slate-900 mt-1">
+                {factCheckAudit.totalClaims}
+              </p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-center">
+              <p className="text-xs font-semibold text-slate-500 uppercase">Missing Cites</p>
+              <p className="text-2xl font-bold text-amber-600 mt-1">
+                {factCheckAudit.missingCitationsCount}
+              </p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-center">
+              <p className="text-xs font-semibold text-slate-500 uppercase">Uncited Refs</p>
+              <p className="text-2xl font-bold text-rose-600 mt-1">
+                {factCheckAudit.unlinkedReferencesCount}
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">
+              Claims & In-Text Citation Analysis
+            </h3>
+            {factCheckAudit.claims.length === 0 ? (
+              <p className="text-sm text-slate-500">No claim sentences found in the submission.</p>
+            ) : (
+              <div className="space-y-2">
+                {factCheckAudit.claims.map((claim) => (
+                  <div
+                    key={claim.id}
+                    className="rounded-lg border border-slate-200 bg-white p-3 shadow-xs space-y-1.5"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <p className="font-medium text-slate-900 text-sm">“{claim.sentence}”</p>
+                      <Badge
+                        variant={
+                          claim.badgeTone === "danger"
+                            ? "danger"
+                            : claim.badgeTone === "warning" || claim.badgeTone === "caution"
+                              ? "warning"
+                              : claim.badgeTone === "success"
+                                ? "success"
+                                : "neutral"
+                        }
+                      >
+                        {claim.badgeLabel}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-slate-600">{claim.explanation}</p>
+                    {claim.suggestedAction && (
+                      <p className="text-xs font-medium text-amber-700 bg-amber-50 rounded px-2 py-1 inline-block">
+                        Recommended: {claim.suggestedAction}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-3 pt-2 border-t border-slate-200">
+            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">
+              References & Bibliography Reconciliation
+            </h3>
+            {factCheckAudit.references.length === 0 ? (
+              <p className="text-sm text-slate-500">No reference entries detected in the References section.</p>
+            ) : (
+              <div className="space-y-2">
+                {factCheckAudit.references.map((ref) => (
+                  <div
+                    key={ref.id}
+                    className="flex items-start justify-between gap-3 rounded-lg border border-slate-200 bg-white p-3"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="font-mono text-xs text-slate-800 leading-snug">{ref.rawEntry}</p>
+                      <p className="text-xs text-slate-500 mt-1">{ref.note}</p>
+                    </div>
+                    <Badge
+                      variant={
+                        ref.badgeTone === "danger"
+                          ? "danger"
+                          : ref.badgeTone === "warning"
+                            ? "warning"
+                            : "success"
+                      }
+                      className="shrink-0"
+                    >
+                      {ref.badgeLabel}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </ReviewModal>
+
+      {/* Brief Modal */}
+      <ReviewModal
+        open={briefModalOpen}
+        labelledBy="brief-modal-title"
+        title={project.assignmentBrief?.title || "Assignment brief"}
+        subtitle="Lecturer instructions, expected deliverables, and marking rubric."
+        kicker="Lecturer Brief"
+        icon={<ClipboardList className="size-5 text-sky-600" />}
+        size="wide"
+        onClose={() => setBriefModalOpen(false)}
+        footer={
+          <Button
+            type="button"
+            variant="success"
+            onClick={() => setBriefModalOpen(false)}
+          >
+            <CircleCheck className="size-3.5" />
+            Done
+          </Button>
+        }
+      >
+        {project.assignmentBrief ? (
+          <AssignmentBriefPanel brief={project.assignmentBrief} />
+        ) : (
+          <p className="text-sm text-slate-500">No assignment brief attached.</p>
+        )}
+      </ReviewModal>
+
+      {/* Attach Brief Modal */}
+      <ReviewModal
+        open={attachModalOpen}
+        labelledBy="attach-modal-title"
+        title="Attach assignment brief"
+        subtitle="Select an existing assignment brief to grade this student against."
+        kicker="Supervision"
+        icon={<Paperclip className="size-5 text-amber-600" />}
+        onClose={() => setAttachModalOpen(false)}
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="slate"
+              onClick={() => setAttachModalOpen(false)}
+            >
+              <X className="size-3.5" />
+              Cancel
+            </Button>
+            <Button
+              variant="success"
+              disabled={attachBusy || !attachBriefId}
+              onClick={() => void attachBrief()}
+            >
+              {attachBusy ? "Attaching…" : "Attach brief"}
+            </Button>
+          </>
+        }
+      >
+        <div className="portal-review-modal-form">
+          <div className="portal-review-field">
+            <span>Choose a brief</span>
+            <Select
+              value={attachBriefId}
+              onChange={(e) => setAttachBriefId(e.target.value)}
+            >
+              <option value="">— Select an assignment brief —</option>
+              {myBriefs.map((b) => (
+                <option key={b._id} value={b._id}>
+                  {b.title} (Max {b.maxScore ?? 100} marks)
+                </option>
+              ))}
+            </Select>
+            <em>
+              After attaching, run AI review again to grade against its rubric.
+            </em>
+          </div>
+        </div>
+      </ReviewModal>
+
+      {/* AI Report Modal */}
+      <ReviewModal
+        open={aiModalOpen}
+        labelledBy="ai-modal-title"
+        title={aiReportLabel}
+        subtitle={
+          aiSummary?.model
+            ? `Generated by ${aiSummary.model}`
+            : "Review report for this submission"
+        }
+        kicker="Academic Intelligence"
+        icon={<Brain className="size-5 text-violet-600" />}
+        size="wide"
+        onClose={() => setAiModalOpen(false)}
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="slate"
+              onClick={() => setAiModalOpen(false)}
+            >
+              <X className="size-3.5" />
+              Close
+            </Button>
+            <Button
+              type="button"
+              variant="ai"
+              onClick={() => {
+                insertAiIntoRemark();
+                setAiModalOpen(false);
+              }}
+            >
+              <MessageSquarePlus className="size-3.5" />
+              Copy to remarks
+            </Button>
+          </>
+        }
+      >
+        <AIReportPanel
+          report={aiSummary}
+          status={status.label}
+          meta={`${page.title} · ${words.toLocaleString()} words`}
+        />
+      </ReviewModal>
+
+      {/* Word-like Editor for Remarks */}
+      <ReviewModal
+        open={remarkModalOpen}
+        labelledBy="remark-modal-title"
+        title="Remarks for the student"
+        subtitle="Write and format feedback in the full Word editor. Use headings, lists, and emphasis as needed."
+        kicker="Word editor"
+        icon={<PenLine className="size-5 text-indigo-600" />}
+        size="editor"
+        flushBody
+        onClose={() => setRemarkModalOpen(false)}
+        footerMeta={
+          <span>
+            <strong>{remarkWords.toLocaleString()}</strong>{" "}
+            {remarkWords === 1 ? "word" : "words"}
+            {aiSummary ? " · AI remarks can be inserted below" : ""}
+          </span>
+        }
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="slate"
+              onClick={() => setRemarkModalOpen(false)}
+            >
+              <X className="size-3.5" />
+              Close
+            </Button>
             {aiSummary ? (
               <Button
                 type="button"
-                variant="outline"
-                size="sm"
+                variant="ai"
                 onClick={insertAiIntoRemark}
               >
                 <Sparkles className="size-3.5" />
                 Insert AI remarks
               </Button>
             ) : null}
-            <div className="portal-review-actions">
-              <Button
-                disabled={busy}
-                onClick={() => setConfirmAction("approve")}
-              >
-                <Check className="size-4" />
-                Approve
-              </Button>
-              <Button
-                variant="outline"
-                disabled={busy}
-                onClick={requestRewrite}
-              >
-                <RotateCcw className="size-4" />
-                Request rewrite
-              </Button>
-            </div>
-          </section>
-
-          {isAssignment ? (
-            <section className="portal-review-card">
-              <div className="portal-review-card-head">
-                <h2>Score</h2>
-                <p>
-                  {typeof project.score === "number"
-                    ? `Currently ${project.score}/${maxScore}${project.scoreSource === "ai_approved" ? " (AI mark)" : ""}.`
-                    : `Enter a mark out of ${maxScore}.`}
-                </p>
-              </div>
-              {suggestedScore != null ? (
-                <div className="portal-review-verdict">
-                  <p>AI verdict</p>
-                  <div className="portal-review-verdict-row">
-                    <div>
-                      <span>Suggested</span>
-                      <strong>
-                        {suggestedScore}
-                        <small>/{maxScore}</small>
-                      </strong>
-                    </div>
-                    {typeof project.aiGeneratedPercent === "number" ? (
-                      <div>
-                        <span>AI content</span>
-                        <strong>{project.aiGeneratedPercent}%</strong>
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              ) : (
-                <p className="portal-review-hint">
-                  Run AI review to generate a suggested mark, or enter one
-                  yourself.
-                </p>
-              )}
-              <Button
-                type="button"
-                variant={typeof project.score === "number" ? "outline" : "default"}
-                onClick={() => setScoreModalOpen(true)}
-              >
-                <Award className="size-4" />
-                {typeof project.score === "number" ? "Update score" : "Set score"}
-              </Button>
-              {project.scoredAt ? (
-                <p className="portal-review-hint">
-                  Last scored {new Date(project.scoredAt).toLocaleString()}
-                </p>
-              ) : null}
-            </section>
-          ) : null}
-        </aside>
-      </div>
-
-      <ReviewModal
-        open={remarkModalOpen}
-        title="Remarks for the student"
-        kicker="Decision"
-        subtitle={`${page.title} · ${project.student?.name || "Student"}`}
-        icon={<PenLine className="size-4" />}
-        labelledBy="remark-editor-modal-title"
-        size="editor"
-        flushBody
-        escapeDisabled={Boolean(confirmAction)}
-        onClose={() => setRemarkModalOpen(false)}
-        footerMeta={
-          <>
-            <strong>
-              {remarkWords.toLocaleString()}{" "}
-              {remarkWords === 1 ? "word" : "words"}
-            </strong>
-            <span>Shared with the student after you decide. Required for rewrite.</span>
-          </>
-        }
-        footer={
-          <>
-            {aiSummary ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={insertAiIntoRemark}
-              >
-                <Sparkles className="size-4" />
-                Insert AI remarks
-              </Button>
-            ) : null}
             <Button
               type="button"
-              variant="outline"
-              size="sm"
-              disabled={busy}
-              onClick={requestRewrite}
+              variant="success"
+              onClick={() => {
+                setRemarkModalOpen(false);
+                setMessage("Remarks updated.");
+              }}
             >
-              <RotateCcw className="size-4" />
-              Request rewrite
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              disabled={busy}
-              onClick={() => setConfirmAction("approve")}
-            >
-              <Check className="size-4" />
-              Approve
+              <CircleCheck className="size-3.5" />
+              Done editing
             </Button>
           </>
         }
       >
-        <DocumentEditor
-          value={remark}
-          onChange={setRemark}
-          placeholder="Write clear, specific feedback the student can act on…"
-          fullWidth
-          fillHeight
-          className="portal-review-remark-editor"
-        />
-      </ReviewModal>
-
-      <ReviewModal
-        open={Boolean(isAssignment && project.assignmentBrief && briefModalOpen)}
-        title="Assignment brief"
-        kicker="Brief"
-        subtitle={project.assignmentBrief?.title}
-        icon={<FileText className="size-4" />}
-        labelledBy="assignment-brief-modal-title"
-        size="wide"
-        escapeDisabled={Boolean(confirmAction)}
-        onClose={() => setBriefModalOpen(false)}
-        footer={
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => setBriefModalOpen(false)}
-          >
-            Close
-          </Button>
-        }
-      >
-        {project.assignmentBrief ? (
-          <AssignmentBriefPanel
-            brief={project.assignmentBrief}
-            className="border-0 shadow-none"
-            hideHeader
+        <div className="portal-review-remark-editor">
+          <DocumentEditor
+            value={remark}
+            onChange={setRemark}
+            fillHeight
+            fullWidth
+            className="h-full min-h-0"
+            placeholder="Write continuous feedback for the student — what was strong, what needs citation, and what must be revised before approval…"
           />
-        ) : null}
-      </ReviewModal>
-
-      <ReviewModal
-        open={aiModalOpen && Boolean(aiSummary)}
-        title="AI feedback report"
-        kicker={isAssignment ? "Assignment review" : "Chapter review"}
-        subtitle={
-          aiSummary
-            ? `${page.title} · ${aiSummary.model || "local"}${aiSummary.promptVersion ? ` · ${aiSummary.promptVersion}` : ""}`
-            : undefined
-        }
-        icon={<Sparkles className="size-4" />}
-        labelledBy="ai-report-modal-title"
-        size="wide"
-        escapeDisabled={Boolean(confirmAction)}
-        onClose={() => setAiModalOpen(false)}
-        footerMeta={
-          <span>
-            Read the report, then insert remarks or continue to a decision.
-          </span>
-        }
-        footer={
-          <>
-            {aiSummary ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  insertAiIntoRemark();
-                  setAiModalOpen(false);
-                }}
-              >
-                <Sparkles className="size-4" />
-                Insert into remarks
-              </Button>
-            ) : null}
-            {isAssignment ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setAiModalOpen(false);
-                  setScoreModalOpen(true);
-                }}
-              >
-                <Award className="size-4" />
-                Set score
-              </Button>
-            ) : null}
-            <Button type="button" size="sm" onClick={() => setAiModalOpen(false)}>
-              Done
-            </Button>
-          </>
-        }
-      >
-        {aiSummary ? (
-          <AIReportPanel
-            report={{
-              ...aiSummary,
-              decisionLean: undefined,
-              hideTopicAlignment: isAssignment
-                ? false
-                : aiSummary.hideTopicAlignment,
-            }}
-            status={
-              isAssignment
-                ? aiSummary.markingSkipped
-                  ? "assignment gate — marking skipped"
-                  : "assignment AI review"
-                : "chapter AI review"
-            }
-            meta={`Model: ${aiSummary.model || "local"}${aiSummary.promptVersion ? ` · ${aiSummary.promptVersion}` : ""}`}
-          />
-        ) : null}
-      </ReviewModal>
-
-      <ReviewModal
-        open={scoreModalOpen && isAssignment}
-        title="Set score"
-        kicker="Marking"
-        subtitle={`Mark this assignment out of ${maxScore}.`}
-        icon={<Award className="size-4" />}
-        labelledBy="score-modal-title"
-        size="narrow"
-        escapeDisabled={Boolean(confirmAction)}
-        onClose={() => setScoreModalOpen(false)}
-        footer={
-          <>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={scoreBusy}
-              onClick={() => setScoreModalOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              disabled={scoreBusy || scoreInput.trim() === ""}
-              onClick={() => void saveScore()}
-            >
-              {scoreBusy ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Check className="size-4" />
-              )}
-              {typeof project.score === "number" ? "Update score" : "Save score"}
-            </Button>
-          </>
-        }
-      >
-        {suggestedScore != null ||
-        typeof project.aiGeneratedPercent === "number" ? (
-          <div className="portal-review-verdict">
-            <p>AI verdict</p>
-            <div className="portal-review-verdict-row">
-              {suggestedScore != null ? (
-                <div>
-                  <span>Suggested</span>
-                  <strong>
-                    {suggestedScore}
-                    <small>/{maxScore}</small>
-                  </strong>
-                </div>
-              ) : null}
-              {typeof project.aiGeneratedPercent === "number" ? (
-                <div>
-                  <span>AI content</span>
-                  <strong>{project.aiGeneratedPercent}%</strong>
-                </div>
-              ) : null}
-            </div>
-            {suggestedScore != null ? (
-              <Button
-                disabled={scoreBusy}
-                onClick={() => setConfirmAction("accept_ai")}
-              >
-                <Check className="size-4" />
-                Approve AI mark
-              </Button>
-            ) : null}
-          </div>
-        ) : (
-          <p className="portal-review-hint">
-            Run AI review first if you want a suggested mark.
-          </p>
-        )}
-
-        {rubric.length > 0 ? (
-          <div className="portal-review-rubric">
-            <p>Rubric</p>
-            {rubric.map((row) => (
-              <label key={row.name} className="portal-review-rubric-row">
-                <span>
-                  {row.name}
-                  <small> / {row.maxMarks}</small>
-                </span>
-                <Input
-                  className="w-20"
-                  type="number"
-                  min={0}
-                  max={row.maxMarks}
-                  step={1}
-                  inputMode="numeric"
-                  value={criterionInputs[row.name] ?? ""}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setCriterionInputs((prev) => {
-                      const next = { ...prev, [row.name]: value };
-                      const filled = rubric.every((r) => {
-                        const raw = next[r.name];
-                        return raw != null && String(raw).trim() !== "";
-                      });
-                      if (filled) {
-                        const sum = rubric.reduce((s, r) => {
-                          const n = Number(next[r.name]);
-                          return s + (Number.isFinite(n) ? n : 0);
-                        }, 0);
-                        setScoreInput(String(sum));
-                      }
-                      return next;
-                    });
-                  }}
-                  placeholder="0"
-                  aria-label={`Score for ${row.name}`}
-                />
-              </label>
-            ))}
-          </div>
-        ) : null}
-
-        <div className="portal-review-score-row">
-          <label className="portal-review-field">
-            <span>Manual score</span>
-            <Input
-              type="number"
-              min={0}
-              max={maxScore}
-              step={1}
-              inputMode="numeric"
-              value={scoreInput}
-              onChange={(e) => setScoreInput(e.target.value)}
-              placeholder={`0–${maxScore}`}
-              aria-label={`Assignment score out of ${maxScore}`}
-            />
-          </label>
-          <span className="portal-review-outof">/ {maxScore}</span>
         </div>
-
-        <label className="portal-review-field">
-          <span>Score note</span>
-          <textarea
-            value={scoreNote}
-            onChange={(e) => setScoreNote(e.target.value)}
-            rows={3}
-            maxLength={500}
-            placeholder="Optional note about the mark…"
-          />
-        </label>
       </ReviewModal>
 
-      <ReviewModal
-        open={attachModalOpen && isAssignment && !project.assignmentBrief}
-        title="Attach assignment brief"
-        kicker="Brief"
-        subtitle="Scoring will use the brief’s max marks and rubric."
-        icon={<Paperclip className="size-4" />}
-        labelledBy="attach-brief-modal-title"
-        size="narrow"
-        escapeDisabled={Boolean(confirmAction)}
-        onClose={() => setAttachModalOpen(false)}
-        footer={
-          <>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={attachBusy}
-              onClick={() => setAttachModalOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              disabled={attachBusy || !attachBriefId}
-              onClick={() => void attachBrief()}
-            >
-              {attachBusy ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Check className="size-4" />
-              )}
-              Attach brief
-            </Button>
-          </>
-        }
-      >
-        <label className="portal-review-field">
-          <span>Published brief</span>
-          <Select
-            value={attachBriefId}
-            onChange={(e) => setAttachBriefId(e.target.value)}
-            disabled={myBriefs.length === 0}
-          >
-            <option value="">
-              {myBriefs.length === 0
-                ? "No published briefs"
-                : "Select brief…"}
-            </option>
-            {myBriefs.map((b) => (
-              <option key={b._id} value={b._id}>
-                {b.title}
-                {typeof b.maxScore === "number"
-                  ? ` (${b.maxScore} marks)`
-                  : ""}
-              </option>
-            ))}
-          </Select>
-        </label>
-      </ReviewModal>
-
+      {/* Confirmation Modal for Approve / Rewrite / AI Mark */}
       <ConfirmModal
         open={Boolean(confirmAction)}
         title={confirmCopy.title}
@@ -1626,17 +1857,13 @@ export default function SupervisorPageReviewPage() {
         variant={confirmCopy.variant}
         loading={confirmBusy}
         onConfirm={() => {
-          if (confirmAction === "accept_ai") {
-            void saveScore({ acceptAi: true });
-            return;
-          }
           if (confirmAction === "approve" || confirmAction === "needs_revision") {
             void submitReview(confirmAction);
+          } else if (confirmAction === "accept_ai") {
+            void saveScore({ acceptAi: true });
           }
         }}
-        onCancel={() => {
-          if (!confirmBusy) setConfirmAction(null);
-        }}
+        onCancel={() => setConfirmAction(null)}
       />
     </div>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { Bot } from "lucide-react";
+import { Bot, FileCheck } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -11,6 +11,7 @@ import {
 import { Badge } from "@/components/portal/ui/badge";
 import { EmptyState } from "@/components/portal/feedback/empty-state";
 import type { AreaScores } from "@/lib/portal/apply-highlights";
+import type { FactCheckAuditReport } from "@/lib/portal/fact-check-citations";
 
 export type CorrectionFindingView = {
   id?: string;
@@ -52,8 +53,10 @@ export type AiReportData = {
   outstandingCount?: number;
   priorFindingsCount?: number;
   highlightQuotes?: {
+    strengths?: string[];
     weaknesses?: string[];
     citations?: string[];
+    wrongClaims?: string[];
   };
   areaScores?: AreaScores;
   estimatedGrade?: string;
@@ -107,6 +110,8 @@ export type AiReportData = {
     | "PARTIAL_MATCH"
     | "WEAK_MATCH"
     | "OUT_OF_SCOPE";
+  /** Automated Claims Fact-Check & In-Text Citation + Reference Integrity Audit */
+  factCheckAudit?: FactCheckAuditReport;
   /** Gatekeeper details when assignment review ran. */
   assignmentGate?: {
     confidence?: string;
@@ -304,8 +309,8 @@ export function AIReportPanel({ report, status, meta }: Props) {
                 .split(/\n\n+/)
                 .map((para) => para.trim())
                 .filter(Boolean)
-                .map((para) => (
-                  <p key={para.slice(0, 48)}>{para}</p>
+                .map((para, index) => (
+                  <p key={`remark-para-${index}`}>{para}</p>
                 ))}
             </div>
           </div>
@@ -410,8 +415,8 @@ export function AIReportPanel({ report, status, meta }: Props) {
                 Revision priorities
               </p>
               <ol className="list-decimal space-y-1.5 pl-4 text-foreground/80">
-                {report.revisionPriorities.map((item) => (
-                  <li key={item}>{item}</li>
+                {report.revisionPriorities.map((item, index) => (
+                  <li key={`revision-${index}`}>{item}</li>
                 ))}
               </ol>
             </div>
@@ -443,6 +448,145 @@ export function AIReportPanel({ report, status, meta }: Props) {
         )}
         {report.executiveSummary && !report.reviewerReport && (
           <p className="text-foreground/75">{report.executiveSummary}</p>
+        )}
+
+        {report.factCheckAudit && (
+          <div className="space-y-3 rounded-xl border border-border bg-card p-3.5 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 pb-2.5">
+              <div className="flex items-center gap-2">
+                <FileCheck className="size-4 text-emerald-600" />
+                <p className="text-xs font-bold uppercase tracking-wide text-foreground/80">
+                  Fact-Check & Citation Audit
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Integrity score:</span>
+                <Badge
+                  variant={
+                    report.factCheckAudit.integrityScore >= 80
+                      ? "success"
+                      : report.factCheckAudit.integrityScore >= 50
+                        ? "warning"
+                        : "danger"
+                  }
+                >
+                  {report.factCheckAudit.integrityScore}%
+                </Badge>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <div className="rounded-lg border border-border/50 bg-muted/20 p-2 text-center">
+                <p className="text-[11px] font-medium text-muted-foreground">Claims Checked</p>
+                <p className="text-lg font-bold tabular-nums text-foreground">
+                  {report.factCheckAudit.totalClaims}
+                </p>
+              </div>
+              <div className="rounded-lg border border-border/50 bg-muted/20 p-2 text-center">
+                <p className="text-[11px] font-medium text-muted-foreground">Verified</p>
+                <p className="text-lg font-bold tabular-nums text-emerald-600">
+                  {report.factCheckAudit.verifiedClaimsCount}
+                </p>
+              </div>
+              <div className="rounded-lg border border-border/50 bg-muted/20 p-2 text-center">
+                <p className="text-[11px] font-medium text-muted-foreground">Needs Citation</p>
+                <p className="text-lg font-bold tabular-nums text-amber-600">
+                  {report.factCheckAudit.missingCitationsCount}
+                </p>
+              </div>
+              <div className="rounded-lg border border-border/50 bg-muted/20 p-2 text-center">
+                <p className="text-[11px] font-medium text-muted-foreground">Uncited Refs</p>
+                <p className="text-lg font-bold tabular-nums text-rose-600">
+                  {report.factCheckAudit.unlinkedReferencesCount}
+                </p>
+              </div>
+            </div>
+
+            {report.factCheckAudit.summary ? (
+              <p className="text-xs text-muted-foreground">
+                {report.factCheckAudit.summary}
+              </p>
+            ) : null}
+
+            {report.factCheckAudit.claims && report.factCheckAudit.claims.length > 0 && (
+              <div className="space-y-2 pt-1">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                  Claims & In-Text Citation Fact-Checks
+                </p>
+                <div className="max-h-60 space-y-2 overflow-y-auto pr-1 text-xs">
+                  {report.factCheckAudit.claims.map((claim) => (
+                    <div
+                      key={claim.id}
+                      className="rounded-lg border border-border/70 bg-muted/10 p-2.5 transition-colors hover:bg-muted/20"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <p className="font-medium text-foreground leading-snug">
+                          “{claim.sentence}”
+                        </p>
+                        <Badge
+                          variant={
+                            claim.badgeTone === "danger"
+                              ? "danger"
+                              : claim.badgeTone === "warning" || claim.badgeTone === "caution"
+                                ? "warning"
+                                : claim.badgeTone === "success"
+                                  ? "success"
+                                  : "neutral"
+                          }
+                          className="shrink-0"
+                        >
+                          {claim.badgeLabel}
+                        </Badge>
+                      </div>
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        {claim.explanation}
+                      </p>
+                      {claim.suggestedAction ? (
+                        <p className="mt-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400">
+                          Suggested action: {claim.suggestedAction}
+                        </p>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {report.factCheckAudit.references && report.factCheckAudit.references.length > 0 && (
+              <div className="space-y-2 pt-1 border-t border-border/50">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                  References Alignment Audit
+                </p>
+                <div className="max-h-48 space-y-1.5 overflow-y-auto pr-1 text-xs">
+                  {report.factCheckAudit.references.map((ref) => (
+                    <div
+                      key={ref.id}
+                      className="flex items-start justify-between gap-2 rounded-md border border-border/50 bg-muted/10 p-2"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="font-mono text-[11px] text-foreground leading-snug">
+                          {ref.rawEntry}
+                        </p>
+                        <p className="mt-0.5 text-[10px] text-muted-foreground">{ref.note}</p>
+                      </div>
+                      <Badge
+                        variant={
+                          ref.badgeTone === "danger"
+                            ? "danger"
+                            : ref.badgeTone === "warning"
+                              ? "warning"
+                              : "success"
+                        }
+                        className="shrink-0"
+                      >
+                        {ref.badgeLabel}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         )}
 
         {report.requirementChecks && report.requirementChecks.length > 0 && (
@@ -514,9 +658,22 @@ export function AIReportPanel({ report, status, meta }: Props) {
         {!report.reviewerReport && (
         <div className="grid gap-4 md:grid-cols-2">
           <ScoreList
+            title="Strengths"
+            items={report.strengths}
+            score={report.areaScores?.strengths}
+          />
+          <ScoreList
             title="Weaknesses"
             items={report.weaknesses}
             score={report.areaScores?.weaknesses}
+          />
+          <ScoreList
+            title="Needs citation"
+            items={report.highlightQuotes?.citations}
+          />
+          <ScoreList
+            title="Wrong claims"
+            items={report.highlightQuotes?.wrongClaims}
           />
           <ScoreList
             title="Research gaps"
@@ -581,8 +738,8 @@ function ScoreList({
         )}
       </p>
       <ul className="space-y-1.5">
-        {items.map((item) => (
-          <li key={item} className="text-foreground/75">
+        {items.map((item, index) => (
+          <li key={`${title}-${index}`} className="text-foreground/75">
             · {item}
           </li>
         ))}

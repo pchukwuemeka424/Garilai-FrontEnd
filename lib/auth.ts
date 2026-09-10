@@ -1,4 +1,5 @@
 import type { StudentTokenQuota } from "@/lib/student-tokens";
+import type { UniversityFeatures } from "@/lib/university-features";
 
 export type AuthUser = {
 	id: string;
@@ -22,6 +23,7 @@ export type AuthUser = {
 	lastActiveAt: string | null;
 	createdAt: string;
 	tokenQuota?: StudentTokenQuota;
+	features?: UniversityFeatures;
 };
 
 export type RegisterInput = {

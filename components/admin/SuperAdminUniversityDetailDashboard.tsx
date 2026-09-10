@@ -22,7 +22,16 @@ import {
 } from "@/lib/admin-api";
 import { universityDetailHref } from "@/lib/admin-university-href";
 
-type TabId = "checklist" | "admins" | "users" | "tokens";
+import {
+	DEFAULT_UNIVERSITY_FEATURES,
+	UNIVERSITY_FEATURE_KEYS,
+	UNIVERSITY_FEATURE_LABELS,
+	normalizeUniversityFeatures,
+	type UniversityFeatureKey,
+	type UniversityFeatures,
+} from "@/lib/university-features";
+
+type TabId = "checklist" | "admins" | "users" | "tokens" | "modules";
 
 function resolveSlug(pathname: string, searchSlug: string | null): string {
 	const fromQuery = searchSlug?.trim() ?? "";
@@ -52,6 +61,7 @@ function SuperAdminUniversityDetailInner() {
 	const [renameValue, setRenameValue] = useState("");
 	const [studentTokens, setStudentTokens] = useState("");
 	const [lecturerTokens, setLecturerTokens] = useState("");
+	const [features, setFeatures] = useState<UniversityFeatures>({ ...DEFAULT_UNIVERSITY_FEATURES });
 	const [offboardOpen, setOffboardOpen] = useState(false);
 
 	const load = useCallback(async () => {
@@ -73,6 +83,7 @@ function SuperAdminUniversityDetailInner() {
 			setLecturerTokens(
 				uni.defaultLecturerTokens != null ? String(uni.defaultLecturerTokens) : "",
 			);
+			setFeatures(normalizeUniversityFeatures(uni.features));
 			// Prefer canonical query URL so static export / soft nav stay consistent.
 			if (!searchParams.get("slug") && uni.slug) {
 				router.replace(universityDetailHref(uni));
@@ -160,6 +171,24 @@ function SuperAdminUniversityDetailInner() {
 			setUniversity((prev) => (prev ? { ...prev, ...updated } : prev));
 		} catch (err) {
 			setError(err instanceof Error ? err.message : String(err));
+		} finally {
+			setSaving(false);
+		}
+	};
+
+	const toggleFeature = async (key: UniversityFeatureKey) => {
+		if (!university) return;
+		const next = { ...features, [key]: !features[key] };
+		setFeatures(next);
+		setSaving(true);
+		setError(null);
+		try {
+			const updated = await updateAdminUniversity(university.id, { features: next });
+			setUniversity((prev) => (prev ? { ...prev, ...updated } : prev));
+			setFeatures(normalizeUniversityFeatures(updated.features));
+		} catch (err) {
+			setError(err instanceof Error ? err.message : String(err));
+			setFeatures(normalizeUniversityFeatures(university.features));
 		} finally {
 			setSaving(false);
 		}
@@ -270,6 +299,7 @@ function SuperAdminUniversityDetailInner() {
 						["admins", "Admins"],
 						["users", "Users"],
 						["tokens", "Tokens"],
+						["modules", "Modules"],
 					] as const
 				).map(([idTab, label]) => (
 					<button
@@ -363,6 +393,48 @@ function SuperAdminUniversityDetailInner() {
 						{university.defaultStudentTokens?.toLocaleString() ?? "platform default"} · lecturers{" "}
 						{university.defaultLecturerTokens?.toLocaleString() ?? "platform default"}
 					</p>
+				</AdminPanel>
+			)}
+
+			{tab === "modules" && (
+				<AdminPanel
+					title="Product modules"
+					description="Turn product surfaces on or off for this university. Disabled modules are hidden from users and blocked at the API."
+				>
+					<ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+						{UNIVERSITY_FEATURE_KEYS.map((key) => {
+							const meta = UNIVERSITY_FEATURE_LABELS[key];
+							return (
+								<li
+									key={key}
+									style={{
+										display: "flex",
+										alignItems: "center",
+										justifyContent: "space-between",
+										gap: "1rem",
+										padding: "0.85rem 0",
+										borderBottom: "1px solid var(--border, #e5e5e5)",
+									}}
+								>
+									<div>
+										<strong>{meta.label}</strong>
+										<p className="muted" style={{ margin: "0.2rem 0 0" }}>
+											{meta.description}
+										</p>
+									</div>
+									<label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+										<span className="muted">{features[key] ? "On" : "Off"}</span>
+										<input
+											type="checkbox"
+											checked={features[key]}
+											disabled={saving}
+											onChange={() => void toggleFeature(key)}
+										/>
+									</label>
+								</li>
+							);
+						})}
+					</ul>
 				</AdminPanel>
 			)}
 

@@ -366,8 +366,7 @@ export function NotebookPlot({ plot, onSavePicture }: Props) {
 				</button>
 			</header>
 			{saveError ? <p className="nb-error">{saveError}</p> : null}
-			<figure className="nb-plot" ref={figureRef}>
-				<figcaption>{plot.title}</figcaption>
+			<figure className="nb-plot" ref={figureRef} aria-label={plot.title}>
 				<div className="nb-plot-canvas">
 					{plot.series.length === 0 ? (
 						<p className="nb-plot-missing">No points to plot for this mapping.</p>

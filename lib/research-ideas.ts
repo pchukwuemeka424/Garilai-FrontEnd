@@ -836,9 +836,9 @@ export function markdownToDocHtml(markdown: string): string {
 		const lines = block.split("\n").map((l) => l.trimEnd());
 		const first = lines[0]?.trim() ?? "";
 
-		const researchBlock = block.match(
-			/^```(research-chart|research-image|research-figure)\s*\n([\s\S]*?)\n```$/i,
-		);
+		const researchBlock =
+			block.match(/^```(research-chart|research-image|research-figure)\s*\n([\s\S]*?)\n```$/i) ??
+			block.match(/^```(research-chart|research-image|research-figure)\s+(\{[\s\S]*\})\s*```$/i);
 		if (researchBlock) {
 			try {
 				const kind = researchBlock[1]!.toLowerCase();
@@ -852,9 +852,10 @@ export function markdownToDocHtml(markdown: string): string {
 					nodes?: Array<{ label?: string }>;
 					edges?: Array<{ from?: string; to?: string; label?: string }>;
 					dataUrl?: string;
+					mime?: string;
 				};
-				const encoded = encodeURIComponent(raw);
 				if (kind === "research-chart") {
+					const encoded = encodeURIComponent(raw);
 					const yKey = parsed.yKeys?.[0] ?? "";
 					const points = (parsed.data ?? [])
 						.map((row) => ({ label: String(row[parsed.xKey ?? ""] ?? ""), value: Number(row[yKey]) }))
@@ -873,13 +874,15 @@ export function markdownToDocHtml(markdown: string): string {
 							`<small>${escapeHtml(parsed.caption || "Editable chart object")}</small></figure>`,
 					);
 				} else if (kind === "research-figure" && parsed.dataUrl?.startsWith("data:image/")) {
+					// Keep base64 only on <img src> — encoding the full JSON into an attribute freezes the editor.
 					html.push(
-						`<figure class="rp-doc-visual rp-doc-figure" contenteditable="false" data-research-kind="research-figure" data-research-json="${encoded}">` +
+						`<figure class="rp-doc-visual rp-doc-figure" contenteditable="false" data-research-kind="research-figure" data-research-title="${escapeHtml(parsed.title || "Research figure")}" data-research-caption="${escapeHtml(parsed.caption || "")}" data-research-mime="${escapeHtml(parsed.mime || "")}">` +
 							`<figcaption>${escapeHtml(parsed.title || "Research figure")}</figcaption>` +
 							`<img src="${escapeHtml(parsed.dataUrl)}" alt="${escapeHtml(parsed.title || "Research figure")}" />` +
 							`<small>${escapeHtml(parsed.caption || "From research note Figures.")}</small></figure>`,
 					);
 				} else {
+					const encoded = encodeURIComponent(raw);
 					html.push(
 						`<figure class="rp-doc-visual rp-doc-image" contenteditable="false" data-research-kind="research-image" data-research-json="${encoded}">` +
 							`<figcaption>${escapeHtml(parsed.title || "Conceptual illustration")}</figcaption>` +
@@ -932,7 +935,7 @@ export function markdownToDocHtml(markdown: string): string {
 			continue;
 		}
 		if (/^###\s+/.test(first) && lines.length === 1) {
-			html.push(`<h2>${escapeHtml(first.replace(/^###\s+/, ""))}</h2>`);
+			html.push(`<h3>${escapeHtml(first.replace(/^###\s+/, ""))}</h3>`);
 			continue;
 		}
 		// Bold-only section titles from the API (e.g. **1. Introduction**)
@@ -990,41 +993,85 @@ export function markdownToDocHtml(markdown: string): string {
 		const midHeadingIdx = lines.findIndex((line, index) => {
 			if (index === 0) return false;
 			const t = line.trim();
-			return /^#{1,6}\s+\S/.test(t) || /^\*\*[^*]+\*\*\s*:?\s*$/.test(t);
+			return (
+				/^#{1,6}\s+\S/.test(t) ||
+				/^\*\*[^*]+\*\*\s*:?\s*$/.test(t)
+			);
 		});
 		if (midHeadingIdx > 0) {
 			const before = lines.slice(0, midHeadingIdx).map((l) => l.trim()).filter(Boolean);
 			if (before.length) {
-				html.push(`<p>${before.map((l) => inlineMarkdownToHtml(l)).join("<br>")}</p>`);
+				html.push(...linesToDocHtmlParts(before));
 			}
 			const afterBlock = lines.slice(midHeadingIdx).join("\n");
 			html.push(markdownToDocHtml(afterBlock));
 			continue;
 		}
 
-		if (lines.every((l) => /^\d+[.)]\s+/.test(l.trim()))) {
-			html.push(
-				`<ol>${lines
-					.map((l) => `<li>${inlineMarkdownToHtml(l.trim().replace(/^\d+[.)]\s+/, ""))}</li>`)
-					.join("")}</ol>`,
-			);
-			continue;
-		}
-		if (lines.every((l) => /^[-*•]\s+/.test(l.trim()))) {
-			html.push(
-				`<ul>${lines
-					.map((l) => `<li>${inlineMarkdownToHtml(l.trim().replace(/^[-*•]\s+/, ""))}</li>`)
-					.join("")}</ul>`,
-			);
-			continue;
-		}
-
-		html.push(
-			`<p>${lines.map((l) => inlineMarkdownToHtml(l.trim())).join("<br>")}</p>`,
-		);
+		html.push(...linesToDocHtmlParts(lines));
 	}
 
 	return html.join("");
+}
+
+/** Partition a block into paragraphs and bullet/numbered lists (mixed blocks allowed). */
+function linesToDocHtmlParts(rawLines: string[]): string[] {
+	const lines = rawLines.map((l) => l.trimEnd());
+	const parts: string[] = [];
+	let para: string[] = [];
+	let list: string[] = [];
+	let listKind: "ol" | "ul" | null = null;
+
+	const flushPara = () => {
+		if (!para.length) return;
+		parts.push(`<p>${para.map((l) => inlineMarkdownToHtml(l.trim())).join("<br>")}</p>`);
+		para = [];
+	};
+	const flushList = () => {
+		if (!list.length || !listKind) return;
+		const tag = listKind;
+		parts.push(
+			`<${tag}>${list
+				.map((l) => {
+					const text =
+						tag === "ol"
+							? l.replace(/^\d+[.)]\s+/, "")
+							: l.replace(/^[-*•]\s+/, "");
+					return `<li>${inlineMarkdownToHtml(text)}</li>`;
+				})
+				.join("")}</${tag}>`,
+		);
+		list = [];
+		listKind = null;
+	};
+
+	for (const line of lines) {
+		const trimmed = line.trim();
+		if (!trimmed) {
+			flushList();
+			flushPara();
+			continue;
+		}
+		if (/^\d+[.)]\s+\S/.test(trimmed)) {
+			flushPara();
+			if (listKind && listKind !== "ol") flushList();
+			listKind = "ol";
+			list.push(trimmed);
+			continue;
+		}
+		if (/^[-*•]\s+\S/.test(trimmed)) {
+			flushPara();
+			if (listKind && listKind !== "ul") flushList();
+			listKind = "ul";
+			list.push(trimmed);
+			continue;
+		}
+		flushList();
+		para.push(trimmed);
+	}
+	flushList();
+	flushPara();
+	return parts;
 }
 
 /** Strip editor HTML back to readable Markdown for storage / paper prompts. */
@@ -1055,7 +1102,25 @@ export function htmlToOutlineText(html: string): string {
 	};
 	const protectedHtml = html
 		.replace(
-			/<figure[^>]*data-research-kind="(research-chart|research-image|research-figure)"[^>]*data-research-json="([^"]*)"[^>]*>[\s\S]*?<\/figure>/gi,
+			/<figure[^>]*data-research-kind="research-figure"[^>]*>[\s\S]*?<\/figure>/gi,
+			(match) => {
+				const title = match.match(/data-research-title="([^"]*)"/i)?.[1] ?? "Research figure";
+				const caption = match.match(/data-research-caption="([^"]*)"/i)?.[1] ?? "";
+				const mime = match.match(/data-research-mime="([^"]*)"/i)?.[1] ?? "";
+				const dataUrl = match.match(/<img[^>]+src="([^"]+)"/i)?.[1] ?? "";
+				if (!dataUrl.startsWith("data:image/")) return "";
+				const payload = {
+					type: "research-figure",
+					title: decodeEntities(title),
+					caption: decodeEntities(caption),
+					mime: decodeEntities(mime) || undefined,
+					dataUrl: decodeEntities(dataUrl),
+				};
+				return `\n\n\`\`\`research-figure\n${JSON.stringify(payload)}\n\`\`\`\n\n`;
+			},
+		)
+		.replace(
+			/<figure[^>]*data-research-kind="(research-chart|research-image)"[^>]*data-research-json="([^"]*)"[^>]*>[\s\S]*?<\/figure>/gi,
 			(_match, kind: string, encoded: string) => {
 				try {
 					return `\n\n\`\`\`${kind}\n${decodeURIComponent(encoded)}\n\`\`\`\n\n`;

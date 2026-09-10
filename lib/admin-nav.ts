@@ -126,6 +126,42 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
 		],
 	},
 	{
+		id: "academic-products",
+		label: "Academic products",
+		items: [
+			{
+				id: "admin-modules",
+				label: "Product modules",
+				href: "/admin/modules",
+				iconId: "policy",
+				description: "Enable or disable Research, Notebook, Assessment, Supervision",
+				instructions:
+					"Turn institutional product modules on or off for your university. Disabled modules are hidden from students and lecturers and blocked at the API.",
+				feature: "modules",
+			},
+			{
+				id: "admin-supervision",
+				label: "Supervision",
+				href: "/admin/supervision",
+				iconId: "users",
+				description: "Oversee thesis projects and assign supervisors",
+				instructions:
+					"Review supervision projects across your institution, assign or reassign supervisors, and update project status. Document bodies stay private — only metadata is shown.",
+				feature: "supervision",
+			},
+			{
+				id: "admin-assessment",
+				label: "Student Assessment",
+				href: "/admin/assessment",
+				iconId: "contribution",
+				description: "Oversee assignment briefs and submissions",
+				instructions:
+					"Monitor assignment briefs and student submissions, publish or archive briefs, and update submission status. Full assignment text remains private.",
+				feature: "assessment",
+			},
+		],
+	},
+	{
 		id: "research",
 		label: "Research integrity",
 		items: [
@@ -256,6 +292,24 @@ export const SUPER_ADMIN_NAV_GROUPS: AdminNavGroup[] = [
 				description: "Papers and uploads",
 				instructions:
 					"Manage platform research content: saved papers and uploaded documents or datasets. Filter by university, inspect details, and delete items when needed for support or compliance.",
+			},
+			{
+				id: "super-supervision",
+				label: "Supervision",
+				href: "/super-admin/supervision",
+				iconId: "users",
+				description: "Platform supervision projects",
+				instructions:
+					"Oversee supervision projects across onboarded universities. Assign supervisors and update status without opening private chapter content.",
+			},
+			{
+				id: "super-assessment",
+				label: "Student Assessment",
+				href: "/super-admin/assessment",
+				iconId: "contribution",
+				description: "Platform assignment briefs and submissions",
+				instructions:
+					"Oversee assignment briefs and student submissions across universities. Publish, archive, or update status while keeping submission text private.",
 			},
 		],
 	},

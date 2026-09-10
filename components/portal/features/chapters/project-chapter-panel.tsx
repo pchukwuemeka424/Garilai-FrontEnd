@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Send } from "lucide-react";
 import { Button } from "@/components/portal/ui/button";
+import { cn } from "@/lib/portal/cn";
 import { apiFetch } from "@/lib/portal-api";
 import { countWordsFromHtml } from "@/components/portal/editor/document-editor";
 import {
@@ -47,6 +48,8 @@ type Props = {
   onGateChange?: (gate: ChapterGate) => void;
   /** Notifies the parent when supervisor feedback text is available. */
   onFeedbackChange?: (remark: string | null) => void;
+  /** Optional class for the submit control (student chrome). */
+  className?: string;
 };
 
 function normalizeTitle(title: string) {
@@ -149,6 +152,7 @@ export function ProjectChapterPanel({
   onRefresh,
   onGateChange,
   onFeedbackChange,
+  className,
 }: Props) {
   const unitNoun = projectWritingUnitNoun(projectType);
   const advisorNoun = projectAdvisorNoun(projectType);
@@ -298,6 +302,7 @@ export function ProjectChapterPanel({
   return (
     <Button
       type="button"
+      className={cn(className)}
       disabled={busy || !studentTitle || !gate.canSubmit}
       title={
         !gate.canSubmit && gate.reason

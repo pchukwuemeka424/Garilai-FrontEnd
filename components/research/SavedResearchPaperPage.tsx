@@ -4,24 +4,20 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { studentHasResearchTokens } from "@/components/StudentTokenQuota";
 import { AulaLayout } from "@/components/AulaLayout";
-import { CitationStyleSelect } from "@/components/aula/CitationStyleSelect";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ResearchDocEditor } from "@/components/research/ResearchDocEditor";
+import { ResearchPaperMarkdown } from "@/components/research/ResearchPaperMarkdown";
 import { StudentLayout } from "@/components/StudentLayout";
 import {
+	IconChartBar,
+	IconChevronLeft,
 	IconDownload,
-	IconRefresh,
+	IconEdit,
+	IconFileText,
 	IconTrash,
 } from "@/components/ui/ButtonIcon";
 import { useAuth } from "@/hooks/useAuth";
-import {
-	loadChatCitationStyle,
-	loadChatResearchScope,
-	saveChatCitationStyle,
-	saveChatResearchScope,
-} from "@/lib/chat-research-citations";
 import {
 	downloadResearchPaper,
 	extractPaperTitle,
@@ -31,33 +27,17 @@ import {
 	type SavedResearchPaper,
 } from "@/lib/chat-research-storage";
 import {
-	DEFAULT_CITATION_STYLE,
-	getStyleLabel,
-	type CitationStyle,
-} from "@/lib/citation-styles";
-import { htmlToOutlineText, markdownToDocHtml } from "@/lib/research-ideas";
-import {
-	computePaperEffort,
-	downloadPaperEffortReport,
-} from "@/lib/research-paper-effort";
-import {
-	hasResearchSources,
-	loadPaperEffortEvidence,
-} from "@/lib/research-paper-effort-evidence";
-import { peekPaperSources } from "@/lib/research-paper-sources";
+	getScopeDocumentLabel,
+	getScopeProjectEyebrow,
+	htmlToOutlineText,
+	markdownToDocHtml,
+} from "@/lib/research-ideas";
 import {
 	formatResearchPaperReferences,
-	reformatResearchPaperReferencesByStyle,
 	validateAndFormatResearchPaperReferences,
 } from "@/lib/research-paper-references";
-import { promoteBoldSectionsForDisplay } from "@/lib/research-paper-sections";
-import { researchPaperWorkspacePath } from "@/lib/research-generate-routes";
-import {
-	buildRefineResearchPaperPrompt,
-	stagePendingResearchRefine,
-} from "@/lib/research-paper-refine";
-import { loadResearchWizardDraft } from "@/lib/research-wizard-draft";
-import { savedResearchListPath } from "@/lib/saved-research-routes";
+import { promoteBoldSectionsForDisplay, stripTitleAboveAbstract } from "@/lib/research-paper-sections";
+import { savedResearchEffortPath, savedResearchListPath } from "@/lib/saved-research-routes";
 
 type Props = {
 	variant?: "lecturer" | "student";
@@ -73,13 +53,30 @@ function formatWhen(iso: string): string {
 	}
 }
 
+function countWords(text: string): number {
+	const trimmed = text.trim();
+	if (!trimmed) return 0;
+	return trimmed.split(/\s+/).filter(Boolean).length;
+}
+
+const PAREN_CITE =
+	/\([A-Za-zÀ-ÖØ-öø-ÿ][^)]{0,80}?\b(?:19|20)\d{2}[a-z]?[^)]*\)/g;
+const NARRATIVE_CITE =
+	/\b[A-ZÀ-Ö][A-Za-zÀ-ÖØ-öø-ÿ'-]+(?:\s+et\s+al\.?|\s+and\s+[A-ZÀ-Ö][A-Za-zÀ-ÖØ-öø-ÿ'-]+)?\s*\(\s*(?:19|20)\d{2}[a-z]?\s*\)/g;
+
+function countInTextCites(text: string): number {
+	if (!text.trim()) return 0;
+	const paren = text.match(PAREN_CITE) ?? [];
+	const narr = text.match(NARRATIVE_CITE) ?? [];
+	return new Set([...paren, ...narr]).size;
+}
+
 function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 	const searchParams = useSearchParams();
 	const router = useRouter();
 	const { user } = useAuth();
 	const id = searchParams.get("id")?.trim() ?? "";
 	const isStudent = variant === "student";
-	const hasTokens = studentHasResearchTokens(user?.tokenQuota, user?.role);
 
 	const [paper, setPaper] = useState<SavedResearchPaper | null>(null);
 	const [loading, setLoading] = useState(true);
@@ -91,17 +88,9 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 	const [saving, setSaving] = useState(false);
 	const [notice, setNotice] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
-	const [applyingStyle, setApplyingStyle] = useState(false);
-	const [citationStyle, setCitationStyle] = useState<CitationStyle>(DEFAULT_CITATION_STYLE);
 	const [pendingDelete, setPendingDelete] = useState(false);
-	const [pendingRegenerate, setPendingRegenerate] = useState(false);
-	const [regenerating, setRegenerating] = useState(false);
 	const [deleting, setDeleting] = useState(false);
-	const [downloadingEffort, setDownloadingEffort] = useState(false);
-
-	useEffect(() => {
-		setCitationStyle(loadChatCitationStyle() ?? DEFAULT_CITATION_STYLE);
-	}, [id]);
+	const [viewMode, setViewMode] = useState<"preview" | "edit">("preview");
 
 	const researchPath = isStudent ? "/student/research" : "/research";
 	const savedListPath = savedResearchListPath(variant);
@@ -156,15 +145,35 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 	}, [id]);
 
 	const liveContent = useMemo(() => {
-		const fromHtml = htmlToOutlineText(editorHtml);
-		return fromHtml.trim() ? fromHtml : content;
-	}, [editorHtml, content]);
+		if (viewMode === "edit") {
+			const fromHtml = htmlToOutlineText(editorHtml);
+			return fromHtml.trim() ? fromHtml : content;
+		}
+		return content;
+	}, [viewMode, editorHtml, content]);
 
 	const formattedContent = useMemo(
 		() => (content.trim() ? formatResearchPaperReferences(content) : ""),
 		[content],
 	);
+
 	const displayTitle = extractPaperTitle(formattedContent || content, topic || "Research paper");
+	const documentLabel = getScopeDocumentLabel("journal");
+	const eyebrow = getScopeProjectEyebrow("journal").toUpperCase();
+
+	const wordCount = useMemo(() => countWords(liveContent), [liveContent]);
+	const citeCount = useMemo(() => countInTextCites(liveContent), [liveContent]);
+	const displayDraft = useMemo(
+		() => stripTitleAboveAbstract(promoteBoldSectionsForDisplay(formattedContent || content), displayTitle),
+		[formattedContent, content, displayTitle],
+	);
+	const visualCount = useMemo(() => {
+		const charts = (displayDraft.match(/```research-chart\b/gi) ?? []).length;
+		const figures = (displayDraft.match(/```research-figure\b/gi) ?? []).length;
+		const diagrams = (displayDraft.match(/```research-image\b/gi) ?? []).length;
+		const tables = (displayDraft.match(/^\|.+\|$/gm) ?? []).length > 1 ? 1 : 0;
+		return charts + figures + diagrams + (tables ? 1 : 0);
+	}, [displayDraft]);
 
 	const paperMeta = useMemo(
 		() => ({
@@ -188,49 +197,9 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 		setDirty(true);
 	}, []);
 
-	const handleCitationStyleChange = useCallback((style: CitationStyle | "") => {
-		if (!style) return;
-		setCitationStyle(style);
-		saveChatCitationStyle(style);
-	}, []);
-
-	const handleApplyReferenceStyle = useCallback(async () => {
-		if (!id) return;
-		setApplyingStyle(true);
-		setError(null);
-		saveChatCitationStyle(citationStyle);
-
-		const raw = htmlToOutlineText(editorHtml) || content;
-		const styled = reformatResearchPaperReferencesByStyle(raw, citationStyle);
-		const { content: formatted } = validateAndFormatResearchPaperReferences(styled.content);
-		applyFormattedContent(formatted);
-
-		const result = await updateSavedResearchPaper(id, { topic, content: formatted });
-		setApplyingStyle(false);
-		if (!result.paper) {
-			setError(result.error ?? "Could not save reformatted references.");
-			return;
-		}
-		setPaper(result.paper);
-		setContent(result.paper.content);
-		setEditorHtml(
-			markdownToDocHtml(promoteBoldSectionsForDisplay(formatResearchPaperReferences(result.paper.content))),
-		);
-		setDirty(false);
-		const styleLabel = getStyleLabel(citationStyle);
-		setNotice(
-			styled.entryCount > 0
-				? styled.changed
-					? `References reformatted to ${styleLabel} (${styled.entryCount} entr${styled.entryCount === 1 ? "y" : "ies"}).`
-					: `References already match ${styleLabel}.`
-				: "No References entries found to reformat.",
-		);
-		window.setTimeout(() => setNotice(null), 5000);
-	}, [applyFormattedContent, citationStyle, content, editorHtml, id, topic]);
-
 	const handleSave = useCallback(async () => {
 		if (!id || !dirty) return;
-		const raw = htmlToOutlineText(editorHtml);
+		const raw = viewMode === "edit" ? htmlToOutlineText(editorHtml) : content;
 		const { content: nextContent } = validateAndFormatResearchPaperReferences(raw);
 		setSaving(true);
 		setError(null);
@@ -249,10 +218,10 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 		setDirty(false);
 		setNotice("Changes saved.");
 		window.setTimeout(() => setNotice(null), 4000);
-	}, [id, dirty, topic, editorHtml]);
+	}, [id, dirty, viewMode, editorHtml, content, topic]);
 
 	const handleDownload = useCallback(() => {
-		const raw = htmlToOutlineText(editorHtml) || content;
+		const raw = viewMode === "edit" ? htmlToOutlineText(editorHtml) || content : content;
 		if (!raw.trim()) return;
 		const { content: nextContent } = validateAndFormatResearchPaperReferences(raw);
 		if (nextContent !== raw) {
@@ -279,71 +248,7 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 		paper?.updatedAt,
 		paperMeta,
 		topic,
-	]);
-
-	const handleDownloadEffortReport = useCallback(async () => {
-		setDownloadingEffort(true);
-		setError(null);
-		try {
-			const wizard = loadResearchWizardDraft(isStudent ? "student" : "lecturer", user?.id);
-			const staged = peekPaperSources();
-			const stored = paper?.sources ?? null;
-			const sources = hasResearchSources(stored)
-				? stored
-				: staged ?? wizard?.selectedSources ?? stored;
-			const evidence = await loadPaperEffortEvidence(sources, paper?.topic ?? topic);
-			const effort = computePaperEffort({
-				content: liveContent,
-				aiBaselineContent: paper?.aiBaselineContent ?? paper?.content ?? null,
-				humanEdited: paper?.humanEdited || dirty,
-				topic,
-				materials: evidence.materials,
-				sources,
-				evidence,
-			});
-			await downloadPaperEffortReport({
-				title: displayTitle,
-				topic,
-				effort,
-				author: {
-					name: user?.name ?? null,
-					email: user?.email ?? null,
-					department: user?.department ?? null,
-					institution: user?.institution ?? null,
-				},
-				paperId: paper?.id ?? id,
-				createdAt: paper?.createdAt,
-				sources,
-				evidence,
-			});
-		} catch (downloadError) {
-			setError(
-				downloadError instanceof Error
-					? downloadError.message
-					: "Could not download effort report.",
-			);
-		} finally {
-			setDownloadingEffort(false);
-		}
-	}, [
-		dirty,
-		displayTitle,
-		id,
-		isStudent,
-		liveContent,
-		paper?.aiBaselineContent,
-		paper?.content,
-		paper?.createdAt,
-		paper?.humanEdited,
-		paper?.id,
-		paper?.sources,
-		paper?.topic,
-		topic,
-		user?.department,
-		user?.email,
-		user?.id,
-		user?.institution,
-		user?.name,
+		viewMode,
 	]);
 
 	const handleDelete = useCallback(async () => {
@@ -359,237 +264,282 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 		router.push(researchPath);
 	}, [id, paper, researchPath, router]);
 
-	const startRegenerate = useCallback(async () => {
-		const draft = liveContent.trim() || content.trim();
-		if (!draft || draft.length < 200) {
-			setError("Paper content is too short to regenerate.");
-			setPendingRegenerate(false);
-			return;
-		}
-
-		setRegenerating(true);
-		setError(null);
-		setPendingRegenerate(false);
-
-		try {
-			if (dirty) {
-				const saved = await updateSavedResearchPaper(id, {
-					topic: topic.trim() || paper?.topic || "Research paper",
-					content: draft,
-				});
-				if (!saved.paper) {
-					throw new Error(saved.error ?? "Save your changes before regenerating.");
-				}
-				setPaper(saved.paper);
-				setDirty(false);
-			}
-
-			const refineTopic = topic.trim() || paper?.topic || displayTitle || "Research paper";
-			const scope = loadChatResearchScope() ?? "journal";
-			const prompt = buildRefineResearchPaperPrompt({
-				topic: refineTopic,
-				content: draft,
-				citationStyle,
-				scope,
-			});
-			saveChatCitationStyle(citationStyle);
-			saveChatResearchScope(scope);
-			stagePendingResearchRefine({
-				prompt,
-				topic: refineTopic,
-				citationStyle,
-				scope,
-			});
-			router.push(researchPaperWorkspacePath(refineTopic, variant, undefined, scope));
-		} catch (regenError) {
-			setRegenerating(false);
-			setError(
-				regenError instanceof Error
-					? regenError.message
-					: "Could not start paper regeneration.",
-			);
-		}
-	}, [
-		citationStyle,
-		content,
-		dirty,
-		displayTitle,
-		id,
-		liveContent,
-		paper?.topic,
-		router,
-		topic,
-		variant,
-	]);
-
-	const btnClass = isStudent ? "stu-paper-btn" : "saved-research-btn";
-	const btnPrimaryClass = isStudent
-		? "stu-paper-btn stu-paper-btn-primary"
-		: "saved-research-btn saved-research-btn-primary";
-
 	if (loading) {
 		return (
-			<div className={`saved-research-page${isStudent ? " saved-research-page-student" : ""}`}>
-				<p className="saved-research-muted">Loading saved research…</p>
+			<div className={`rg-studio${isStudent ? " rg-studio-student" : ""}`}>
+				<div className="rg-studio-atmosphere" aria-hidden />
+				<header className="rg-studio-bar">
+					<div className="rg-studio-bar-main">
+						<Link href={savedListPath} className="rg-studio-back">
+							<IconChevronLeft size={16} />
+							Saved
+						</Link>
+						<div className="rg-studio-brand">
+							<span className="rg-studio-brand-mark">GARIL</span>
+							<span className="rg-studio-brand-sep" aria-hidden />
+							<span className="rg-studio-brand-type">{eyebrow}</span>
+						</div>
+					</div>
+				</header>
+				<div className="rg-studio-layout">
+					<aside className="rg-studio-rail">
+						<p className="rg-studio-kicker">Saved research</p>
+						<h1 className="rg-studio-title">Loading paper…</h1>
+						<p className="rg-studio-phase">
+							<span className="rg-studio-phase-dot is-live" aria-hidden />
+							Fetching manuscript
+						</p>
+					</aside>
+					<section className="rg-studio-stage">
+						<article className="rg-studio-page">
+							<div className="rg-studio-waiting">
+								<div className="rg-studio-waiting-line" aria-hidden />
+								<div className="rg-studio-waiting-line is-mid" aria-hidden />
+								<div className="rg-studio-waiting-line is-short" aria-hidden />
+								<p>Loading your saved {documentLabel}…</p>
+							</div>
+						</article>
+					</section>
+				</div>
 			</div>
 		);
 	}
 
 	if (notFound || !paper) {
 		return (
-			<div className={`saved-research-page${isStudent ? " saved-research-page-student" : ""}`}>
-				<Link href={savedListPath} className={isStudent ? "stu-research-paper-back" : "saved-research-back"}>
-					← Back to saved research
-				</Link>
-				<div className="saved-research-empty">
-					<h2>Saved research not found</h2>
-					<p>It may have been removed or you may not have access.</p>
+			<div className={`rg-studio${isStudent ? " rg-studio-student" : ""}`}>
+				<div className="rg-studio-atmosphere" aria-hidden />
+				<header className="rg-studio-bar">
+					<div className="rg-studio-bar-main">
+						<Link href={savedListPath} className="rg-studio-back">
+							<IconChevronLeft size={16} />
+							Saved research
+						</Link>
+						<div className="rg-studio-brand">
+							<span className="rg-studio-brand-mark">GARIL</span>
+						</div>
+					</div>
+				</header>
+				<div className="rg-studio-shell rg-studio-shell-empty">
+					<div className="rg-studio-empty">
+						<p className="rg-studio-kicker">GARIL AI</p>
+						<h1>Saved research not found</h1>
+						<p>It may have been removed or you may not have access to this document.</p>
+						<div className="rg-studio-empty-actions">
+							<Link href={savedListPath} className="rg-studio-btn rg-studio-btn-primary">
+								Back to saved research
+							</Link>
+							<Link href={researchPath} className="rg-studio-btn">
+								Research Assistant
+							</Link>
+						</div>
+					</div>
 				</div>
 			</div>
 		);
 	}
 
 	return (
-		<div className={`saved-research-page${isStudent ? " saved-research-page-student" : ""}`}>
-			<div className="saved-research-top">
-				<Link href={savedListPath} className={isStudent ? "stu-research-paper-back" : "saved-research-back"}>
-					← Back to saved research
-				</Link>
-			</div>
+		<div
+			className={`rg-studio${isStudent ? " rg-studio-student" : ""}`}
+			role="region"
+			aria-label="Saved research paper studio"
+		>
+			<div className="rg-studio-atmosphere" aria-hidden />
 
-			<header className="saved-research-head">
-				<div className="saved-research-head-main">
-					<p className="saved-research-meta">
-						Last updated {formatWhen(paper.updatedAt)}
-						{dirty ? " · Unsaved changes" : ""}
-					</p>
+			<header className="rg-studio-bar">
+				<div className="rg-studio-bar-main">
+					<Link href={savedListPath} className="rg-studio-back">
+						<IconChevronLeft size={16} />
+						Brief
+					</Link>
+					<div className="rg-studio-brand">
+						<span className="rg-studio-brand-mark">GARIL</span>
+						<span className="rg-studio-brand-sep" aria-hidden />
+						<span className="rg-studio-brand-type">{eyebrow}</span>
+					</div>
 				</div>
-				<div className="saved-research-head-actions">
+
+				<div className="rg-studio-bar-actions">
+					<div className="rg-studio-mode-toggle" role="group" aria-label="View mode">
+						<button
+							type="button"
+							className={`rg-studio-mode-btn${viewMode === "preview" ? " is-active" : ""}`}
+							onClick={() => setViewMode("preview")}
+							title="View rendered manuscript"
+						>
+							<IconFileText size={14} />
+							Preview
+						</button>
+						<button
+							type="button"
+							className={`rg-studio-mode-btn${viewMode === "edit" ? " is-active" : ""}`}
+							onClick={() => setViewMode("edit")}
+							title="Edit manuscript text and citations"
+						>
+							<IconEdit size={14} />
+							Edit
+						</button>
+					</div>
+
 					<button
 						type="button"
-						className={btnPrimaryClass}
+						className="rg-studio-bar-btn rg-studio-bar-btn-primary"
 						onClick={() => void handleSave()}
 						disabled={!dirty || saving}
+						title={dirty ? "Save changes to manuscript" : "All changes saved"}
 					>
-						{saving ? "Saving…" : "Save changes"}
+						{saving ? "Saving…" : "Save"}
 					</button>
-					<button type="button" className={btnClass} onClick={handleDownload}>
-						<IconDownload size={16} />
-						Download PDF
-					</button>
+
 					<button
 						type="button"
-						className={btnClass}
-						onClick={() => void handleDownloadEffortReport()}
-						disabled={downloadingEffort}
+						className="rg-studio-bar-btn"
+						onClick={handleDownload}
+						title="Download manuscript as PDF"
 					>
-						<IconDownload size={16} />
-						{downloadingEffort ? "Preparing…" : "Download Effort Report"}
+						<IconDownload size={14} />
+						PDF
 					</button>
+
+					<Link
+						href={savedResearchEffortPath(id, variant)}
+						className="rg-studio-bar-btn"
+						title="Open effort and authorship report"
+					>
+						<IconChartBar size={14} />
+						Effort
+					</Link>
+
 					<button
 						type="button"
-						className={btnClass}
-						onClick={() => setPendingRegenerate(true)}
-						disabled={regenerating || applyingStyle || saving || !hasTokens}
-						title={
-							!hasTokens
-								? "Research token limit reached"
-								: "Refine and improve this research paper with a new AI pass"
-						}
-					>
-						<IconRefresh size={16} />
-						{regenerating ? "Starting…" : "Regenerate"}
-					</button>
-					<button
-						type="button"
-						className={`${btnClass} saved-research-btn-danger`}
+						className="rg-studio-bar-btn rg-studio-bar-btn-danger"
 						onClick={() => setPendingDelete(true)}
+						title="Delete this saved paper"
+						aria-label="Delete paper"
 					>
-						<IconTrash size={16} />
-						Delete
+						<IconTrash size={14} />
 					</button>
 				</div>
 			</header>
 
-			{notice && <div className="saved-research-notice saved-research-notice-success">{notice}</div>}
-			{error && (
-				<div className="saved-research-notice saved-research-notice-error" role="alert">
-					{error}
-				</div>
-			)}
-
-			<section
-				className="saved-research-citation-bar"
-				aria-label="Reference style controls"
-			>
-				<div className="saved-research-citation-bar-main">
-					<CitationStyleSelect
-						id="saved-research-citation-style"
-						value={citationStyle}
-						onChange={handleCitationStyleChange}
-					/>
-					<p className="saved-research-citation-bar-hint">
-						Active: <strong>{getStyleLabel(citationStyle)}</strong> — reformats the References
-						section only. Source links are preserved.
+			<div className="rg-studio-layout">
+				<aside className="rg-studio-rail">
+					<p className="rg-studio-kicker">Live generation</p>
+					<h1 className="rg-studio-title">{displayTitle}</h1>
+					<p className="rg-studio-phase">
+						<span
+							className="rg-studio-phase-dot"
+							style={{ backgroundColor: dirty ? "#eab308" : "#8b3a4f" }}
+							aria-hidden
+						/>
+						{dirty
+							? "Unsaved edits in progress"
+							: paper?.updatedAt
+								? `Saved · Updated ${formatWhen(paper.updatedAt)}`
+								: `Saved manuscript`}
 					</p>
-				</div>
-				<div className="saved-research-citation-bar-actions">
-					<button
-						type="button"
-						className={btnPrimaryClass}
-						onClick={() => void handleApplyReferenceStyle()}
-						disabled={applyingStyle}
-						title="Reformat References to the selected style"
+
+					<div
+						className="rg-studio-meter"
+						role="progressbar"
+						aria-valuemin={0}
+						aria-valuemax={100}
+						aria-valuenow={100}
+						aria-label={`${eyebrow} progress`}
 					>
-						{applyingStyle ? "Applying…" : "Apply reference style"}
-					</button>
-				</div>
-			</section>
+						<div className="rg-studio-meter-head">
+							<span>Progress</span>
+							<strong>100%</strong>
+						</div>
+						<div className="rg-studio-meter-track">
+							<div className="rg-studio-meter-fill" style={{ width: "100%" }} />
+						</div>
+					</div>
 
-			<div className="saved-research-card saved-research-card-doc">
-				<div className="saved-research-edit saved-research-edit-doc">
-					<label className="saved-research-field-label" htmlFor="saved-research-topic">
-						Research topic
-					</label>
-					<input
-						id="saved-research-topic"
-						className="saved-research-topic-input"
-						value={topic}
-						onChange={(event) => {
-							setTopic(event.target.value);
-							setDirty(true);
-						}}
-					/>
-					<p className="saved-research-field-label">Standard editable document</p>
-					<ResearchDocEditor
-						value={editorHtml}
-						placeholder="Edit your research paper like a Word document…"
-						ariaLabel="Editable research paper document"
-						minHeight="36rem"
-						onChange={syncContentFromHtml}
-						onBlur={() => {
-							const next = htmlToOutlineText(editorHtml);
-							if (next !== content) {
-								setContent(next);
-								setDirty(true);
-							}
-						}}
-					/>
-				</div>
+					<div className="rg-studio-meta">
+						<div>
+							<span>Words</span>
+							<strong>{wordCount.toLocaleString()}</strong>
+						</div>
+						<div>
+							<span>In-text cites</span>
+							<strong>{citeCount.toLocaleString()}</strong>
+						</div>
+						<div>
+							<span>Visuals</span>
+							<strong>{visualCount.toLocaleString()}</strong>
+						</div>
+						<div>
+							<span>Status</span>
+							<strong>{dirty ? "Editing" : "Complete"}</strong>
+						</div>
+					</div>
+
+					{notice && <div className="rg-studio-rail-notice">{notice}</div>}
+					{error && (
+						<div className="rg-studio-rail-error" role="alert">
+							{error}
+						</div>
+					)}
+
+					<p className="rg-studio-hint">
+						Tables, charts, and figures render live as the {documentLabel} streams. You can leave
+						this page — GARIL will notify you when it is ready.
+					</p>
+				</aside>
+
+				<section className="rg-studio-stage">
+					<article className="rg-studio-page">
+						<header className="rg-studio-page-head">
+							<p className="rg-studio-page-kicker">{eyebrow}</p>
+							{viewMode === "edit" ? (
+								<input
+									id="saved-research-topic"
+									className="rg-studio-title-input"
+									value={topic}
+									aria-label="Research topic"
+									placeholder="Research topic / title"
+									onChange={(event) => {
+										setTopic(event.target.value);
+										setDirty(true);
+									}}
+								/>
+							) : (
+								<h2 className="rg-studio-page-title">{displayTitle}</h2>
+							)}
+							<p className="rg-studio-page-sub">
+								{viewMode === "edit"
+									? "Editing manuscript — format and revise text, headings, and citations"
+									: "Manuscript is being written live — images, graphs, and tables included"}
+							</p>
+						</header>
+
+						{viewMode === "edit" ? (
+							<div className="saved-research-editor-shell">
+								<ResearchDocEditor
+									value={editorHtml}
+									placeholder="Edit your research paper…"
+									ariaLabel="Editable research paper document"
+									minHeight="36rem"
+									onChange={syncContentFromHtml}
+									onBlur={() => {
+										const next = htmlToOutlineText(editorHtml);
+										if (next !== content) {
+											setContent(next);
+											setDirty(true);
+										}
+									}}
+								/>
+							</div>
+						) : (
+							<div className="rg-studio-prose">
+								<ResearchPaperMarkdown content={displayDraft} allowImages />
+							</div>
+						)}
+					</article>
+				</section>
 			</div>
-
-			<ConfirmDialog
-				open={pendingRegenerate}
-				title="Regenerate this paper?"
-				description="AI will refine the current draft (stronger gap, literature synthesis, limitations, and grounded citations). Unsaved edits are saved first. Generation uses research tokens and may take several minutes."
-				confirmLabel="Regenerate"
-				loading={regenerating}
-				onConfirm={() => void startRegenerate()}
-				onCancel={() => {
-					if (regenerating) return;
-					setPendingRegenerate(false);
-				}}
-			/>
 
 			<ConfirmDialog
 				open={pendingDelete}
@@ -614,5 +564,9 @@ export function SavedResearchPaperPage({ variant = "lecturer" }: Props) {
 		return <StudentLayout>{page}</StudentLayout>;
 	}
 
-	return <AulaLayout>{page}</AulaLayout>;
+	return (
+		<AulaLayout showRightPanel={false} hideTopBar fullHeight>
+			{page}
+		</AulaLayout>
+	);
 }

@@ -15,7 +15,7 @@ import { saveChatCitationStyle } from "@/lib/chat-research-citations";
 import type { CitationStyle } from "@/lib/citation-styles";
 import { fetchResearchOutlineFromApi } from "@/lib/research-api";
 import { getDisciplineLabel } from "@/lib/research-disciplines";
-import { researchPaperWorkspacePath } from "@/lib/research-generate-routes";
+import { researchGeneratingPagePath } from "@/lib/research-generate-routes";
 import {
 	getGenerateResearchLabel,
 	htmlToOutlineText,
@@ -201,6 +201,7 @@ function ResearchOutlineContent({ variant = "lecturer" }: Props) {
 				discipline: context.discipline,
 				topic: context.topic,
 				scope: context.scope,
+				citationStyle: style,
 				sources: context.sources,
 				returnTo: outlineReturnTo,
 				assignmentInstructions: context.assignmentInstructions,
@@ -213,28 +214,25 @@ function ResearchOutlineContent({ variant = "lecturer" }: Props) {
 			});
 			setShowCitationStyleModal(false);
 			router.push(
-				researchPaperWorkspacePath(
-					context.idea.title,
-					isStudent ? "student" : "lecturer",
+				researchGeneratingPagePath(
 					nextKey,
-					context.scope,
+					isStudent ? "student" : "lecturer",
+					context.idea.title,
+					style,
 				),
 			);
 		},
 		[context, outline, hasTokens, router, isStudent],
 	);
 
-	const btnPrimaryClass = isStudent
-		? "stu-paper-btn stu-paper-btn-primary research-outline-generate-btn"
-		: "saved-research-btn saved-research-btn-primary research-outline-generate-btn";
-
-	const btnClass = isStudent ? "stu-paper-btn" : "saved-research-btn";
+	const btnPrimaryClass = "saved-research-btn saved-research-btn-primary research-outline-generate-btn";
+	const btnClass = "saved-research-btn";
 	const canGenerate = Boolean(outline?.trim()) && hasTokens;
 
 	if (!key || !context) {
 		return (
-			<div className={`research-outline-page${isStudent ? " research-outline-page-student" : ""}`}>
-				<Link href={researchPath} className={isStudent ? "stu-research-paper-back" : "saved-research-back"}>
+			<div className="research-outline-page">
+				<Link href={researchPath} className="saved-research-back">
 					← Back to research
 				</Link>
 				<div className="saved-research-empty">
@@ -246,9 +244,9 @@ function ResearchOutlineContent({ variant = "lecturer" }: Props) {
 	}
 
 	return (
-		<div className={`research-outline-page${isStudent ? " research-outline-page-student" : ""}`}>
+		<div className="research-outline-page">
 			<div className="saved-research-top">
-				<Link href={backHref} className={isStudent ? "stu-research-paper-back" : "saved-research-back"}>
+				<Link href={backHref} className="saved-research-back">
 					← Back
 				</Link>
 			</div>

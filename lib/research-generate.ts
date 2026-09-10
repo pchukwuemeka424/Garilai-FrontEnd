@@ -8,6 +8,7 @@ import {
 	getScopeProfile,
 	parseScopeFromPrompt,
 } from "@/lib/research-scope-profiles";
+import { getVisualPlacementRules } from "@/lib/research-visual-placement";
 
 export function buildResearchPaperPrompt(input: {
 	idea: ResearchIdea;
@@ -31,17 +32,13 @@ export function buildResearchPaperPrompt(input: {
 		/result|finding|testing/i.test(h),
 	);
 	const hasMethods = profile.headings.some((h) => /method/i.test(h));
-	const analysisHeading = profile.headings.find((h) => /critical analysis|analysis/i.test(h));
-	const visualSection =
-		resultsHeading ??
-		analysisHeading ??
-		(profile.headings.includes("Discussion") ? "Discussion" : null) ??
-		"Critical Analysis";
+	const visualPlacement = getVisualPlacementRules(profile.scope);
+	const visualSection = visualPlacement.labels.empirical;
 
 	const typeSpecificLines: string[] = [];
 	if (profile.scope === "assignment") {
 		typeSpecificLines.push(
-			`${analysisHeading ?? "Critical Analysis"}: develop the argument with bank-supported evaluation; do not invent Methods, Results, or empirical findings.`,
+			"Argumentative body (whatever headings the brief requires, or Critical Analysis in the fallback): develop PhD-level evaluation with bank cites; explain every brief requirement; do not invent Methods, Results, or empirical findings.",
 		);
 	} else if (profile.scope === "proposal" || profile.scope === "faculty") {
 		typeSpecificLines.push(
@@ -52,6 +49,24 @@ export function buildResearchPaperPrompt(input: {
 				"Methodology: describe planned design → sample/materials → collection → instruments → analysis only; no findings.",
 			);
 		}
+	} else if (
+		profile.scope === "thesis" ||
+		profile.scope === "dissertation" ||
+		profile.scope === "undergraduate_project"
+	) {
+		if (hasMethods) {
+			typeSpecificLines.push(
+				"Methodology / Methods / Chapter methods: write a reproducible design → sample/materials → collection → instruments → analysis sequence grounded in the selected notebook when present; cite prior methods/standards from the bank only; follow outline methods; no findings in Methodology.",
+			);
+		}
+		if (resultsHeading) {
+			typeSpecificLines.push(
+				`${resultsHeading}: report RQ-aligned findings from notebook notes, datasets, lab work, and supplied tables/charts first; number and discuss every table/figure in prose; use only evidence values; brief bridge to Discussion only — no full literature debate.`,
+			);
+		}
+		typeSpecificLines.push(
+			"When a research notebook library is selected, treat it as the study’s primary evidence base for this long-form deliverable — do not rewrite as a generic literature essay that ignores notebook notes, data, or lab work.",
+		);
 	} else if (resultsHeading) {
 		if (hasMethods) {
 			typeSpecificLines.push(
@@ -73,39 +88,50 @@ export function buildResearchPaperPrompt(input: {
 				"Do NOT invent, generate, or emit any new images, diagrams, `research-image` blocks, or illustrative `research-chart` blocks.",
 				`In **${visualSection}**, discuss the listed saved figures by name (Figure 1, Figure 2, …) with captions stating what each shows.`,
 				"The actual figure images are attached automatically after generation — do not invent placeholders, fake image URLs, or `research-figure` blocks.",
+				...visualPlacement.promptLines,
 				...(hasCanonicalCharts
 					? [
-							`Also in **${visualSection}**, insert the provided canonical sample tables (≤5 rows) and \`research-chart\` blocks exactly as written.`,
+							`Also in **${visualSection}**, insert the provided canonical sample tables (≤10 rows) and \`research-chart\` blocks exactly as written.`,
 							"Do not invent, rewrite, rescale, expand, or replace the numeric values in those canonical artifacts.",
 						]
 					: [
-							"If sample tables are provided in the figure list, insert them exactly (≤5 rows — do not expand to the full dataset).",
+							"If sample tables are provided in the figure list, insert them exactly (≤10 rows — do not expand to the full dataset).",
 						]),
 			]
 		: hasCanonicalVisuals
 			? [
-					`In **${visualSection}**, insert the provided canonical sample tables (≤5 rows) and \`research-chart\` blocks exactly as written.`,
+					`In **${visualSection}**, insert the provided canonical sample tables (≤10 rows) and \`research-chart\` blocks exactly as written.`,
 					"Do not invent, rewrite, rescale, expand, or replace the numeric values in those canonical artifacts.",
 					"Discuss them in prose with numbered titles/captions (e.g. Table 1, Figure 1) placed near the first mention.",
 					"Do not create extra illustrative images when canonical artifacts are provided; do not leave orphan visuals.",
+					...visualPlacement.promptLines,
 				]
 			: profile.scope === "assignment"
 				? [
+						...visualPlacement.promptLines,
 						"Optional: one short literature-synthesis table in Literature Review or Critical Analysis if it clarifies themes. Prefer prose over charts.",
 						"Do not invent empirical findings charts; any illustrative table must be labelled Illustrative and not presented as observed results.",
 					]
 				: [
+						...visualPlacement.promptLines,
 						"When no dataset or findings are supplied, create useful literature-synthesis tables and clearly labelled illustrative graphs when they clarify the argument.",
 						"Illustrative graph values must be plausible examples only, never presented as observed study findings or cited statistics.",
-						`Label every such title and caption with “Illustrative” and explain in **${visualSection}** that the values are synthetic.`,
+						`Label every such title and caption with “Illustrative” and place synthesis tables in **${visualPlacement.labels.synthesis}**.`,
 						"Emit graphs as fenced `research-chart` JSON blocks with this schema:",
 						'{"type":"bar|line|area|pie|scatter","kind":"illustrative","title":"Illustrative: descriptive title","caption":"Synthetic example—not observed findings.","xKey":"category field","yKeys":["numeric field"],"data":[{"category field":"Label","numeric field":12}]}',
-						"Keep charts to at most 30 data points and tables to the most relevant rows; prefer bar/line/scatter as appropriate.",
-						"When a framework, process, or variable model is discussed, include a conceptual `research-image` JSON figure; number and caption it; reference it in prose.",
+						"Keep charts to at most 30 data points and tables to at most 10 rows (the most relevant rows); prefer bar/line/scatter as appropriate.",
+						`When a framework, process, or variable model is discussed, include a conceptual \`research-image\` JSON figure in **${visualPlacement.labels.conceptual}**; number and caption it; reference it in prose.`,
 						"When competing literature themes appear, include a short literature-comparison Markdown table.",
 					];
 
-	const userBrief = input.assignmentInstructions?.trim();
+	const userBriefRaw = input.assignmentInstructions?.trim();
+	const hasLibrary = Boolean(input.sourceContext?.trim()) && profile.scope !== "assignment";
+	// Avoid duplicating full notebook notes in both brief and selected library.
+	const userBrief =
+		hasLibrary && userBriefRaw && userBriefRaw.length > 4_000
+			? `${userBriefRaw.slice(0, 4_000).trimEnd()}\n[Brief notes truncated — full notebook text is in Selected research library.]`
+			: userBriefRaw;
+	const uploadedBrief = profile.scope === "assignment" ? input.sourceContext?.trim() : "";
 	const agentCopy = getScopeAgentCopy(profile.scope);
 	const scopedBriefBlock =
 		profile.scope === "assignment"
@@ -114,7 +140,7 @@ export function buildResearchPaperPrompt(input: {
 					scope: profile.scope,
 					topic: input.topic,
 					title: input.idea.title,
-					assignmentInstructions: input.assignmentInstructions,
+					assignmentInstructions: userBrief,
 					researchQuestions: input.idea.researchQuestions,
 				});
 	const assignmentBriefBlock =
@@ -122,20 +148,88 @@ export function buildResearchPaperPrompt(input: {
 			? scopedBriefBlock
 			: profile.scope === "assignment"
 				? [
-						"**Assignment (primary)**",
+						"**Assignment brief (PRIMARY — generate from this information)**",
 						"",
-						`**Topic:** ${input.topic.trim() || input.idea.title}`,
+						`**Working title / topic:** ${input.topic.trim() || input.idea.title}`,
 						"",
-						...(userBrief ? ["**Additional notes:**", "", userBrief, ""] : []),
-						"Write a cited coursework assignment on this topic in the selected discipline. Use Title, Introduction, Literature Review, Critical Analysis, Conclusion, and References. Body length must be 1,900–2,100 words excluding references. Do not invent Methods, Results, or empirical findings.",
-						"Cite at least 20 verified bank papers with real years (never n.d.). Every major factual claim needs an in-text citation. Every References entry must appear as an in-text citation. Prefer direct higher-education evidence when the topic is about universities, students, or faculty. Format References in APA 7. Do not write editorial asides about abstracts or fact-checking.",
-						"If an uploaded file appears below, treat it as additional assignment brief text — not as empirical data.",
+						...(userBrief
+							? [
+									"**User-provided assignment information (explain and satisfy ALL of this):**",
+									"",
+									userBrief,
+									"",
+									"BRIEF-FIRST (hard): Ground the entire document in the information above. Explain and answer every numbered question, task, learning outcome, required section/part, theory, case, marking criterion, word limit, and referencing style named there. Do not invent a different topic or omit brief requirements.",
+									"STRUCTURE: If the brief names sections or parts, use those bold headings (plus References unless forbidden). If it lists questions/tasks without headings, create clearly labelled subsections that answer each item in order. Do not collapse all brief tasks into a single Critical Analysis block.",
+								]
+							: uploadedBrief
+								? [
+										"**Uploaded assignment brief (explain and satisfy ALL of this extracted text):**",
+										"",
+										uploadedBrief,
+										"",
+										"BRIEF-FIRST (hard): Ground the entire document in the uploaded brief above. Explain and answer every numbered question, task, learning outcome, required section/part, theory, case, marking criterion, word limit, and referencing style named there. Do not invent a different topic or omit brief requirements. Treat the upload as brief text, not empirical data.",
+										"STRUCTURE: If the brief names sections or parts, use those bold headings (plus References unless forbidden). If it lists questions/tasks without headings, create clearly labelled subsections that answer each item in order. Do not collapse all brief tasks into a single Critical Analysis block.",
+									]
+								: [
+										"No extended brief was supplied — write a cited PhD-level academic assignment focused only on the working title/topic.",
+									]),
+						"",
+						"FALLBACK structure only when the brief does not specify structure: Title, Introduction, Literature Review, Critical Analysis, Conclusion, and References. Default body length 1,900–2,100 words excluding references when the brief does not set a word count. Do not invent Methods, Results, or empirical findings.",
+						"VOICE: Write as a doctoral / PhD-level academic — analytical, theory-aware, critically evaluative; not undergraduate summary prose.",
+						"REFERENCES (hard): Cite and list at least 20 verified bank papers with real years (never n.d.) whenever the bank has ≥20 papers. Every major factual claim needs an in-text citation. Every References entry must appear as an in-text citation. Prefer direct higher-education evidence when the topic is about universities, students, or faculty. Format References in the selected reference style unless the brief mandates another.",
+						"CITATIONS & FACTS: Copy USE THIS CITE strings exactly on every body paragraph from the first Introduction paragraph through Conclusion matching the selected reference style (e.g. [1] for numbered styles, (Author, Year) for author-date styles). Stay in-field: education claims need education abstracts (not finance/clinical). Do not invent statistics, sample sizes, effect sizes, or institutional claims unless they appear in the cited abstract; omit ungrounded points.",
+						...(userBrief && uploadedBrief
+							? ["If an uploaded file appears below, treat it as part of the same assignment brief — not as empirical data."]
+							: []),
 					]
 				: [];
 
-	const ideaForChat = scopedBriefBlock.length
-		? { ...input.idea, rationale: "", researchQuestions: undefined }
-		: input.idea;
+	const ideaForChat =
+		scopedBriefBlock.length || (profile.scope === "assignment" && Boolean(userBrief || uploadedBrief))
+			? { ...input.idea, rationale: "", researchQuestions: undefined }
+			: input.idea;
+
+	const rawLibrary = input.sourceContext?.trim() ?? "";
+	const libraryText =
+		rawLibrary.length > 32_000
+			? `${rawLibrary.slice(0, 32_000).trimEnd()}\n[Notebook library truncated to fit context.]`
+			: rawLibrary;
+	const vizText = (input.visualizationArtifacts ?? "").trim();
+	const vizClipped =
+		vizText.length > 8_000
+			? `${vizText.slice(0, 8_000).trimEnd()}\n[Canonical visuals truncated — full tables/charts are injected after save.]`
+			: vizText;
+	const outlineText = input.outline.trim();
+	const outlineClipped =
+		outlineText.length > 14_000
+			? `${outlineText.slice(0, 14_000).trimEnd()}\n[Outline truncated to fit context.]`
+			: outlineText;
+
+	const libraryBlock =
+		libraryText
+			? profile.scope === "assignment"
+				? userBrief
+					? [
+							"The uploaded file is part of the assignment brief. Follow it together with the working title and the user-provided information above. Do not treat it as empirical results.",
+							"",
+							"**Uploaded assignment brief**",
+							"",
+							libraryText,
+						]
+					: []
+				: [
+						"NOTEBOOK-FIRST (hard): The user selected a research notebook library and/or uploaded evidence. Use the FULL folder contents below as primary source material for this deliverable: notes, lab log, documents, datasets, surveys, figures, and references.",
+						"Align the study title, claims, variables, methods, findings/results, and contributions with the selected notebook material. Do not contradict notebook evidence or invent a different study.",
+						"Do not skip notes or files in the library. Ground Introduction, Methodology, Results/Findings (or equivalent chapters), Discussion, and Conclusion in this material whenever it is relevant.",
+						"Use datasets, survey/questionnaire material, response files, lab notes, and notebook pages when present. Use only values present in the selected library for numeric tables and reported findings.",
+						"Treat figures/images as metadata-only context here: titles, captions, filenames, and linked lab references. Do not infer unseen image content or claim raw image analysis.",
+						"Published literature from the retrieval bank supports Literature Review / Theoretical Framework and citations — it must not replace notebook evidence in Methods/Results.",
+						"",
+						"**Selected research library**",
+						"",
+						libraryText,
+					]
+			: [];
 
 	return [
 		...assignmentBriefBlock,
@@ -147,12 +241,19 @@ export function buildResearchPaperPrompt(input: {
 		"",
 		`Reference style: ${styleLabel}`,
 		"",
+		// Place notebook evidence before structure/outline so long-form agents see it first.
+		...libraryBlock,
+		...(libraryBlock.length ? [""] : []),
 		...formatStructureInstructions(profile),
 		profile.scope === "assignment"
-			? "Use the approved outline only to organise literature themes; the assignment topic remains the assignment to write."
-			: scopedBriefBlock.length
-				? `Use the approved outline to organise the ${profile.label}; the intake fields (${agentCopy.outlinePrimary}) remain primary.`
-				: "Follow the outline's research question, objectives, methodology, literature themes, expected contributions, and timeline where they fit this deliverable type.",
+			? userBrief || uploadedBrief
+				? "Use the approved outline only to organise literature themes and brief coverage; the user-provided assignment information remains primary — explain and satisfy that full brief with its own structure, not a different question."
+				: "Use the approved outline only to organise literature themes; the assignment topic remains the assignment to write."
+			: libraryBlock.length
+				? `Use the approved outline to organise the ${profile.label}; the selected research notebook library remains the primary evidence base for study-specific sections.`
+				: scopedBriefBlock.length
+					? `Use the approved outline to organise the ${profile.label}; the intake fields (${agentCopy.outlinePrimary}) remain primary.`
+					: "Follow the outline's research question, objectives, methodology, literature themes, expected contributions, and timeline where they fit this deliverable type.",
 		"Expand each required section into substantive prose with in-text citations and a References section in the selected style.",
 		...formatAcademicIntegrityRules(profile),
 		"Document quality: state a clear gap or focus; synthesize literature thematically (not paper-by-paper); include Limitations where relevant; use cautious language when evidence is thin; keep section jobs coherent for this deliverable type.",
@@ -162,44 +263,18 @@ export function buildResearchPaperPrompt(input: {
 		"Every table must use valid GitHub-flavored Markdown: one pipe-delimited header row, an immediate separator row such as `| --- | --- |`, then pipe-delimited data rows. Never imitate a table with plain text and pipe characters.",
 		"Never create a section titled “Data Source and Variables” (or similar). Dataset samples belong only in results/findings sections when those exist, capped at 5 rows.",
 		...visualLines,
-		...(input.sourceContext?.trim()
-			? profile.scope === "assignment"
-				? [
-						profile.scope === "assignment"
-							? "The uploaded file is additional assignment brief text. Follow it together with the typed topic. Do not treat it as empirical results."
-							: `The uploaded file is additional ${agentCopy.uploadedKind} text. Follow it together with the typed topic and intake fields. Do not treat it as empirical results unless it clearly contains a dataset.`,
-						"",
-						profile.scope === "assignment"
-							? "**Uploaded assignment brief**"
-							: `**Uploaded ${agentCopy.uploadedKind}**`,
-						"",
-						input.sourceContext.trim(),
-					]
-				: [
-						"The user selected a research notebook library and/or uploaded evidence. Use the FULL folder contents below as primary source material: notes, lab log, documents, datasets, surveys, figures, and references.",
-						"Align the study title, claims, variables, methods, and findings with the selected notebook material. Do not contradict notebook evidence, notes, datasets, surveys, lab work, or uploaded documents.",
-						"Do not skip notes or files in the library. Ground Introduction, Methodology, Results, Discussion, and Conclusion in this material whenever it is relevant.",
-						"Use datasets, survey/questionnaire material, response files, lab notes, and notebook pages when present. Use only values present in the selected library for numeric tables and reported findings.",
-						"Treat figures/images as metadata-only context here: titles, captions, filenames, and linked lab references. Do not infer unseen image content or claim raw image analysis.",
-						"Do not invent a different study or ignore the folder in favour of a generic topic.",
-						"",
-						"**Selected research library**",
-						"",
-						input.sourceContext.trim(),
-					]
-			: []),
-		...(hasCanonicalVisuals
+		...(hasCanonicalVisuals && vizClipped
 			? [
 					"",
 					"**Canonical tables / figure list**",
 					"",
-					input.visualizationArtifacts!.trim(),
+					vizClipped,
 				]
 			: []),
 		"",
 		"**Approved research outline**",
 		"",
-		input.outline.trim(),
+		outlineClipped,
 	].join("\n");
 }
 

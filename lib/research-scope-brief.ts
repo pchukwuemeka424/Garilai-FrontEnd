@@ -47,43 +47,44 @@ export type ScopeBriefCopy = {
 
 const COPIES: Record<ResearchScope, ScopeBriefCopy> = {
 	assignment: {
-		kicker: "Coursework assignment",
+		kicker: "Academic assignment",
 		title: "Generate your assignment",
-		lead: "Type the topic, then generate a cited assignment in your field — without inventing methods or results.",
-		topicTitle: "Assignment topic",
-		topicHelp: "The subject or title of the assignment.",
-		topicPlaceholder: "Type the assignment topic or question…",
+		lead: "Paste the brief in the editor or upload a file — either is enough — then generate a PhD-level cited assignment that covers every requirement.",
+		topicTitle: "Assignment brief",
+		topicHelp:
+			"Either paste the brief in the editor or upload a PDF / Word / text file — one is enough to generate. You can also use both together.",
+		topicPlaceholder: "e.g. Critically evaluate IFRS 15 revenue recognition in listed companies…",
 		notesTitle: "Notes for the agent",
 		notesHelp: "Optional constraints if you later attach a brief in the workspace.",
 		notesPlaceholder: "",
 		notesRequired: false,
 		showNotes: false,
-		generateError: "Enter an assignment topic.",
-		readyNotesLabel: "Assignment topic",
-		readyTopicLabel: "Assignment topic",
+		generateError: "Paste a brief in the editor, or upload an assignment brief file.",
+		readyNotesLabel: "Assignment brief",
+		readyTopicLabel: "Assignment brief",
 		ideaApproach:
-			"Write a cited assignment on this topic. Use Introduction, Literature Review, Critical Analysis, Conclusion, and References. Do not invent Methods or Results.",
+			"Write a PhD-level academic assignment that fully explains and satisfies the user brief. Follow any structure named in the brief; otherwise use Introduction, Literature Review, Critical Analysis, Conclusion, and References. Cite at least 20 bank references. Do not invent Methods or Results.",
 		ideaType: "theoretical",
-		fallbackTopic: "Coursework assignment",
+		fallbackTopic: "Academic assignment",
 		fields: [],
 		refineChips: [
 			{
 				id: "critical-analysis",
 				label: "Strengthen Critical Analysis",
 				prompt:
-					"Revise only the Critical Analysis so it is the argumentative core: evaluate competing claims, compare perspectives, and build a reasoned position with bank citations. Do not add Methods, Results, or invented empirical findings.",
+					"Revise argumentative sections so they are PhD-level critical analysis: evaluate competing claims, compare perspectives, and build a reasoned position with bank citations. Keep full coverage of every brief requirement. Do not add Methods, Results, or invented empirical findings.",
 			},
 			{
 				id: "stay-on-topic",
-				label: "Stay on topic",
+				label: "Cover the full brief",
 				prompt:
-					"Keep every section tightly focused on the assignment topic. Remove anything that does not serve the question implied by the title.",
+					"Ensure every question, task, learning outcome, and criterion in the assignment brief is explicitly addressed. Use the brief’s named sections or labelled subsections; do not drop or invent a different question.",
 			},
 			{
 				id: "no-methods",
 				label: "Keep as an assignment",
 				prompt:
-					"Remove any Methodology, Methods, Results, Findings, Abstract, or Keywords sections. Keep Introduction, Literature Review, Critical Analysis, Conclusion, and References only.",
+					"Remove any invented Methodology, Methods, Results, Findings, Abstract, or Keywords unless the brief explicitly requires a literature-grounded methods discussion. Keep brief-named sections (or the fallback Introduction, Literature Review, Critical Analysis, Conclusion, and References) only.",
 			},
 		],
 	},
@@ -481,14 +482,19 @@ export type ScopeAgentCopy = {
 const AGENT_COPIES: Record<ResearchScope, ScopeAgentCopy> = {
 	assignment: {
 		fieldJobs: {},
-		notesJob: "optional extra constraints — not empirical data",
-		writeRules: [],
+		notesJob: "assignment brief — questions, criteria, and constraints (not empirical data)",
+		writeRules: [
+			"BRIEF-FIRST: Generate from the full user-provided brief and topic. Explain and satisfy every question, task, learning outcome, required section/part, theory, case, marking criterion, word count, and referencing style in the brief.",
+			"STRUCTURE: Follow sections named in the brief; if only tasks/questions are listed, use labelled subsections for each. Fallback only when no brief structure is given: Introduction, Literature Review, Critical Analysis, Conclusion, References.",
+			"VOICE: Write as a doctoral / PhD-level academic — analytical and critically evaluative.",
+			"REFERENCES: Cite and list at least 20 distinct bank papers whenever the bank has ≥20. Copy USE THIS CITE exactly. Do not invent Methods, Results, empirical findings, or statistics not in the cited abstract.",
+		],
 		refineGoals: [
-			"Keep the assignment topic as the assignment to write; do not drift into a different question.",
-			"Do not add Methodology, Methods, Results, or invented empirical findings.",
+			"Keep full coverage of the assignment brief; do not drift into a different question or drop brief tasks.",
+			"Do not add invented Methodology, Methods, Results, or empirical findings.",
 		],
 		uploadedKind: "assignment brief",
-		outlinePrimary: "assignment topic",
+		outlinePrimary: "user-provided assignment brief",
 	},
 	conference: {
 		fieldJobs: {},
@@ -655,6 +661,9 @@ export function parseScopeBrief(
 		else if (currentId) {
 			buckets[currentId] ??= [];
 			buckets[currentId].push(line);
+		} else {
+			// Free-form brief / notebook notes without labelled fields.
+			noteLines.push(line);
 		}
 	}
 
@@ -750,6 +759,12 @@ export function buildScopeBriefPromptLines(input: {
 
 	if (resolved.notes) {
 		lines.push("", `**${copy.notesTitle} (${agent.notesJob}):**`, resolved.notes);
+	} else if (!hasFields && input.assignmentInstructions?.trim()) {
+		lines.push(
+			"",
+			`**${copy.notesTitle} (${agent.notesJob}):**`,
+			input.assignmentInstructions.trim(),
+		);
 	}
 
 	lines.push("", ...agent.writeRules);

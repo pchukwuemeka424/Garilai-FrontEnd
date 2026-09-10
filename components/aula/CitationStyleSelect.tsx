@@ -9,6 +9,7 @@ import {
 	type CSSProperties,
 	type KeyboardEvent,
 } from "react";
+import { createPortal } from "react-dom";
 
 import { CITATION_STYLE_GROUPS, type CitationStyle } from "@/lib/citation-styles";
 
@@ -42,11 +43,17 @@ export function CitationStyleSelect({
 	const fieldId = id ?? autoId;
 	const listboxId = `${fieldId}-listbox`;
 	const rootRef = useRef<HTMLDivElement>(null);
+	const popoverRef = useRef<HTMLDivElement>(null);
 	const searchRef = useRef<HTMLInputElement>(null);
+	const [mounted, setMounted] = useState(false);
 	const [open, setOpen] = useState(false);
 	const [query, setQuery] = useState("");
 	const [highlight, setHighlight] = useState(0);
 	const [menuStyle, setMenuStyle] = useState<CSSProperties | undefined>();
+
+	useEffect(() => {
+		setMounted(true);
+	}, []);
 
 	const allOptions = useMemo<StyleOption[]>(
 		() =>
@@ -89,10 +96,12 @@ export function CitationStyleSelect({
 		const spaceBelow = window.innerHeight - rect.bottom;
 		const openUp = spaceBelow < 320 && rect.top > spaceBelow;
 		const width = Math.max(rect.width, 280);
+		const maxLeft = typeof window !== "undefined" ? window.innerWidth - width - 12 : rect.left;
+		const left = Math.max(12, Math.min(rect.left, maxLeft));
 		setMenuStyle({
 			position: "fixed",
-			zIndex: 1400,
-			left: Math.min(rect.left, window.innerWidth - width - 8),
+			zIndex: 9999,
+			left,
 			width,
 			...(openUp
 				? { bottom: window.innerHeight - rect.top + 6, top: "auto" }
@@ -107,7 +116,9 @@ export function CitationStyleSelect({
 		placeMenu();
 		const t = window.setTimeout(() => searchRef.current?.focus(), 0);
 		const onDoc = (e: MouseEvent) => {
-			if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+			const target = e.target as Node;
+			if (rootRef.current?.contains(target) || popoverRef.current?.contains(target)) return;
+			setOpen(false);
 		};
 		const onReposition = () => placeMenu();
 		document.addEventListener("mousedown", onDoc);
@@ -207,83 +218,87 @@ export function CitationStyleSelect({
 				<p className="research-scope-selected-hint">{selected.hint}</p>
 			) : null}
 
-			{open && (
-				<div
-					className="discipline-select-popover citation-style-select-popover"
-					role="presentation"
-					style={menuStyle}
-					onKeyDown={onListKeyDown}
-				>
-					<div className="discipline-select-search">
-						<svg
-							className="discipline-select-search-icon"
-							width="15"
-							height="15"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							strokeWidth="2"
-							aria-hidden
+			{open && mounted && typeof document !== "undefined"
+				? createPortal(
+						<div
+							ref={popoverRef}
+							className="discipline-select-popover citation-style-select-popover"
+							role="presentation"
+							style={menuStyle}
+							onKeyDown={onListKeyDown}
 						>
-							<circle cx="11" cy="11" r="7" />
-							<path d="m20 20-3.5-3.5" strokeLinecap="round" />
-						</svg>
-						<input
-							ref={searchRef}
-							type="search"
-							className="discipline-select-search-input"
-							placeholder={searchPlaceholder}
-							value={query}
-							onChange={(e) => {
-								setQuery(e.target.value);
-								setHighlight(0);
-							}}
-							aria-label={searchPlaceholder}
-							autoComplete="off"
-						/>
-					</div>
-					<ul id={listboxId} className="discipline-select-list" role="listbox" aria-label={label}>
-						{filteredGroups.length === 0 ? (
-							<li className="discipline-select-empty">No matching citation styles</li>
-						) : (
-							filteredGroups.map((group) => (
-								<li key={group.id} className="discipline-select-group" role="presentation">
-									<div className="discipline-select-group-label">{group.label}</div>
-									<ul className="discipline-select-group-list" role="group" aria-label={group.label}>
-										{group.styles.map((style) => {
-											const enabledIndex = flatFiltered.findIndex((opt) => opt.id === style.id);
-											const active = style.id === value;
-											const highlighted = enabledIndex === highlight;
-											return (
-												<li key={style.id} role="option" aria-selected={active}>
-													<button
-														type="button"
-														className={[
-															"discipline-select-option",
-															"discipline-select-option-with-hint",
-															active ? "discipline-select-option-active" : "",
-															highlighted ? "discipline-select-option-highlight" : "",
-														]
-															.filter(Boolean)
-															.join(" ")}
-														onMouseEnter={() => {
-															if (enabledIndex >= 0) setHighlight(enabledIndex);
-														}}
-														onClick={() => pick(style.id)}
-													>
-														<span className="discipline-select-option-label">{style.label}</span>
-														<span className="discipline-select-option-hint">{style.hint}</span>
-													</button>
-												</li>
-											);
-										})}
-									</ul>
-								</li>
-							))
-						)}
-					</ul>
-				</div>
-			)}
+							<div className="discipline-select-search">
+								<svg
+									className="discipline-select-search-icon"
+									width="15"
+									height="15"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									strokeWidth="2"
+									aria-hidden
+								>
+									<circle cx="11" cy="11" r="7" />
+									<path d="m20 20-3.5-3.5" strokeLinecap="round" />
+								</svg>
+								<input
+									ref={searchRef}
+									type="search"
+									className="discipline-select-search-input"
+									placeholder={searchPlaceholder}
+									value={query}
+									onChange={(e) => {
+										setQuery(e.target.value);
+										setHighlight(0);
+									}}
+									aria-label={searchPlaceholder}
+									autoComplete="off"
+								/>
+							</div>
+							<ul id={listboxId} className="discipline-select-list" role="listbox" aria-label={label}>
+								{filteredGroups.length === 0 ? (
+									<li className="discipline-select-empty">No matching citation styles</li>
+								) : (
+									filteredGroups.map((group) => (
+										<li key={group.id} className="discipline-select-group" role="presentation">
+											<div className="discipline-select-group-label">{group.label}</div>
+											<ul className="discipline-select-group-list" role="group" aria-label={group.label}>
+												{group.styles.map((style) => {
+													const enabledIndex = flatFiltered.findIndex((opt) => opt.id === style.id);
+													const active = style.id === value;
+													const highlighted = enabledIndex === highlight;
+													return (
+														<li key={style.id} role="option" aria-selected={active}>
+															<button
+																type="button"
+																className={[
+																	"discipline-select-option",
+																	"discipline-select-option-with-hint",
+																	active ? "discipline-select-option-active" : "",
+																	highlighted ? "discipline-select-option-highlight" : "",
+																]
+																	.filter(Boolean)
+																	.join(" ")}
+																onMouseEnter={() => {
+																	if (enabledIndex >= 0) setHighlight(enabledIndex);
+																}}
+																onClick={() => pick(style.id)}
+															>
+																<span className="discipline-select-option-label">{style.label}</span>
+																<span className="discipline-select-option-hint">{style.hint}</span>
+															</button>
+														</li>
+													);
+												})}
+											</ul>
+										</li>
+									))
+								)}
+							</ul>
+						</div>,
+						document.body,
+					)
+				: null}
 		</div>
 	);
 }

@@ -7,14 +7,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AulaLayout } from "@/components/AulaLayout";
 import { ChatPanel } from "@/components/ChatPanel";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { ResearchPaperLoadingScreen } from "@/components/research/ResearchPaperLoadingScreen";
+import { ResearchLiveStreamStudio } from "@/components/research/ResearchLiveStreamStudio";
 import {
 	ResearchScopeRefineChips,
-	ResearchScopeSectionRail,
 } from "@/components/research/ResearchScopeWorkspaceTools";
 import { ResearchCitationToolbar } from "@/components/ResearchCitationToolbar";
 import { Sidebar } from "@/components/Sidebar";
-import { IconDownload, IconFileText, IconStop } from "@/components/ui/ButtonIcon";
+import { IconChevronLeft, IconDownload, IconFileText, IconStop } from "@/components/ui/ButtonIcon";
 import { useAuth } from "@/hooks/useAuth";
 import { useGarilSocket } from "@/hooks/useGarilSocket";
 import {
@@ -40,7 +39,6 @@ import { promoteBoldSectionsForDisplay } from "@/lib/research-paper-sections";
 import {
 	consumeChatPrefill,
 	getGenerateResearchLabel,
-	getPreviewResearchLabel,
 	getScopeDocumentLabel,
 	getScopeProjectEyebrow,
 	type ResearchScope,
@@ -50,6 +48,7 @@ import {
 	parseScopeFromPathname,
 } from "@/lib/research-generate-routes";
 import { prepareResearchPaperPrompt } from "@/lib/prepare-research-paper";
+import { loadLiveFigureMarkdown } from "@/lib/research-live-figures";
 import { peekPaperSources } from "@/lib/research-paper-sources";
 import { hasResearchSources } from "@/lib/research-paper-effort-evidence";
 import { peekOutlinePageContext, resolveOutlinePageContext } from "@/lib/research-outline-context";
@@ -134,14 +133,15 @@ export function GarilApp({ layout = "aula" }: { layout?: "aula" | "student" }) {
 	const [paperPreparing, setPaperPreparing] = useState(false);
 	const [paperPrepError, setPaperPrepError] = useState<string | null>(null);
 	const [projectName, setProjectName] = useState<string | null>(null);
-	const [paperOpenedInNewTab, setPaperOpenedInNewTab] = useState(false);
-	const [openedPaperId, setOpenedPaperId] = useState<string | null>(null);
 	const [backgroundJobId, setBackgroundJobId] = useState<string | null>(null);
 	const [backgroundJobRunning, setBackgroundJobRunning] = useState(false);
 	const [backgroundJobProgress, setBackgroundJobProgress] = useState(20);
+	const [backgroundJobDraft, setBackgroundJobDraft] = useState("");
+	const [backgroundFigureMarkdown, setBackgroundFigureMarkdown] = useState("");
 	const [stoppingGeneration, setStoppingGeneration] = useState(false);
 	const prepAbortRef = useRef<AbortController | null>(null);
 	const stopRequestedRef = useRef(false);
+	const draftLenRef = useRef(0);
 	const [savedPapers, setSavedPapers] = useState<SavedResearchPaper[]>([]);
 	const [viewingSaved, setViewingSaved] = useState<SavedResearchPaper | null>(null);
 	const [saveNotice, setSaveNotice] = useState<string | null>(null);
@@ -181,7 +181,6 @@ export function GarilApp({ layout = "aula" }: { layout?: "aula" | "student" }) {
 	const showResearchLoadingScreen =
 		isResearchPaperRoute &&
 		researchFlowActive &&
-		!paperOpenedInNewTab &&
 		!paperPrepError &&
 		(paperPreparing || backgroundJobRunning || isBusy || !paperReady);
 	const loadingProjectName =
@@ -244,14 +243,19 @@ export function GarilApp({ layout = "aula" }: { layout?: "aula" | "student" }) {
 					if (isResearchPaperRoute && researchFlowGenerationRef.current && saved?.id) {
 						researchFlowGenerationRef.current = false;
 						setResearchFlowActive(false);
-						const viewUrl = savedResearchPagePath(saved.id, savedPaperVariant);
-						const opened = window.open(viewUrl, "_blank", "noopener,noreferrer");
-						setOpenedPaperId(saved.id);
-						setPaperOpenedInNewTab(true);
+						setViewingSaved(saved);
+						// User is still on this page — keep the manuscript here; only open a tab if they left.
+						if (typeof document !== "undefined" && document.hidden) {
+							window.open(
+								savedResearchPagePath(saved.id, savedPaperVariant),
+								"_blank",
+								"noopener,noreferrer",
+							);
+						}
 						setSaveNotice(
-							opened
-								? `${getScopeProjectEyebrow(documentScope)} ready — opened in a new tab.`
-								: `${getScopeProjectEyebrow(documentScope)} ready — use Preview to view it (popup may be blocked).`,
+							isStudent
+								? "Research ready and saved to your history."
+								: `${getScopeProjectEyebrow(documentScope)} ready — scroll to review the draft below.`,
 						);
 					} else {
 						setSaveNotice(
@@ -313,7 +317,9 @@ export function GarilApp({ layout = "aula" }: { layout?: "aula" | "student" }) {
 	}, [paperContent, paperTopic, paperMeta, viewingSaved]);
 
 	const handleSelectSaved = (paper: SavedResearchPaper) => {
-		router.push(savedResearchPagePath(paper.id, savedPaperVariant));
+		setViewingSaved(paper);
+		setSaveNotice(null);
+		setPreviewOpen(false);
 	};
 
 	const handleRemoveSaved = useCallback(
@@ -399,18 +405,28 @@ export function GarilApp({ layout = "aula" }: { layout?: "aula" | "student" }) {
 		[sendPrompt],
 	);
 
-	const adoptStartedJob = useCallback(async (job: { id: string; topic: string; progress?: number }) => {
-		if (stopRequestedRef.current) {
-			await cancelResearchJob(job.id);
-			clearTrackedResearchJob(job.id);
-			return false;
-		}
-		setTrackedResearchJob({ jobId: job.id, topic: job.topic });
-		setBackgroundJobId(job.id);
-		setBackgroundJobProgress((prev) => Math.max(prev, job.progress ?? 20, 20));
-		setBackgroundJobRunning(true);
-		return true;
-	}, []);
+	const adoptStartedJob = useCallback(
+		async (job: { id: string; topic: string; progress?: number; draftContent?: string | null }) => {
+			if (stopRequestedRef.current) {
+				await cancelResearchJob(job.id);
+				clearTrackedResearchJob(job.id);
+				return false;
+			}
+			setTrackedResearchJob({ jobId: job.id, topic: job.topic });
+			setBackgroundJobId(job.id);
+			setBackgroundJobProgress((prev) => Math.max(prev, job.progress ?? 20, 20));
+			if (typeof job.draftContent === "string" && job.draftContent.length > 0) {
+				draftLenRef.current = job.draftContent.length;
+				setBackgroundJobDraft(job.draftContent);
+			} else {
+				draftLenRef.current = 0;
+				setBackgroundJobDraft("");
+			}
+			setBackgroundJobRunning(true);
+			return true;
+		},
+		[],
+	);
 
 	const resetGenerationUi = useCallback((notice?: string) => {
 		autoGenerateRef.current = false;
@@ -420,6 +436,8 @@ export function GarilApp({ layout = "aula" }: { layout?: "aula" | "student" }) {
 		setBackgroundJobRunning(false);
 		setBackgroundJobId(null);
 		setBackgroundJobProgress(20);
+		setBackgroundJobDraft("");
+		draftLenRef.current = 0;
 		setStoppingGeneration(false);
 		setPaperPrepError(null);
 		if (notice) {
@@ -505,6 +523,8 @@ export function GarilApp({ layout = "aula" }: { layout?: "aula" | "student" }) {
 			setPaperPreparing(true);
 			setPaperPrepError(null);
 			setBackgroundJobProgress(20);
+			setBackgroundJobDraft("");
+			draftLenRef.current = 0;
 
 			void startResearchPaperJob({
 				prompt: refine.prompt,
@@ -548,6 +568,9 @@ export function GarilApp({ layout = "aula" }: { layout?: "aula" | "student" }) {
 			setPaperPreparing(true);
 			setPaperPrepError(null);
 			setBackgroundJobProgress(20);
+			setBackgroundJobDraft("");
+			setBackgroundFigureMarkdown("");
+			draftLenRef.current = 0;
 			prepAbortRef.current?.abort();
 			const prepController = new AbortController();
 			prepAbortRef.current = prepController;
@@ -571,10 +594,32 @@ export function GarilApp({ layout = "aula" }: { layout?: "aula" | "student" }) {
 					applyDocumentScope(scope);
 					setCitationStyle(style);
 					setInput(prompt);
+
+					const figureIds = prepared?.figureDocumentIds ?? [];
+					const vizMarkdown = prepared?.visualizationMarkdown?.trim() ?? "";
+					const liveParts: string[] = [];
+					if (vizMarkdown) liveParts.push(vizMarkdown);
+					if (figureIds.length) {
+						try {
+							const figures = await loadLiveFigureMarkdown(figureIds, {
+								signal: prepController.signal,
+							});
+							if (!prepController.signal.aborted && figures.trim()) {
+								liveParts.push(figures);
+							}
+						} catch {
+							/* optional live figures */
+						}
+					}
+					if (!prepController.signal.aborted && liveParts.length) {
+						setBackgroundFigureMarkdown(liveParts.join("\n\n"));
+					}
+
 					const job = await startResearchPaperJob({
 						prompt,
 						topic: displayTopic || undefined,
 						figureDocumentIds: prepared?.figureDocumentIds,
+						visualizationMarkdown: prepared?.visualizationMarkdown,
 						sources: paperSourcesForJob(paperKey),
 					});
 					await adoptStartedJob(job);
@@ -604,6 +649,8 @@ export function GarilApp({ layout = "aula" }: { layout?: "aula" | "student" }) {
 		researchFlowGenerationRef.current = true;
 		setResearchFlowActive(true);
 		setPaperPrepError(null);
+		setBackgroundJobDraft("");
+		draftLenRef.current = 0;
 		applyDocumentScope(parseScopeFromPrompt(input) || resolveChatResearchScope(input));
 		void startResearchPaperJob({
 			prompt: input.trim(),
@@ -668,14 +715,18 @@ export function GarilApp({ layout = "aula" }: { layout?: "aula" | "student" }) {
 			setResearchFlowActive(false);
 
 			if (isResearchPaperRoute) {
-				const viewUrl = savedResearchPagePath(paper.id, savedPaperVariant);
-				const opened = window.open(viewUrl, "_blank", "noopener,noreferrer");
-				setOpenedPaperId(paper.id);
-				setPaperOpenedInNewTab(true);
+				// Stay on the live draft if the user is still here; open a tab only if they navigated away.
+				if (typeof document !== "undefined" && document.hidden) {
+					window.open(
+						savedResearchPagePath(paper.id, savedPaperVariant),
+						"_blank",
+						"noopener,noreferrer",
+					);
+				}
 				setSaveNotice(
-					opened
-						? `${getScopeProjectEyebrow(documentScope)} ready — opened in a new tab. You can keep browsing while we save it.`
-						: `${getScopeProjectEyebrow(documentScope)} ready — use Preview to view it (popup may be blocked).`,
+					isStudent
+						? "Research ready and saved to your history."
+						: `${getScopeProjectEyebrow(documentScope)} ready — review the draft below.`,
 				);
 			} else {
 				setSaveNotice(
@@ -693,6 +744,10 @@ export function GarilApp({ layout = "aula" }: { layout?: "aula" | "student" }) {
 			if (cancelled || !job) return;
 
 			setBackgroundJobProgress((prev) => Math.max(prev, job.progress ?? 20, 20));
+			if (typeof job.draftContent === "string" && job.draftContent.length > draftLenRef.current) {
+				draftLenRef.current = job.draftContent.length;
+				setBackgroundJobDraft(job.draftContent);
+			}
 
 			if (job.status === "completed" && job.savedResearchId) {
 				setBackgroundJobProgress(100);
@@ -717,7 +772,7 @@ export function GarilApp({ layout = "aula" }: { layout?: "aula" | "student" }) {
 		};
 
 		void poll();
-		const timer = window.setInterval(() => void poll(), 2000);
+		const timer = window.setInterval(() => void poll(), 800);
 		return () => {
 			cancelled = true;
 			window.clearInterval(timer);
@@ -741,6 +796,10 @@ export function GarilApp({ layout = "aula" }: { layout?: "aula" | "student" }) {
 			if (!isTerminalResearchJobStatus(job.status)) {
 				setBackgroundJobId(job.id);
 				setBackgroundJobProgress((prev) => Math.max(prev, job.progress ?? 20, 20));
+				if (typeof job.draftContent === "string" && job.draftContent.length > 0) {
+					draftLenRef.current = job.draftContent.length;
+					setBackgroundJobDraft(job.draftContent);
+				}
 				setBackgroundJobRunning(true);
 				setResearchFlowActive(true);
 				setProjectName((prev) => prev || job.topic);
@@ -777,65 +836,57 @@ export function GarilApp({ layout = "aula" }: { layout?: "aula" | "student" }) {
 		[backgroundJobRunning, isBusy, sendPrompt, status],
 	);
 
+	const researchHomeHref = isStudent ? "/student/research" : "/research";
+	const showWorkspaceBack = isStudent || isResearchWorkspacePath(pathname);
+
 	const workspace = (
 		<>
-			<div className={layout === "student" ? "chat-workspace chat-workspace-student" : "chat-workspace"}>
+			<div className="chat-workspace">
 				<header className="chat-workspace-header">
 					<div className="chat-workspace-header-main">
 						<div className="chat-workspace-heading">
+							{showWorkspaceBack ? (
+								<Link href={researchHomeHref} className="chat-workspace-back">
+									<IconChevronLeft size={15} />
+									Research Assistant
+								</Link>
+							) : null}
 							<div className="chat-workspace-title-row">
-								<h1 className="chat-workspace-title">{getScopeProjectEyebrow(documentScope)} workspace</h1>
+								<div className="chat-workspace-title-block">
+									<p className="chat-workspace-kicker">{documentLabel}</p>
+									<h1 className="chat-workspace-title">{getScopeProjectEyebrow(documentScope)} workspace</h1>
+								</div>
 								<span className={`chat-status-badge chat-status-badge-${connectionTone}`}>
 									<span className="chat-status-dot" aria-hidden />
 									{connectionLabel}
 								</span>
 							</div>
 							<p className="chat-workspace-lead">
-								{isStudent
-									? `Generate your ${documentLabel} here — it saves automatically when complete. Preview or download as PDF anytime.`
-									: `Draft a cited ${documentLabel}, refine citation style, and export to PDF.`}
+								Draft a cited {documentLabel}, refine citation style, and export to PDF.
 							</p>
 						</div>
 					</div>
 					<div className="chat-workspace-actions">
-						{isStudent ? (
-							paperReady && (
-								<>
-									<button
-										type="button"
-										className="chat-workspace-btn stu-paper-btn"
-										onClick={() => setPreviewOpen(true)}
-									>
-										<IconFileText size={16} />
+						{hasAssistantPaper && !isBusy ? (
+							<>
+								{paperReady ? (
+									<button type="button" className="chat-workspace-btn" onClick={() => setPreviewOpen(true)}>
+										<IconFileText size={15} />
 										Preview
 									</button>
-									<button
-										type="button"
-										className="chat-workspace-btn stu-paper-btn stu-paper-btn-primary"
-										onClick={handleDownloadPdf}
-									>
-										<IconDownload size={16} />
-										Download PDF
-									</button>
-								</>
-							)
-						) : (
-							hasAssistantPaper &&
-							!isBusy && (
-								<>
-									<button type="button" className="chat-workspace-btn" onClick={handleDownloadPdf}>
-										<IconDownload size={15} />
-										Download PDF
-									</button>
-									<button type="button" className="chat-workspace-btn" onClick={handleSavePaper}>
-										Save to library
-									</button>
-								</>
-							)
-						)}
+								) : null}
+								<button type="button" className="chat-workspace-btn" onClick={handleDownloadPdf}>
+									<IconDownload size={15} />
+									Download PDF
+								</button>
+								<button type="button" className="chat-workspace-btn" onClick={handleSavePaper}>
+									Save to library
+								</button>
+							</>
+						) : null}
 						<button
 							type="button"
-							className="chat-workspace-btn chat-workspace-btn-ghost"
+							className="chat-workspace-btn chat-workspace-btn-new"
 							onClick={handleNewSession}
 							disabled={isBusy}
 						>
@@ -844,66 +895,24 @@ export function GarilApp({ layout = "aula" }: { layout?: "aula" | "student" }) {
 					</div>
 				</header>
 
-				{isStudent && paperReady && (
-					<div className="stu-paper-result-bar" role="status">
-						<p className="stu-paper-result-msg">
-							{saveNotice ?? `Your ${documentLabel} is ready and saved to your history.`}
-						</p>
-						<div className="stu-paper-result-actions">
-							<button type="button" className="stu-paper-btn" onClick={() => setPreviewOpen(true)}>
-								<IconFileText size={16} />
-								Preview
-							</button>
-							<button
-								type="button"
-								className="stu-paper-btn stu-paper-btn-primary"
-								onClick={handleDownloadPdf}
-							>
-								<IconDownload size={16} />
-								Download PDF
-							</button>
-						</div>
-					</div>
-				)}
-
 				<div className="chat-workspace-body">
 					{showResearchLoadingScreen ? (
-						<div className="chat-main research-paper-loading-host">
-							<ResearchPaperLoadingScreen
+						<div className="chat-main research-paper-loading-host research-live-studio-host">
+							<ResearchLiveStreamStudio
 								projectName={loadingProjectName}
-								preparing={paperPreparing}
-								studentUI={isStudent}
 								scope={documentScope}
+								draft={backgroundJobDraft}
+								figureMarkdown={backgroundFigureMarkdown}
 								progress={Math.max(backgroundJobProgress, 20)}
-								complete={paperOpenedInNewTab}
-								onStop={() => void handleStopGeneration()}
+								preparing={paperPreparing && !backgroundJobRunning}
+								streaming={paperPreparing || backgroundJobRunning}
+								complete={false}
+								studentUI={isStudent}
 								stopping={stoppingGeneration}
+								showBackLink={false}
+								embedded
+								onStop={() => void handleStopGeneration()}
 							/>
-						</div>
-					) : paperOpenedInNewTab && isResearchPaperRoute ? (
-						<div className="chat-main research-paper-complete-host">
-							<div className="research-paper-complete-card">
-								<h2 className="research-paper-complete-title">{loadingProjectName}</h2>
-								<p className="research-paper-complete-lead">
-									Your {documentLabel} is ready and has been opened in a new tab.
-								</p>
-								{saveNotice ? <p className="research-paper-complete-notice">{saveNotice}</p> : null}
-								<div className="research-paper-complete-actions">
-									<Link href={isStudent ? "/student/research" : "/research"} className="saved-research-back">
-										← Back to Research Assistant
-									</Link>
-									{openedPaperId ? (
-										<a
-											href={savedResearchPagePath(openedPaperId, savedPaperVariant)}
-											target="_blank"
-											rel="noopener noreferrer"
-											className="saved-research-btn saved-research-btn-primary"
-										>
-											{getPreviewResearchLabel(documentScope)}
-										</a>
-									) : null}
-								</div>
-							</div>
 						</div>
 					) : (
 						<>
@@ -917,7 +926,31 @@ export function GarilApp({ layout = "aula" }: { layout?: "aula" | "student" }) {
 						onDownloadSaved={(paper) => void downloadResearchPaper(paper, paperMeta)}
 					/>
 
-					<div className="chat-main">
+					<div className={`chat-main${viewingSaved ? " chat-main-reviewing" : ""}`}>
+						{viewingSaved && (
+							<div className="chat-mode-banner" role="status">
+								<div className="chat-mode-banner-copy">
+									<span className="chat-mode-banner-label">Library</span>
+									<p className="chat-mode-banner-text">
+										{extractPaperTitle(viewingSaved.content, viewingSaved.topic)}
+									</p>
+								</div>
+								<div className="chat-mode-banner-actions">
+									<button type="button" className="chat-mode-banner-btn" onClick={() => setViewingSaved(null)}>
+										Back to live session
+									</button>
+									<button
+										type="button"
+										className="chat-mode-banner-btn chat-mode-banner-btn-danger"
+										disabled={removingSavedId !== null}
+										onClick={() => handleRemoveSaved(viewingSaved.id)}
+									>
+										Remove
+									</button>
+								</div>
+							</div>
+						)}
+
 						<div className="chat-main-scroll">
 							{socketEnabled && (status === "disconnected" || status === "error") && (
 								<div className="chat-toast chat-toast-error" role="alert">
@@ -925,23 +958,8 @@ export function GarilApp({ layout = "aula" }: { layout?: "aula" | "student" }) {
 										"Not connected. Start the backend with npm run dev:backend (port 3141), then refresh."}
 								</div>
 							)}
-							{saveNotice && <div className="chat-toast chat-toast-success">{saveNotice}</div>}
-							{viewingSaved && (
-								<div className="chat-toast chat-toast-info">
-									Viewing saved research ·{" "}
-									<button type="button" className="chat-toast-link" onClick={() => setViewingSaved(null)}>
-										Back to live session
-									</button>
-									{" · "}
-									<button
-										type="button"
-										className="chat-toast-link chat-toast-link-danger"
-										disabled={removingSavedId !== null}
-										onClick={() => handleRemoveSaved(viewingSaved.id)}
-									>
-										Remove
-									</button>
-								</div>
+							{saveNotice && !viewingSaved && (
+								<div className="chat-toast chat-toast-success">{saveNotice}</div>
 							)}
 							{error && status === "connected" && (
 								<div className="chat-toast chat-toast-error">{error}</div>
@@ -956,9 +974,12 @@ export function GarilApp({ layout = "aula" }: { layout?: "aula" | "student" }) {
 								isBusy={(isBusy || paperPreparing || backgroundJobRunning) && !viewingSaved}
 								scope={documentScope}
 								onSuggestionClick={handleSuggestionClick}
+								documentMode={Boolean(viewingSaved)}
 							/>
 						</div>
 
+						{!viewingSaved && (
+							<>
 						<ResearchCitationToolbar
 							visible={showCitationToolbar}
 							disabled={isBusy || status !== "connected"}
@@ -1037,11 +1058,9 @@ export function GarilApp({ layout = "aula" }: { layout?: "aula" | "student" }) {
 								</div>
 							</div>
 						</form>
+							</>
+						)}
 					</div>
-					<ResearchScopeSectionRail
-						scope={documentScope}
-						visible={hasAssistantPaper || Boolean(viewingSaved)}
-					/>
 						</>
 					)}
 				</div>
@@ -1073,16 +1092,16 @@ export function GarilApp({ layout = "aula" }: { layout?: "aula" | "student" }) {
 					onClick={() => setPreviewOpen(false)}
 				>
 					<div
-						className="research-history-modal stu-paper-preview-modal"
+						className="research-history-modal"
 						role="dialog"
 						aria-modal="true"
-						aria-labelledby="stu-paper-preview-title"
+						aria-labelledby="paper-preview-title"
 						onClick={(event) => event.stopPropagation()}
 					>
 						<header className="research-history-modal-head">
 							<div>
-								<h3 id="stu-paper-preview-title">{paperTitle}</h3>
-								<p className="research-history-modal-meta">Saved automatically · preview only</p>
+								<h3 id="paper-preview-title">{paperTitle}</h3>
+								<p className="research-history-modal-meta">Preview · download when ready</p>
 							</div>
 							<button type="button" className="research-history-modal-close" onClick={() => setPreviewOpen(false)}>
 								Close
@@ -1093,11 +1112,11 @@ export function GarilApp({ layout = "aula" }: { layout?: "aula" | "student" }) {
 								content={promoteBoldSectionsForDisplay(formattedPaperContent)}
 							/>
 						</div>
-						<footer className="research-history-modal-foot stu-paper-preview-foot">
-							<button type="button" className="stu-paper-btn" onClick={() => setPreviewOpen(false)}>
+						<footer className="research-history-modal-foot">
+							<button type="button" className="chat-workspace-btn" onClick={() => setPreviewOpen(false)}>
 								Close
 							</button>
-							<button type="button" className="stu-paper-btn stu-paper-btn-primary" onClick={handleDownloadPdf}>
+							<button type="button" className="chat-workspace-btn chat-workspace-btn-new" onClick={handleDownloadPdf}>
 								<IconDownload size={16} />
 								Download PDF
 							</button>
@@ -1109,25 +1128,11 @@ export function GarilApp({ layout = "aula" }: { layout?: "aula" | "student" }) {
 	);
 
 	return layout === "student" ? (
-		<div className="stu-research-paper-page">
-			<div className="stu-research-paper-top">
-				<Link href="/student/research" className="stu-research-paper-back">
-					← Back to Research Assistant
-				</Link>
-			</div>
-			{workspace}
-		</div>
+		<div className="stu-research-paper-page">{workspace}</div>
 	) : (
-		<AulaLayout showRightPanel={false} fullHeight>
+		<AulaLayout showRightPanel={false} fullHeight hideTopBar>
 			{isResearchWorkspacePath(pathname) ? (
-				<div className="research-paper-workspace-page">
-					<div className="saved-research-top">
-						<Link href="/research" className="saved-research-back">
-							← Back to Research Assistant
-						</Link>
-					</div>
-					{workspace}
-				</div>
+				<div className="research-paper-workspace-page">{workspace}</div>
 			) : (
 				workspace
 			)}

@@ -13,7 +13,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { saveChatCitationStyle } from "@/lib/chat-research-citations";
 import { type CitationStyle } from "@/lib/citation-styles";
 import { getDisciplineLabel } from "@/lib/research-disciplines";
-import { researchPaperWorkspacePath } from "@/lib/research-generate-routes";
+import { researchGeneratingPagePath } from "@/lib/research-generate-routes";
 import { getGenerateResearchLabel, getScopeDocumentLabel, getScopeLabel } from "@/lib/research-ideas";
 import { peekOutlinePageContext, resolveOutlinePageContext, stageOutlinePageContext } from "@/lib/research-outline-context";
 import { loadSavedOutline } from "@/lib/research-outline-storage";
@@ -43,9 +43,7 @@ function ResearchGenerateContent({ variant = "lecturer" }: Props) {
 	const scopeLabel = context ? getScopeLabel(context.scope) : "Research";
 	const documentLabel = getScopeDocumentLabel(context?.scope);
 	const generateLabel = getGenerateResearchLabel(context?.scope);
-	const btnPrimaryClass = isStudent
-		? "stu-paper-btn stu-paper-btn-primary research-generate-submit-btn"
-		: "saved-research-btn saved-research-btn-primary research-generate-submit-btn";
+	const btnPrimaryClass = "saved-research-btn saved-research-btn-primary research-generate-submit-btn";
 
 	useEffect(() => {
 		if (!key) return;
@@ -58,11 +56,13 @@ function ResearchGenerateContent({ variant = "lecturer" }: Props) {
 
 	const handleGenerate = () => {
 		if (!context || !hasTokens || !citationStyle) return;
+		saveChatCitationStyle(citationStyle);
 		const nextKey = stageOutlinePageContext({
 			idea: context.idea,
 			discipline: context.discipline,
 			topic: context.topic,
 			scope: context.scope,
+			citationStyle,
 			sources: context.sources,
 			returnTo: backHref,
 			assignmentInstructions: context.assignmentInstructions,
@@ -74,19 +74,19 @@ function ResearchGenerateContent({ variant = "lecturer" }: Props) {
 			projectName: context.idea.title,
 		});
 		router.push(
-			researchPaperWorkspacePath(
-				context.idea.title,
-				isStudent ? "student" : "lecturer",
+			researchGeneratingPagePath(
 				nextKey,
-				context.scope,
+				isStudent ? "student" : "lecturer",
+				context.idea.title,
+				citationStyle,
 			),
 		);
 	};
 
 	if (!key || !context) {
 		return (
-			<div className={`research-generate-page${isStudent ? " research-generate-page-student" : ""}`}>
-				<Link href={researchPath} className={isStudent ? "stu-research-paper-back" : "saved-research-back"}>
+			<div className="research-generate-page">
+				<Link href={researchPath} className="saved-research-back">
 					← Back to research
 				</Link>
 				<div className="saved-research-empty">
@@ -98,9 +98,9 @@ function ResearchGenerateContent({ variant = "lecturer" }: Props) {
 	}
 
 	return (
-		<div className={`research-generate-page${isStudent ? " research-generate-page-student" : ""}`}>
+		<div className="research-generate-page">
 			<div className="saved-research-top">
-				<Link href={backHref} className={isStudent ? "stu-research-paper-back" : "saved-research-back"}>
+				<Link href={backHref} className="saved-research-back">
 					← Back
 				</Link>
 			</div>

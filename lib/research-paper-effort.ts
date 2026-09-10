@@ -272,6 +272,7 @@ export function tallyOfficialPaperEffort(input: {
 		datasets?: unknown[];
 		pictures?: unknown[];
 		lab?: unknown[];
+		writingWords?: number;
 	} | null;
 	materials?: PaperMaterialCounts | null;
 	sources?: ResearchSourceSelection | null;
@@ -307,8 +308,9 @@ export function tallyOfficialPaperEffort(input: {
 		materials.labEntries,
 	);
 	const captureItems = pages + files + extraDocs + surveys + datasets + pictures + lab;
-	// Manuscript edits after generation only. Notebook prose is already counted as capture items.
-	const writingWords = Math.max(0, input.wordsInserted ?? 0);
+	const notebookWriting = Math.max(0, evidence?.writingWords ?? 0);
+	const manuscriptWriting = Math.max(0, input.wordsInserted ?? 0);
+	const writingWords = notebookWriting + manuscriptWriting;
 	const scored = scoreOfficialUserEffort({ captureItems, writingWords });
 	return {
 		pages,

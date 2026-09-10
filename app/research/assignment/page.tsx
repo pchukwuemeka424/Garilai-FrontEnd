@@ -1,17 +1,23 @@
-import { Suspense } from "react";
-import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 
-import { AssignmentBriefPage } from "@/components/research/AssignmentBriefPage";
-
-export const metadata: Metadata = {
-	title: "Assignment",
-	description: "Enter your assignment topic, then generate a cited coursework assignment.",
+type Props = {
+	searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
-export default function LecturerAssignmentPage() {
-	return (
-		<Suspense fallback={null}>
-			<AssignmentBriefPage variant="lecturer" />
-		</Suspense>
-	);
+function toQuery(sp: Record<string, string | string[] | undefined>): string {
+	const params = new URLSearchParams();
+	for (const [key, value] of Object.entries(sp)) {
+		if (Array.isArray(value)) {
+			for (const item of value) params.append(key, item);
+		} else if (value) {
+			params.set(key, value);
+		}
+	}
+	const query = params.toString();
+	return query ? `?${query}` : "";
+}
+
+/** Legacy /research/assignment → /research/generate/assignment */
+export default async function LecturerAssignmentRedirect({ searchParams }: Props) {
+	redirect(`/research/generate/assignment${toQuery(await searchParams)}`);
 }

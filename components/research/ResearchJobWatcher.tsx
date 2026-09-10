@@ -20,7 +20,7 @@ import {
 	markTrackedResearchJobNotified,
 	type TrackedResearchJob,
 } from "@/lib/research-job-tracker";
-import { isResearchWorkspacePath } from "@/lib/research-generate-routes";
+import { isResearchGeneratingPath, isResearchWorkspacePath } from "@/lib/research-generate-routes";
 import { savedResearchPagePath } from "@/lib/saved-research-routes";
 
 const POLL_MS = 4000;
@@ -38,7 +38,8 @@ export function ResearchJobWatcher() {
 	const { user, loading } = useAuth();
 	const router = useRouter();
 	const pathname = usePathname();
-	const onPaperWorkspace = isResearchWorkspacePath(pathname);
+	const onLiveGenerateUi =
+		isResearchWorkspacePath(pathname) || isResearchGeneratingPath(pathname);
 	const [tracked, setTracked] = useState<TrackedResearchJob | null>(null);
 	const [runningJob, setRunningJob] = useState<ResearchJob | null>(null);
 	const [completion, setCompletion] = useState<CompletionState | null>(null);
@@ -91,8 +92,8 @@ export function ResearchJobWatcher() {
 
 			setRunningJob(null);
 
-			// Paper workspace owns completion UX while the user is still there.
-			if (onPaperWorkspace && !local.notified) {
+			// Live generate / paper workspace owns completion UX while the user is still there.
+			if (onLiveGenerateUi && !local.notified) {
 				return;
 			}
 
@@ -122,7 +123,7 @@ export function ResearchJobWatcher() {
 			window.clearInterval(timer);
 			window.removeEventListener("focus", onFocus);
 		};
-	}, [loading, user, tracked?.jobId, refreshTracked, onPaperWorkspace]);
+	}, [loading, user, tracked?.jobId, refreshTracked, onLiveGenerateUi]);
 
 	const dismissCompletion = useCallback(() => {
 		if (completion) {
@@ -160,7 +161,7 @@ export function ResearchJobWatcher() {
 	}, [completion, dismissCompletion, router, user?.role]);
 
 	const showChip = Boolean(
-		!onPaperWorkspace &&
+		!onLiveGenerateUi &&
 			runningJob &&
 			(runningJob.status === "queued" || runningJob.status === "running"),
 	);

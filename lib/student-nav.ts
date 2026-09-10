@@ -1,3 +1,6 @@
+import type { UniversityFeatures } from "@/lib/university-features";
+import { DEFAULT_UNIVERSITY_FEATURES } from "@/lib/university-features";
+
 export type StudentNavItem = {
 	id: string;
 	label: string;
@@ -52,20 +55,13 @@ export const STUDENT_PROJECT_FOLDER_ITEMS: StudentQuickTool[] = [
 		description: "Supervisor comments on your drafts.",
 		iconColor: "pink",
 	},
-	{
-		id: "notifications",
-		label: "Notifications",
-		href: "/student/notifications",
-		description: "Updates from your research workspace.",
-		iconColor: "teal",
-	},
 ];
 
 export const STUDENT_ASSISTANT_ITEM: StudentNavItem = {
 	id: "assistant",
-	label: "Student Assistant",
+	label: "Student Assessment",
 	href: "/student/assistant",
-	description: "Projects, assignments, feedback, and notifications.",
+	description: "Projects, assignments, and supervisor feedback.",
 };
 
 const STUDENT_ASSISTANT_PREFIXES = [
@@ -73,7 +69,6 @@ const STUDENT_ASSISTANT_PREFIXES = [
 	"/student/projects",
 	"/student/assignments",
 	"/student/feedback",
-	"/student/notifications",
 ] as const;
 
 export function isStudentAssistantPath(pathname: string): boolean {
@@ -88,6 +83,18 @@ export const STUDENT_NAV_ITEMS: StudentNavItem[] = [
 	STUDENT_NOTEBOOK_ITEM,
 	STUDENT_ASSISTANT_ITEM,
 ];
+
+export function studentNavItemsForFeatures(
+	features?: UniversityFeatures | null,
+): StudentNavItem[] {
+	const flags = features ?? DEFAULT_UNIVERSITY_FEATURES;
+	return STUDENT_NAV_ITEMS.filter((item) => {
+		if (item.id === "research") return flags.researchAssistant;
+		if (item.id === "notebook") return flags.researchNotebook;
+		if (item.id === "assistant") return flags.studentAssessment;
+		return true;
+	});
+}
 
 export const STUDENT_BOARD_COLUMNS = [
 	{ id: "saved" as const, label: "Saved", hint: "Ideas you've bookmarked" },

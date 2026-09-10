@@ -9,18 +9,112 @@ import {
 const REFERENCES_HEADING = /^(?:\#{1,6}\s+|\*\*)References(?:\*\*)?\s*$/im;
 const ARXIV_ID = /[\d]{4}\.[\d]{4,5}(?:v\d+)?[a-z]?/i;
 const MD_LINK = /\[([^\]]*)\]\((https?:\/\/[^)]+)\)/gi;
+/** Notebook visuals must not pass through bibliography parsers (huge base64 hangs the UI). */
+const RESEARCH_VISUAL_FENCE =
+	/```(?:research-chart|research-image|research-figure)\b[\s\S]*?```/gi;
 
-/** Normalize headings: strip hash prefixes, use bold section titles; remove divider lines. */
+function extractResearchVisualFences(content: string): { text: string; fences: string[] } {
+	const fences: string[] = [];
+	const text = content.replace(RESEARCH_VISUAL_FENCE, (match) => {
+		const index = fences.length;
+		fences.push(match.trim());
+		return `\n\n@@RESEARCH_VISUAL_${index}@@\n\n`;
+	});
+	return { text, fences };
+}
+
+/** Restore visual fences at their original placeholder positions (never dump before References). */
+function restoreResearchVisualFences(content: string, fences: string[]): string {
+	if (!fences.length) return content;
+	const restored = new Set<number>();
+	let next = content.replace(/@@RESEARCH_VISUAL_(\d+)@@/g, (_m, index: string) => {
+		const i = Number(index);
+		restored.add(i);
+		return fences[i] ?? "";
+	});
+	// Placeholders lost during heading normalization — keep visuals before References as last resort.
+	const missing = fences.filter((_, i) => !restored.has(i));
+	if (missing.length) {
+		const block = missing.join("\n\n");
+		const headingMatch = next.match(REFERENCES_HEADING);
+		if (headingMatch && headingMatch.index !== undefined) {
+			next = `${next.slice(0, headingMatch.index).trimEnd()}\n\n${block}\n\n${next.slice(headingMatch.index).trimStart()}`;
+		} else {
+			next = `${next.trimEnd()}\n\n${block}`;
+		}
+	}
+	return next.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/** Truncate markdown table data rows to at most maxRows (default 10). */
+export function limitTableRowsInMarkdown(content: string, maxRows = 10): string {
+	if (!content || !content.includes("|")) return content;
+
+	const lines = content.split("\n");
+	const output: string[] = [];
+	let inTable = false;
+	let dataRowCount = 0;
+
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i];
+		const trimmed = line.trim();
+
+		const isTableRow =
+			trimmed.includes("|") &&
+			!trimmed.startsWith("```") &&
+			!trimmed.startsWith("#") &&
+			(trimmed.startsWith("|") || trimmed.includes(" | "));
+
+		if (!inTable) {
+			if (isTableRow && i + 1 < lines.length) {
+				const nextTrimmed = lines[i + 1].trim();
+				const isSeparator =
+					nextTrimmed.includes("-") &&
+					/^\|?(\s*:?-+:?\s*\|)+\s*:?-+:?\s*\|?$/.test(nextTrimmed);
+
+				if (isSeparator) {
+					inTable = true;
+					dataRowCount = 0;
+					output.push(line);
+					output.push(lines[i + 1]);
+					i++;
+					continue;
+				}
+			}
+			output.push(line);
+		} else {
+			if (isTableRow) {
+				dataRowCount++;
+				if (dataRowCount <= maxRows) {
+					output.push(line);
+				}
+			} else {
+				inTable = false;
+				dataRowCount = 0;
+				output.push(line);
+			}
+		}
+	}
+
+	return output.join("\n");
+}
+
+/** Normalize headings: strip hash prefixes, use bold section titles; remove divider lines; reduce table rows to <= 10. */
 export function normalizeResearchPaperMarkdown(content: string): string {
-	return standardizeResearchSectionHeadings(
-		content
-			.replace(/^(\#{1,6}\s+)\*\*([^*\n]+)\*\*\s*$/gm, "**$2**")
-			.replace(/^(\#{1,6}\s+)\*([^*\n]+)\*\s*$/gm, "**$2**")
-			.replace(/^(\#{1,6}\s+)(.+?)\s*$/gm, "**$2**")
-			.replace(/^[\s]*(-{2,}|_{2,}|\*{2,})[\s]*$/gm, "")
-			.replace(/\n{3,}/g, "\n\n")
-			.trim(),
+	const { text, fences } = extractResearchVisualFences(content);
+	const normalized = standardizeResearchSectionHeadings(
+		limitTableRowsInMarkdown(
+			text
+				.replace(/^(\#{1,6}\s+)\*\*([^*\n]+)\*\*\s*$/gm, "**$2**")
+				.replace(/^(\#{1,6}\s+)\*([^*\n]+)\*\s*$/gm, "**$2**")
+				.replace(/^(\#{1,6}\s+)(.+?)\s*$/gm, "**$2**")
+				.replace(/^[\s]*(-{2,}|_{2,}|\*{2,})[\s]*$/gm, "")
+				.replace(/\n{3,}/g, "\n\n")
+				.trim(),
+			10,
+		),
 	);
+	return restoreResearchVisualFences(normalized, fences);
 }
 
 /** Remove visible arXiv labels, IDs, and bare repository URLs from text. */
@@ -186,20 +280,24 @@ function formatReferencesBlock(section: string): string {
 
 /** Strip source links from the body; keep [Source](url) on References entries only. */
 export function formatResearchPaperReferences(content: string): string {
-	const trimmed = normalizeResearchPaperMarkdown(content);
-	if (!trimmed) return trimmed;
+	const { text: withoutVisuals, fences } = extractResearchVisualFences(content);
+	const trimmed = normalizeResearchPaperMarkdown(withoutVisuals);
+	if (!trimmed) return restoreResearchVisualFences(trimmed, fences);
 
 	const headingMatch = trimmed.match(REFERENCES_HEADING);
 	if (!headingMatch || headingMatch.index === undefined) {
-		return stripMarkdownLinksKeepLabel(stripArxivMeta(trimmed));
+		return restoreResearchVisualFences(
+			stripMarkdownLinksKeepLabel(stripArxivMeta(trimmed)),
+			fences,
+		);
 	}
 
 	const body = stripMarkdownLinksKeepLabel(
 		stripArxivMeta(trimmed.slice(0, headingMatch.index).trimEnd()),
 	);
 	const references = trimmed.slice(headingMatch.index);
-
-	return `${body}\n\n${formatReferencesBlock(references)}`.trim();
+	const formatted = `${body}\n\n${formatReferencesBlock(references)}`.trim();
+	return restoreResearchVisualFences(formatted, fences);
 }
 
 export type ResearchReferencesIssue = {
@@ -489,14 +587,23 @@ export function reformatResearchPaperReferencesByStyle(
 	content: string,
 	style: CitationStyle,
 ): { content: string; changed: boolean; entryCount: number } {
-	const trimmed = normalizeResearchPaperMarkdown(content);
+	const { text: withoutVisuals, fences } = extractResearchVisualFences(content);
+	const trimmed = normalizeResearchPaperMarkdown(withoutVisuals);
 	if (!trimmed) {
-		return { content: trimmed, changed: false, entryCount: 0 };
+		return {
+			content: restoreResearchVisualFences(trimmed, fences),
+			changed: false,
+			entryCount: 0,
+		};
 	}
 
 	const headingMatch = trimmed.match(REFERENCES_HEADING);
 	if (!headingMatch || headingMatch.index === undefined) {
-		return { content: trimmed, changed: false, entryCount: 0 };
+		return {
+			content: restoreResearchVisualFences(trimmed, fences),
+			changed: false,
+			entryCount: 0,
+		};
 	}
 
 	const body = trimmed.slice(0, headingMatch.index).trimEnd();
@@ -504,7 +611,11 @@ export function reformatResearchPaperReferencesByStyle(
 	const { heading, entries } = collectReferenceEntries(refsSection);
 
 	if (entries.length === 0) {
-		return { content: trimmed, changed: false, entryCount: 0 };
+		return {
+			content: restoreResearchVisualFences(trimmed, fences),
+			changed: false,
+			entryCount: 0,
+		};
 	}
 
 	const reformatted = entries.map((entry, index) => {
@@ -554,12 +665,16 @@ export function reformatResearchPaperReferencesByStyle(
 	});
 
 	const next = formatResearchPaperReferences(
-		`${body}\n\n${heading}\n\n${reformatted.join("\n\n")}`.trim(),
+		restoreResearchVisualFences(
+			`${body}\n\n${heading}\n\n${reformatted.join("\n\n")}`.trim(),
+			fences,
+		),
 	);
+	const original = restoreResearchVisualFences(trimmed, fences);
 
 	return {
 		content: next,
-		changed: next !== trimmed,
+		changed: next !== original,
 		entryCount: reformatted.length,
 	};
 }

@@ -5,7 +5,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import ReactMarkdown from "react-markdown";
 
 import { DisciplineSelect } from "@/components/aula/DisciplineSelect";
-import { ResearchScopeSelect } from "@/components/aula/ResearchScopeSelect";
 import { NavIcon } from "@/components/aula/NavIcon";
 import { ResearchCitationStyleModal } from "@/components/research/ResearchCitationStyleModal";
 import { ResearchIdeaCard } from "@/components/research/ResearchIdeaCard";
@@ -40,6 +39,7 @@ import { StudentLayout } from "@/components/StudentLayout";
 import { studentHasResearchTokens } from "@/components/StudentTokenQuota";
 import { useAuth } from "@/hooks/useAuth";
 import { useGarilSocket } from "@/hooks/useGarilSocket";
+import { saveChatCitationStyle } from "@/lib/chat-research-citations";
 import { DEFAULT_CITATION_STYLE, type CitationStyle } from "@/lib/citation-styles";
 import {
 	fetchDatasets,
@@ -52,7 +52,7 @@ import {
 } from "@/lib/research-assets-api";
 import { fetchResearchIdeasFromApi } from "@/lib/research-api";
 import { getDisciplineLabel } from "@/lib/research-disciplines";
-import { researchPaperWorkspacePath, researchScopeBriefPath } from "@/lib/research-generate-routes";
+import { researchGeneratingPagePath, researchScopeBriefPath } from "@/lib/research-generate-routes";
 import {
 	buildResearchIdeasPrompt,
 	FOCUS_OPTIONS,
@@ -62,6 +62,7 @@ import {
 	IDEA_GENERATION_PHASES,
 	ideasToMarkdown,
 	normalizeResearchScope,
+	SCOPE_OPTIONS,
 	toSelectableResearchScope,
 	parseResearchIdeas,
 	type IdeaGenerationPhase,
@@ -85,7 +86,6 @@ import {
 	clearSavedIdeas,
 	loadAllRecentSessions,
 	loadAllSavedIdeas,
-	loadRecentSessions,
 	pushRecentSession,
 	removeRecentSession,
 	removeSavedIdea,
@@ -100,6 +100,12 @@ import {
 } from "@/lib/research-wizard-draft";
 
 type WizardStep = 1 | 2 | 3;
+
+const WIZARD_STEPS: { id: WizardStep; label: string; short: string }[] = [
+	{ id: 1, label: "Define scope", short: "Scope" },
+	{ id: 2, label: "Describe topic", short: "Topic" },
+	{ id: 3, label: "Review ideas", short: "Ideas" },
+];
 
 const SCOPE_ICONS: Record<ResearchScope, ReactNode> = {
 	assignment: <IconStickyNote size={18} />,
@@ -313,22 +319,16 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 			setShowHistory(true);
 			setShowSaved(false);
 			setStep(3);
-			if (variant === "student") {
-				void loadAllRecentSessions().then(setRecentSessions);
-			}
+			void loadAllRecentSessions().then(setRecentSessions);
 			void loadAllSavedPapers().then(setSavedPapers);
 		}
 	}, [searchParams, variant]);
 
 	useEffect(() => {
 		void loadAllSavedIdeas().then(setSavedIdeas);
-		if (variant === "student") {
-			void loadAllRecentSessions().then(setRecentSessions);
-			void loadAllSavedPapers().then(setSavedPapers);
-			void loadAllSavedOutlines();
-		} else {
-			setRecentSessions(loadRecentSessions());
-		}
+		void loadAllRecentSessions().then(setRecentSessions);
+		void loadAllSavedPapers().then(setSavedPapers);
+		void loadAllSavedOutlines();
 	}, [user?.id, variant]);
 
 	useEffect(() => {
@@ -722,12 +722,14 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 				user.id,
 			);
 		}
+		if (style) saveChatCitationStyle(style);
 		stagePaperSources(selectedSources);
 		const key = stageOutlinePageContext({
 			idea,
 			discipline,
 			topic: trimmedTopic,
 			scope,
+			citationStyle: style,
 			sources: selectedSources,
 			returnTo,
 		});
@@ -737,7 +739,7 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 			projectName: trimmedTopic,
 		});
 		router.push(
-			researchPaperWorkspacePath(trimmedTopic, isStudent ? "student" : "lecturer", key, scope),
+			researchGeneratingPagePath(key, isStudent ? "student" : "lecturer", trimmedTopic, style),
 		);
 	};
 
@@ -929,46 +931,74 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 
 	const page = (
 		<>
-		<div className={variant === "student" ? "research-page research-page-student" : "research-page"}>
+		<div className="research-page">
 				<header className="research-page-header">
 					<div className="research-page-header-start">
 						<div className="research-page-icon" aria-hidden>
-							<NavIcon id="research" size={24} />
+							<NavIcon id="research" size={22} />
 						</div>
 						<div className="research-page-header-copy">
 							<p className="research-page-eyebrow">Research discovery</p>
 							<h1 className="research-page-title">Research Assistant</h1>
 							<p className="research-page-lead">
-								{variant === "student"
-									? "Pick your field, enter a topic, and explore research ideas — everything you generate is saved automatically."
-									: "Define your discipline and scope, describe your topic, and generate tailored research question ideas."}
+								Set your academic field and research type, then generate cited research ideas tailored to your project.
 							</p>
 						</div>
 					</div>
-					{variant === "student" && (
-						<div className="research-page-actions">
-							<button
-								type="button"
-								className={`research-btn research-btn-outline research-btn-sm ${showHistory ? "research-btn-active" : ""}`}
-								onClick={() => {
-									setShowHistory(true);
-									setShowSaved(false);
-									setStep(3);
-									void loadAllRecentSessions().then(setRecentSessions);
-									void loadAllSavedPapers().then(setSavedPapers);
-								}}
-							>
-								<IconClock size={16} />
-								History
-								{(recentSessions.length > 0 || savedPapers.length > 0) && (
-									<span className="research-btn-count">
-										{recentSessions.length + savedPapers.length}
-									</span>
-								)}
-							</button>
-						</div>
-					)}
+					<div className="research-page-actions">
+						<button
+							type="button"
+							className={`research-btn research-btn-outline research-btn-sm ${showHistory ? "research-btn-active" : ""}`}
+							onClick={() => {
+								setShowHistory(true);
+								setShowSaved(false);
+								setStep(3);
+								void loadAllRecentSessions().then(setRecentSessions);
+								void loadAllSavedPapers().then(setSavedPapers);
+							}}
+						>
+							<IconClock size={16} />
+							History
+							{(recentSessions.length > 0 || savedPapers.length > 0) && (
+								<span className="research-btn-count">
+									{recentSessions.length + savedPapers.length}
+								</span>
+							)}
+						</button>
+					</div>
 				</header>
+
+				{!showSaved && !showHistory && (
+					<nav className="research-progress" aria-label="Research setup progress">
+						<ol className="research-progress-list">
+							{WIZARD_STEPS.map((item, index) => {
+								const done = step > item.id;
+								const active = step === item.id;
+								return (
+									<li
+										key={item.id}
+										className={`research-progress-item${active ? " is-active" : ""}${done ? " is-done" : ""}`}
+									>
+										<span className="research-progress-index" aria-hidden>
+											{done ? (
+												<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+													<path d="M20 6 9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" />
+												</svg>
+											) : (
+												index + 1
+											)}
+										</span>
+										<span className="research-progress-label">
+											<span className="research-progress-label-full">{item.label}</span>
+											<span className="research-progress-label-short">{item.short}</span>
+										</span>
+										{index < WIZARD_STEPS.length - 1 && <span className="research-progress-connector" aria-hidden />}
+									</li>
+								);
+							})}
+						</ol>
+					</nav>
+				)}
 
 				<div className="research-wizard">
 					<div className="research-wizard-card">
@@ -1035,14 +1065,30 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 										onOpenSession={loadSession}
 										onRemoveSession={(sessionId) => setRecentSessions(removeRecentSession(sessionId))}
 										paperVariant={variant === "student" ? "student" : "lecturer"}
-										showTopicHistory={variant === "student"}
+										showTopicHistory
 									/>
 								</div>
 							</>
 						) : step === 1 ? (
 							<>
-								<div className="research-wizard-body">
-									<div className="research-form-section research-form-section-indigo">
+								<div className="research-wizard-head">
+									<div>
+										<h2 className="research-wizard-title">Project scope</h2>
+										<p className="research-wizard-subtitle">
+											Choose the academic field and output type so generated ideas match your institution and deliverable.
+										</p>
+									</div>
+								</div>
+								<div className="research-wizard-body research-wizard-body-setup">
+									<section className="research-setup-section" aria-labelledby="research-dept-heading">
+										<div className="research-setup-section-head">
+											<h3 id="research-dept-heading" className="research-setup-section-title">
+												Department / course
+											</h3>
+											<p className="research-setup-section-hint">
+												Select the academic area closest to your research interest.
+											</p>
+										</div>
 										<DisciplineSelect
 											value={discipline}
 											onChange={(id) => {
@@ -1050,44 +1096,70 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 												setDisciplineTouched(true);
 											}}
 											label="Department/Course"
-											labelIcon={<IconLayers size={15} />}
-											wrapClassName="research-discipline-wrap"
+											wrapClassName="research-discipline-wrap research-discipline-wrap-setup"
 											selectClassName="research-form-select"
-											placeholder="Select department or course"
-											hint="Choose the academic area closest to your research interest."
+											placeholder="Search or select department or course"
 										/>
 										{disciplineError && <p className="error-text">Please select your department or course.</p>}
-										<ResearchScopeSelect
-											value={scope}
-											onChange={(next) => {
-												setScope(next);
-												setScopeTouched(true);
-											}}
-											label="Research Type"
-											labelIcon={<IconGraduationCap size={15} />}
-											wrapClassName="research-scope-wrap"
-											selectClassName="research-form-select"
-											placeholder="Select research type"
-											hint="Select the output type that best matches your project."
-										/>
+									</section>
+
+									<section className="research-setup-section" aria-labelledby="research-type-heading">
+										<div className="research-setup-section-head">
+											<h3 id="research-type-heading" className="research-setup-section-title">
+												Research type
+											</h3>
+											<p className="research-setup-section-hint">
+												Select the deliverable that best matches this project.
+											</p>
+										</div>
+										<div
+											className="research-scope-grid"
+											role="radiogroup"
+											aria-labelledby="research-type-heading"
+										>
+											{SCOPE_OPTIONS.map((opt) => {
+												const selected = scope === opt.id;
+												return (
+													<button
+														key={opt.id}
+														type="button"
+														role="radio"
+														aria-checked={selected}
+														className={`research-scope-card${selected ? " is-selected" : ""}`}
+														onClick={() => {
+															setScope(opt.id);
+															setScopeTouched(true);
+														}}
+													>
+														<span className="research-scope-card-icon" aria-hidden>
+															{SCOPE_ICONS[opt.id]}
+														</span>
+														<span className="research-scope-card-copy">
+															<span className="research-scope-card-label">{opt.label}</span>
+															<span className="research-scope-card-hint">{opt.hint}</span>
+														</span>
+														<span className="research-scope-card-check" aria-hidden>
+															<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+																<path d="M20 6 9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" />
+															</svg>
+														</span>
+													</button>
+												);
+											})}
+										</div>
 										{scopeError && <p className="error-text">Please select a research type.</p>}
-									</div>
+									</section>
 								</div>
 							</>
 						) : step === 2 ? (
 							<>
 								<div className="research-wizard-head">
-									<div className="research-wizard-head-main">
-										<span className="research-wizard-step-badge research-wizard-step-badge-violet" aria-hidden>
-											<IconEdit size={16} />
-										</span>
-										<div>
-											<h2 className="research-wizard-title">Your interest topic</h2>
-											<p className="research-wizard-subtitle">
-												Share a theme or draft focus — or select a research note below to set this
-												from Manuscript → Title. Generate ideas or a full paper grounded in that note.
-											</p>
-										</div>
+									<div>
+										<h2 className="research-wizard-title">Your interest topic</h2>
+										<p className="research-wizard-subtitle">
+											Share a theme or draft focus — or select a research note below to set this
+											from Manuscript → Title. Generate ideas or a full paper grounded in that note.
+										</p>
 									</div>
 								</div>
 								<div className="research-wizard-body">
@@ -1131,9 +1203,6 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 									<div className="research-form-section research-form-section-violet">
 										<div className="research-field">
 											<label className="research-field-label research-field-label-row" htmlFor="research-topic">
-												<span className="research-field-icon research-field-icon-violet">
-													<IconTarget size={15} />
-												</span>
 												<span>Interest topic</span>
 											</label>
 											<p className="research-input-hint">{TOPIC_INPUT_HINT}</p>

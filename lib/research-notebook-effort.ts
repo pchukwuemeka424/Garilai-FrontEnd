@@ -103,8 +103,8 @@ export function computeNotebookEffort(input: {
 }): NotebookEffortSnapshot {
 	const pages = input.notebook.pages;
 	const labEntries = input.notebook.labEntries;
-	const pictures = input.documents.filter((d) => isImageDocument(d.fileMime));
-	const files = input.documents.filter((d) => !isImageDocument(d.fileMime));
+	const pictures = input.documents.filter((d) => isImageDocument(d.fileMime, d.fileName));
+	const files = input.documents.filter((d) => !isImageDocument(d.fileMime, d.fileName));
 
 	const pageInventory: NotebookNamedCount[] = pages.map((p) => {
 		const body = htmlToPlainText(p.html);

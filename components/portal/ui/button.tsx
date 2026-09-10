@@ -15,7 +15,25 @@ const buttonVariants = cva(
           "portal-btn-muted border border-[#0D0B61]/20 bg-white text-[#0D0B61] hover:bg-[#ececf8] hover:no-underline",
         ghost: "portal-btn-muted text-[#0D0B61] hover:bg-[#ececf8] hover:no-underline",
         success:
-          "portal-btn border-0 bg-[#0D0B61] text-white hover:bg-[#12108a] hover:text-white hover:no-underline",
+          "portal-btn border-0 bg-emerald-600 text-white shadow-[0_2px_8px_rgba(5,150,105,0.22)] hover:bg-emerald-700 hover:text-white hover:no-underline",
+        warning:
+          "portal-btn border-0 bg-amber-500 text-white shadow-[0_2px_8px_rgba(217,119,6,0.22)] hover:bg-amber-600 hover:text-white hover:no-underline",
+        danger:
+          "portal-btn border-0 bg-rose-600 text-white shadow-[0_2px_8px_rgba(225,29,72,0.22)] hover:bg-rose-700 hover:text-white hover:no-underline",
+        info: "portal-btn border-0 bg-sky-600 text-white shadow-[0_2px_8px_rgba(2,132,199,0.22)] hover:bg-sky-700 hover:text-white hover:no-underline",
+        ai: "portal-btn border-0 bg-violet-600 text-white shadow-[0_2px_8px_rgba(124,58,237,0.22)] hover:bg-violet-700 hover:text-white hover:no-underline",
+        slate:
+          "portal-btn border-0 bg-slate-600 text-white shadow-[0_2px_8px_rgba(71,85,105,0.22)] hover:bg-slate-700 hover:text-white hover:no-underline",
+        successSoft:
+          "portal-btn border-0 bg-emerald-600 text-white shadow-[0_2px_8px_rgba(5,150,105,0.22)] hover:bg-emerald-700 hover:text-white hover:no-underline",
+        warningSoft:
+          "portal-btn border-0 bg-amber-500 text-white shadow-[0_2px_8px_rgba(217,119,6,0.22)] hover:bg-amber-600 hover:text-white hover:no-underline",
+        dangerSoft:
+          "portal-btn border-0 bg-rose-600 text-white shadow-[0_2px_8px_rgba(225,29,72,0.22)] hover:bg-rose-700 hover:text-white hover:no-underline",
+        infoSoft:
+          "portal-btn border-0 bg-sky-600 text-white shadow-[0_2px_8px_rgba(2,132,199,0.22)] hover:bg-sky-700 hover:text-white hover:no-underline",
+        aiSoft:
+          "portal-btn border-0 bg-violet-600 text-white shadow-[0_2px_8px_rgba(124,58,237,0.22)] hover:bg-violet-700 hover:text-white hover:no-underline",
       },
       size: {
         default: "h-10 px-5",

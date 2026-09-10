@@ -11,7 +11,7 @@ import type { CitationStyle } from "@/lib/citation-styles";
 import { stageOutlinePageContext } from "@/lib/research-outline-context";
 import { stagePaperSources } from "@/lib/research-paper-sources";
 import { researchOutlinePagePath } from "@/lib/research-outline-routes";
-import { researchPaperWorkspacePath } from "@/lib/research-generate-routes";
+import { researchGeneratingPagePath } from "@/lib/research-generate-routes";
 import { stagePendingResearchPaper } from "@/lib/research-paper-pending";
 import { loadSavedOutline, saveResearchOutline } from "@/lib/research-outline-storage";
 import type { ResearchIdea, ResearchScope } from "@/lib/research-ideas";
@@ -143,6 +143,7 @@ export function ResearchIdeaCard({
 				discipline,
 				topic,
 				scope,
+				citationStyle: style,
 				sources,
 				returnTo,
 			});
@@ -154,7 +155,7 @@ export function ResearchIdeaCard({
 			});
 			setShowCitationStyleModal(false);
 			router.push(
-				researchPaperWorkspacePath(idea.title, studentUI ? "student" : "lecturer", key, scope),
+				researchGeneratingPagePath(key, studentUI ? "student" : "lecturer", idea.title, style),
 			);
 		},
 		[idea, discipline, topic, scope, sources, hasTokens, router, studentUI],

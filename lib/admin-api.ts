@@ -159,6 +159,7 @@ export type UniversityRecord = {
 	adminCount: number;
 	defaultStudentTokens?: number | null;
 	defaultLecturerTokens?: number | null;
+	features?: import("@/lib/university-features").UniversityFeatures;
 	onboardedAt: string | null;
 	createdAt: string;
 	updatedAt: string;
@@ -242,6 +243,7 @@ export async function updateAdminUniversity(
 		status: "active" | "inactive";
 		defaultStudentTokens: number | null;
 		defaultLecturerTokens: number | null;
+		features: import("@/lib/university-features").UniversityFeatures | Partial<import("@/lib/university-features").UniversityFeatures>;
 	}>,
 ): Promise<UniversityRecord> {
 	const data = await adminJson<{ university: UniversityRecord }>(
@@ -1055,3 +1057,159 @@ export async function bulkDeleteAdminResearchUploads(
 	});
 	return data.deleted;
 }
+
+export type AdminUniversityModules = {
+	universityId: string;
+	name: string;
+	features: import("@/lib/university-features").UniversityFeatures;
+};
+
+export async function fetchAdminModules(universityId?: string): Promise<AdminUniversityModules> {
+	const q = universityId ? `?universityId=${encodeURIComponent(universityId)}` : "";
+	const data = await adminJson<{ modules: AdminUniversityModules }>(`/api/admin/modules${q}`);
+	return data.modules;
+}
+
+export async function updateAdminModules(input: {
+	universityId?: string;
+	features: Partial<import("@/lib/university-features").UniversityFeatures>;
+}): Promise<AdminUniversityModules> {
+	const data = await adminJson<{ modules: AdminUniversityModules }>("/api/admin/modules", {
+		method: "PATCH",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(input),
+	});
+	return data.modules;
+}
+
+export type AdminPortalPerson = {
+	id: string | null;
+	name: string;
+	email: string;
+	role: string | null;
+};
+
+export type AdminPortalProjectRecord = {
+	id: string;
+	universityId: string;
+	title: string;
+	projectType: string;
+	status: string;
+	stage: string;
+	progressPercent: number;
+	topicStatus: string;
+	score: number | null;
+	courseName: string;
+	courseYear: string;
+	student: AdminPortalPerson;
+	supervisor: AdminPortalPerson;
+	coSupervisor: AdminPortalPerson;
+	assignmentBriefId: string | null;
+	updatedAt: string;
+	createdAt: string;
+};
+
+export type AdminPortalBriefRecord = {
+	id: string;
+	universityId: string;
+	title: string;
+	status: string;
+	courseName: string;
+	courseYear: string;
+	maxScore: number;
+	dueAt: string | null;
+	lecturer: AdminPortalPerson;
+	submissionCount: number;
+	updatedAt: string;
+	createdAt: string;
+};
+
+export type AdminPortalSummary = {
+	supervisionProjects: number;
+	assignmentProjects: number;
+	activeProjects: number;
+	unassignedSupervisors: number;
+	publishedBriefs: number;
+	draftBriefs: number;
+};
+
+function portalQuery(params?: Record<string, string | undefined>): string {
+	const q = new URLSearchParams();
+	if (!params) return "";
+	for (const [key, value] of Object.entries(params)) {
+		if (value) q.set(key, value);
+	}
+	const s = q.toString();
+	return s ? `?${s}` : "";
+}
+
+export async function fetchAdminPortalSummary(): Promise<AdminPortalSummary> {
+	const data = await adminJson<{ summary: AdminPortalSummary }>("/api/admin/portal/summary");
+	return data.summary;
+}
+
+export async function fetchAdminPortalProjects(params?: {
+	family?: "supervision" | "assignment" | "all";
+	status?: string;
+	universityId?: string;
+	search?: string;
+}): Promise<AdminPortalProjectRecord[]> {
+	const data = await adminJson<{ projects: AdminPortalProjectRecord[] }>(
+		`/api/admin/portal/projects${portalQuery(params)}`,
+	);
+	return data.projects;
+}
+
+export async function updateAdminPortalProject(
+	id: string,
+	input: Partial<{
+		supervisorId: string | null;
+		coSupervisorId: string | null;
+		status: string;
+	}>,
+): Promise<AdminPortalProjectRecord> {
+	const data = await adminJson<{ project: AdminPortalProjectRecord }>(
+		`/api/admin/portal/projects/${encodeURIComponent(id)}`,
+		{
+			method: "PATCH",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(input),
+		},
+	);
+	return data.project;
+}
+
+export async function fetchAdminPortalBriefs(params?: {
+	universityId?: string;
+	status?: string;
+	search?: string;
+}): Promise<AdminPortalBriefRecord[]> {
+	const data = await adminJson<{ briefs: AdminPortalBriefRecord[] }>(
+		`/api/admin/portal/briefs${portalQuery(params)}`,
+	);
+	return data.briefs;
+}
+
+export async function updateAdminPortalBrief(
+	id: string,
+	input: Partial<{ status: "draft" | "published"; archive: boolean }>,
+): Promise<{ brief: AdminPortalBriefRecord | null; archived: boolean }> {
+	return adminJson<{ brief: AdminPortalBriefRecord | null; archived: boolean }>(
+		`/api/admin/portal/briefs/${encodeURIComponent(id)}`,
+		{
+			method: "PATCH",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(input),
+		},
+	);
+}
+
+export async function fetchAdminPortalSupervisors(
+	universityId?: string,
+): Promise<AdminPortalPerson[]> {
+	const data = await adminJson<{ supervisors: AdminPortalPerson[] }>(
+		`/api/admin/portal/supervisors${portalQuery({ universityId })}`,
+	);
+	return data.supervisors;
+}
+

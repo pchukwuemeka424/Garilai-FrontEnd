@@ -1,14 +1,11 @@
-import { Suspense } from "react";
-import { notFound, redirect } from "next/navigation";
-import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 
-import { ResearchScopeBriefPage } from "@/components/research/ResearchScopeBriefPage";
 import {
 	canonicalResearchScopeSlug,
 	isResearchWorkspaceSlug,
+	RESEARCH_GENERATE_PATH,
 	slugToScope,
 } from "@/lib/research-generate-routes";
-import { getScopeLabel } from "@/lib/research-ideas";
 
 type Props = {
 	params: Promise<{ scope: string }>;
@@ -28,36 +25,20 @@ function toQuery(sp: Record<string, string | string[] | undefined>): string {
 	return query ? `?${query}` : "";
 }
 
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
+/** Legacy /research/{type} → dedicated /research/generate/{type}. */
+export default async function LecturerLegacyResearchTypeRedirect({ params, searchParams }: Props) {
 	const { scope: slug } = await params;
-	const scope = slugToScope(slug);
-	if (!scope) return { title: "Research workspace" };
-	const label = getScopeLabel(scope);
-	return {
-		title: label,
-		description: `Prepare and generate a cited ${label.toLowerCase()} with the ${label.toLowerCase()} agent.`,
-	};
-}
-
-export default async function LecturerResearchWorkspacePage({ params, searchParams }: Props) {
-	const { scope: slug } = await params;
-	if (!isResearchWorkspaceSlug(slug)) notFound();
-	const scope = slugToScope(slug);
-	if (!scope) notFound();
-
 	const query = toQuery(await searchParams);
-	if (scope === "faculty" || scope === "report" || scope === "proposal") {
+
+	if (!isResearchWorkspaceSlug(slug)) {
 		redirect(`/research${query}`);
 	}
 
-	const canonical = canonicalResearchScopeSlug(slug);
-	if (canonical && slug !== canonical) {
-		redirect(`/research/${canonical}${query}`);
+	const scope = slugToScope(slug);
+	if (!scope || scope === "faculty" || scope === "report" || scope === "proposal") {
+		redirect(`/research${query}`);
 	}
 
-	return (
-		<Suspense fallback={null}>
-			<ResearchScopeBriefPage scope={scope} variant="lecturer" />
-		</Suspense>
-	);
+	const canonical = canonicalResearchScopeSlug(slug) || slug;
+	redirect(`${RESEARCH_GENERATE_PATH.lecturer}/${canonical}${query}`);
 }

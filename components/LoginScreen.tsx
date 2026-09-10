@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -59,6 +60,12 @@ export function LoginScreen() {
 						autoComplete="current-password"
 						required
 					/>
+
+					<div className="login-form-forgot">
+						<Link href="/forgot-password" className="login-link">
+							Forgot password?
+						</Link>
+					</div>
 				</div>
 
 				{error && (

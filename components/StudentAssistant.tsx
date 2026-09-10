@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
-	ArrowUpRight,
-	Bell,
+	ArrowRight,
 	CalendarClock,
 	ChevronRight,
 	ClipboardList,
@@ -15,13 +14,6 @@ import {
 	type LucideIcon,
 } from "lucide-react";
 
-import {
-	formatNotificationRelative,
-	notificationHref,
-	notificationTypeLabel,
-	parseNotificationsPayload,
-	type NotificationItem,
-} from "@/components/portal/features/notifications/student-notifications";
 import { useAuth } from "@/hooks/useAuth";
 import { apiFetch } from "@/lib/portal-api";
 import { projectTypeLabel } from "@/lib/portal/project-types";
@@ -111,38 +103,28 @@ function assignmentTone(row: WorkspaceProject): { label: string; tone: string } 
 	return { label: "Not started", tone: "idle" };
 }
 
-function MetricCard({
+function MetricLink({
 	label,
 	value,
 	hint,
-	icon: Icon,
-	tone,
 	href,
 	loading,
 }: {
 	label: string;
 	value: number | string;
 	hint: string;
-	icon: LucideIcon;
-	tone: "navy" | "teal" | "amber" | "rose";
 	href: string;
 	loading?: boolean;
 }) {
 	return (
-		<Link href={href} className={`stu-home-metric stu-home-metric-${tone}`}>
-			<span className="stu-home-metric-icon" aria-hidden>
-				<Icon size={18} strokeWidth={1.75} />
-			</span>
-			<div className="stu-home-metric-copy">
-				<p className="stu-home-metric-label">{label}</p>
-				{loading ? (
-					<div className="stu-skeleton stu-skeleton-kpi-value" />
-				) : (
-					<p className="stu-home-metric-value">{value}</p>
-				)}
-				<p className="stu-home-metric-hint">{loading ? " " : hint}</p>
-			</div>
-			<ChevronRight size={16} className="stu-home-metric-chevron" aria-hidden />
+		<Link href={href} className="stu-assist-metric">
+			<p className="stu-assist-metric-label">{label}</p>
+			{loading ? (
+				<span className="stu-assist-metric-value stu-assist-metric-loading">-</span>
+			) : (
+				<span className="stu-assist-metric-value">{value}</span>
+			)}
+			<p className="stu-assist-metric-hint">{loading ? "\u00a0" : hint}</p>
 		</Link>
 	);
 }
@@ -152,33 +134,64 @@ function ToolModule({
 	description,
 	href,
 	icon: Icon,
-	tone,
 	cta,
+	count,
+	features,
+	steps,
+	wide,
 	children,
 }: {
 	title: string;
 	description: string;
 	href: string;
 	icon: LucideIcon;
-	tone: "navy" | "amber" | "rose" | "teal";
 	cta: string;
+	count?: number | string;
+	features: string[];
+	steps: Array<{ label: string; hint: string }>;
+	wide?: boolean;
 	children: ReactNode;
 }) {
 	return (
-		<article className={`stu-assist-module stu-assist-module-${tone}`}>
+		<article className={`stu-assist-module${wide ? " stu-assist-module-wide" : ""}`}>
 			<div className="stu-assist-module-head">
 				<span className="stu-assist-module-icon" aria-hidden>
-					<Icon size={18} strokeWidth={1.75} />
+					<Icon size={16} strokeWidth={1.75} />
 				</span>
-				<div>
-					<h3>{title}</h3>
+				<div className="stu-assist-module-title">
+					<div className="stu-assist-module-title-row">
+						<h3>{title}</h3>
+						{count != null ? <span className="stu-assist-module-count">{count}</span> : null}
+					</div>
 					<p>{description}</p>
 				</div>
 			</div>
-			<div className="stu-assist-module-body">{children}</div>
+
+			<ul className="stu-assist-features" aria-label={`${title} features`}>
+				{features.map((feature) => (
+					<li key={feature}>{feature}</li>
+				))}
+			</ul>
+
+			<ol className="stu-assist-steps" aria-label={`How to use ${title}`}>
+				{steps.map((step, index) => (
+					<li key={step.label}>
+						<em aria-hidden>{index + 1}</em>
+						<div>
+							<strong>{step.label}</strong>
+							<span>{step.hint}</span>
+						</div>
+					</li>
+				))}
+			</ol>
+
+			<div className="stu-assist-module-body">
+				<p className="stu-assist-body-label">Recent</p>
+				{children}
+			</div>
 			<Link href={href} className="stu-assist-module-cta">
 				{cta}
-				<ArrowUpRight size={14} />
+				<ArrowRight size={14} />
 			</Link>
 		</article>
 	);
@@ -187,21 +200,15 @@ function ToolModule({
 export function StudentAssistant() {
 	const { user } = useAuth();
 	const [projects, setProjects] = useState<WorkspaceProject[]>([]);
-	const [notifications, setNotifications] = useState<NotificationItem[]>([]);
-	const [unreadCount, setUnreadCount] = useState(0);
 	const [loading, setLoading] = useState(true);
 
 	const refresh = useCallback(async () => {
 		setLoading(true);
 		try {
-			const [projectList, notificationPayload] = await Promise.all([
-				apiFetch("/api/v1/projects").catch(() => []) as Promise<WorkspaceProject[]>,
-				apiFetch("/api/v1/notifications").catch(() => []) as Promise<unknown>,
-			]);
+			const projectList = (await apiFetch("/api/v1/projects").catch(
+				() => [],
+			)) as WorkspaceProject[];
 			setProjects(Array.isArray(projectList) ? projectList : []);
-			const parsed = parseNotificationsPayload(notificationPayload);
-			setNotifications(parsed.items.slice(0, 6));
-			setUnreadCount(parsed.unreadCount);
 		} finally {
 			setLoading(false);
 		}
@@ -272,78 +279,54 @@ export function StudentAssistant() {
 
 	const continueProject = activeProjects[0] ?? upcomingAssignments[0] ?? null;
 	const firstName = user?.name.split(" ")[0] ?? "there";
+	const hasAttention = revisionItems.length > 0 || dueSoonCount > 0;
 
 	if (!user) return null;
 
 	return (
-		<div className="stu-home stu-assist">
-			<section className="stu-home-hero">
-				<div className="stu-home-hero-copy">
-					<p className="stu-home-hero-date">{formatToday()}</p>
+		<div className="stu-assist">
+			<header className="stu-assist-intro">
+				<div className="stu-assist-intro-copy">
+					<p className="stu-assist-eyebrow">{formatToday()}</p>
 					<h1>
 						{getGreeting()}, {firstName}
 					</h1>
-					<p className="stu-home-hero-lead">
-						Your writing desk for theses, coursework, supervisor feedback, and updates.
-					</p>
+					<p>Writing desk for theses, coursework, and supervisor feedback.</p>
 				</div>
-				<div className="stu-home-hero-actions">
+				<div className="stu-assist-intro-actions">
 					<button
 						type="button"
-						className="stu-home-btn stu-home-btn-light"
+						className="stu-assist-btn stu-assist-btn-ghost"
 						onClick={() => void refresh()}
 						disabled={loading}
+						aria-label={loading ? "Syncing workspace" : "Refresh workspace"}
 					>
-						<RefreshCw size={16} className={loading ? "stu-home-spin" : undefined} />
-						{loading ? "Syncing…" : "Refresh"}
+						<RefreshCw size={15} className={loading ? "stu-assist-spin" : undefined} />
+						<span className="stu-assist-btn-label">{loading ? "Syncing" : "Refresh"}</span>
 					</button>
-					<Link href="/student/notifications" className="stu-home-btn stu-home-btn-light">
-						<Bell size={16} />
-						Inbox
-						{unreadCount > 0 ? <span className="stu-assist-hero-badge">{unreadCount > 99 ? "99+" : unreadCount}</span> : null}
-					</Link>
-					<Link href="/student/projects/new" className="stu-home-btn stu-home-btn-solid">
-						<Plus size={16} />
-						New project
-					</Link>
 				</div>
-			</section>
+			</header>
 
-			<section className="stu-home-metrics stu-assist-metrics" aria-label="Workspace overview">
-				<MetricCard
+			<section className="stu-assist-metrics" aria-label="Workspace overview">
+				<MetricLink
 					label="Projects"
 					value={researchProjects.length}
-					hint={researchProjects.length ? `${avgProgress}% average progress` : "Start a thesis or paper"}
-					icon={FolderKanban}
-					tone="navy"
+					hint={researchProjects.length ? `${avgProgress}% avg progress` : "Start a thesis or paper"}
 					href="/student/projects"
 					loading={loading}
 				/>
-				<MetricCard
+				<MetricLink
 					label="Assignments"
 					value={assignments.length}
 					hint={dueSoonCount ? `${dueSoonCount} due this week` : "No deadlines this week"}
-					icon={ClipboardList}
-					tone="amber"
 					href="/student/assignments"
 					loading={loading}
 				/>
-				<MetricCard
+				<MetricLink
 					label="Revisions"
 					value={revisionItems.length}
 					hint={revisionItems.length ? "Supervisor comments waiting" : "Nothing to revise"}
-					icon={MessageSquareText}
-					tone="rose"
 					href="/student/feedback"
-					loading={loading}
-				/>
-				<MetricCard
-					label="Inbox"
-					value={unreadCount}
-					hint={unreadCount ? "Unread notifications" : "You're up to date"}
-					icon={Bell}
-					tone="teal"
-					href="/student/notifications"
 					loading={loading}
 				/>
 			</section>
@@ -362,16 +345,19 @@ export function StudentAssistant() {
 					</div>
 					<div className="stu-assist-continue-progress">
 						<span>{Math.min(100, Math.max(0, continueProject.progressPercent ?? 0))}%</span>
-						<div className="stu-home-progress" role="presentation">
+						<div className="stu-assist-progress" role="presentation">
 							<div
-								className="stu-home-progress-fill"
+								className="stu-assist-progress-fill"
 								style={{
 									width: `${Math.min(100, Math.max(0, continueProject.progressPercent ?? 0))}%`,
 								}}
 							/>
 						</div>
 					</div>
-					<ChevronRight size={18} aria-hidden />
+					<span className="stu-assist-continue-open">
+						Open
+						<ArrowRight size={14} aria-hidden />
+					</span>
 				</Link>
 			) : null}
 
@@ -382,13 +368,23 @@ export function StudentAssistant() {
 						description="Theses, dissertations, and research folders."
 						href="/student/projects"
 						icon={FolderKanban}
-						tone="navy"
 						cta="Open projects"
+						count={loading ? "-" : researchProjects.length}
+						features={[
+							"Chapter writing desk",
+							"Supervisor review trail",
+							"Import / export drafts",
+						]}
+						steps={[
+							{ label: "Create", hint: "Start a thesis, dissertation, or paper folder" },
+							{ label: "Write", hint: "Draft chapters and attach notebook evidence" },
+							{ label: "Submit", hint: "Send pages for supervisor review" },
+						]}
 					>
 						{loading ? (
-							<div className="stu-skeleton stu-skeleton-card" />
+							<div className="stu-assist-skeleton" aria-hidden />
 						) : activeProjects.length === 0 ? (
-							<p className="stu-home-quiet">No writing projects yet.</p>
+							<p className="stu-assist-quiet">No writing projects yet.</p>
 						) : (
 							<ul className="stu-assist-preview">
 								{activeProjects.slice(0, 3).map((project) => (
@@ -410,13 +406,23 @@ export function StudentAssistant() {
 						description="Coursework briefs and upcoming due dates."
 						href="/student/assignments"
 						icon={ClipboardList}
-						tone="amber"
 						cta="Open assignments"
+						count={loading ? "-" : assignments.length}
+						features={[
+							"Published lecturer briefs",
+							"Due-date tracking",
+							"One-page submission",
+						]}
+						steps={[
+							{ label: "Pick brief", hint: "Choose a published coursework brief" },
+							{ label: "Draft", hint: "Write or import your submission" },
+							{ label: "Hand in", hint: "Submit before the due date" },
+						]}
 					>
 						{loading ? (
-							<div className="stu-skeleton stu-skeleton-card" />
+							<div className="stu-assist-skeleton" aria-hidden />
 						) : upcomingAssignments.length === 0 ? (
-							<p className="stu-home-quiet">No assignments from lecturers yet.</p>
+							<p className="stu-assist-quiet">No assignments from lecturers yet.</p>
 						) : (
 							<ul className="stu-assist-preview">
 								{upcomingAssignments.slice(0, 3).map((row) => {
@@ -445,13 +451,24 @@ export function StudentAssistant() {
 						description="Supervisor comments on your drafts."
 						href="/student/feedback"
 						icon={MessageSquareText}
-						tone="rose"
 						cta="Review feedback"
+						count={loading ? "-" : revisionItems.length}
+						wide
+						features={[
+							"Inline remarks",
+							"Revision requests",
+							"Scores and decisions",
+						]}
+						steps={[
+							{ label: "Read", hint: "Open remarks on marked chapters or briefs" },
+							{ label: "Revise", hint: "Update the draft where feedback points" },
+							{ label: "Resubmit", hint: "Send the revised page for another look" },
+						]}
 					>
 						{loading ? (
-							<div className="stu-skeleton stu-skeleton-card" />
+							<div className="stu-assist-skeleton" aria-hidden />
 						) : revisionItems.length === 0 ? (
-							<p className="stu-home-quiet">No revision requests right now.</p>
+							<p className="stu-assist-quiet">No revision requests right now.</p>
 						) : (
 							<ul className="stu-assist-preview">
 								{revisionItems.slice(0, 3).map((item) => (
@@ -465,59 +482,25 @@ export function StudentAssistant() {
 							</ul>
 						)}
 					</ToolModule>
-
-					<ToolModule
-						title="Notifications"
-						description="Updates from lecturers and supervisors."
-						href="/student/notifications"
-						icon={Bell}
-						tone="teal"
-						cta="Open inbox"
-					>
-						{loading ? (
-							<div className="stu-skeleton stu-skeleton-card" />
-						) : notifications.length === 0 ? (
-							<p className="stu-home-quiet">No notifications yet.</p>
-						) : (
-							<ul className="stu-assist-preview">
-								{notifications.slice(0, 3).map((item) => {
-									const href = notificationHref(item) || "/student/notifications";
-									return (
-										<li key={item._id}>
-											<Link href={href}>
-												<strong>{item.title}</strong>
-												<span>
-													{notificationTypeLabel(item.type)}
-													{item.createdAt ? ` · ${formatNotificationRelative(item.createdAt)}` : ""}
-												</span>
-											</Link>
-										</li>
-									);
-								})}
-							</ul>
-						)}
-					</ToolModule>
 				</div>
 
 				<aside className="stu-assist-aside">
-					<section className="stu-home-panel">
-						<div className="stu-home-panel-head">
-							<div>
-								<h2>Needs attention</h2>
-								<p>Items that should move first.</p>
-							</div>
+					<section className="stu-assist-panel">
+						<div className="stu-assist-panel-head">
+							<h2>Needs attention</h2>
+							<p>Items that should move first.</p>
 						</div>
 						{loading ? (
-							<div className="stu-skeleton stu-skeleton-card" />
-						) : revisionItems.length === 0 && dueSoonCount === 0 && unreadCount === 0 ? (
-							<p className="stu-home-quiet">You're clear — nothing urgent.</p>
+							<div className="stu-assist-skeleton" aria-hidden />
+						) : !hasAttention ? (
+							<p className="stu-assist-quiet">You're clear - nothing urgent.</p>
 						) : (
 							<ul className="stu-assist-queue">
 								{revisionItems.length > 0 ? (
 									<li>
 										<Link href="/student/feedback">
 											<span className="stu-assist-queue-icon stu-assist-queue-rose" aria-hidden>
-												<MessageSquareText size={15} />
+												<MessageSquareText size={14} />
 											</span>
 											<div>
 												<strong>
@@ -533,7 +516,7 @@ export function StudentAssistant() {
 									<li>
 										<Link href="/student/assignments">
 											<span className="stu-assist-queue-icon stu-assist-queue-amber" aria-hidden>
-												<CalendarClock size={15} />
+												<CalendarClock size={14} />
 											</span>
 											<div>
 												<strong>{dueSoonCount} due this week</strong>
@@ -542,35 +525,20 @@ export function StudentAssistant() {
 										</Link>
 									</li>
 								) : null}
-								{unreadCount > 0 ? (
-									<li>
-										<Link href="/student/notifications">
-											<span className="stu-assist-queue-icon stu-assist-queue-teal" aria-hidden>
-												<Bell size={15} />
-											</span>
-											<div>
-												<strong>{unreadCount} unread updates</strong>
-												<span>Review your inbox</span>
-											</div>
-										</Link>
-									</li>
-								) : null}
 							</ul>
 						)}
 					</section>
 
-					<section className="stu-home-panel">
-						<div className="stu-home-panel-head">
-							<div>
-								<h2>Quick start</h2>
-								<p>Jump into the next writing task.</p>
-							</div>
+					<section className="stu-assist-panel">
+						<div className="stu-assist-panel-head">
+							<h2>Quick start</h2>
+							<p>Jump into the next writing task.</p>
 						</div>
-						<ul className="stu-home-shortcuts">
+						<ul className="stu-assist-shortcuts">
 							<li>
-								<Link href="/student/projects/new" className="stu-home-shortcut">
-									<span className="stu-home-shortcut-icon" aria-hidden>
-										<Plus size={15} />
+								<Link href="/student/projects/new" className="stu-assist-shortcut">
+									<span className="stu-assist-shortcut-icon" aria-hidden>
+										<Plus size={14} />
 									</span>
 									<span>
 										New project
@@ -580,9 +548,9 @@ export function StudentAssistant() {
 								</Link>
 							</li>
 							<li>
-								<Link href="/student/assignments" className="stu-home-shortcut">
-									<span className="stu-home-shortcut-icon" aria-hidden>
-										<ClipboardList size={15} />
+								<Link href="/student/assignments" className="stu-assist-shortcut">
+									<span className="stu-assist-shortcut-icon" aria-hidden>
+										<ClipboardList size={14} />
 									</span>
 									<span>
 										Submit coursework
@@ -592,9 +560,9 @@ export function StudentAssistant() {
 								</Link>
 							</li>
 							<li>
-								<Link href="/student/feedback" className="stu-home-shortcut">
-									<span className="stu-home-shortcut-icon" aria-hidden>
-										<MessageSquareText size={15} />
+								<Link href="/student/feedback" className="stu-assist-shortcut">
+									<span className="stu-assist-shortcut-icon" aria-hidden>
+										<MessageSquareText size={14} />
 									</span>
 									<span>
 										Respond to feedback

@@ -2,6 +2,8 @@
 
 End-to-end workflows for the GARIL AI research platform: user journeys, agentic chat pipeline, research features, and local development.
 
+Full combined product + ops manual: [docs/PROJECT_MANUAL.md](docs/PROJECT_MANUAL.md).
+
 ---
 
 ## Architecture (dev)

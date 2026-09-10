@@ -6,9 +6,15 @@ export const RESEARCH_GENERATE_PATH = {
 	student: "/student/research/generate",
 } as const;
 
+export const RESEARCH_GENERATING_PATH = {
+	lecturer: "/research/generating",
+	student: "/student/research/generating",
+} as const;
+
 /** Static /research/* segments that must not be treated as a workspace type slug. */
 export const RESEARCH_RESERVED_SEGMENTS = new Set([
 	"generate",
+	"generating",
 	"outline",
 	"saved",
 	"note",
@@ -60,12 +66,18 @@ export function isResearchWorkspaceSlug(slug: string | null | undefined): boolea
 	return Boolean(slugToScope(trimmed));
 }
 
+/**
+ * Dedicated generate page for a research type, e.g.
+ * /research/generate/assignment or /student/research/generate/journal
+ */
 export function researchWorkspaceBasePath(
 	scope: string | null | undefined,
 	variant: "lecturer" | "student" = "lecturer",
 ): string {
 	const slug = scopeToSlug(scope);
-	return variant === "student" ? `/student/research/${slug}` : `/research/${slug}`;
+	const root =
+		variant === "student" ? RESEARCH_GENERATE_PATH.student : RESEARCH_GENERATE_PATH.lecturer;
+	return `${root}/${slug}`;
 }
 
 export function researchScopeBriefPath(
@@ -94,10 +106,20 @@ export function researchAssignmentBriefPath(
 
 function parseResearchWorkspaceSlug(pathname: string | null | undefined): string | null {
 	if (!pathname) return null;
+	// Preferred: /research/generate/{type} and /student/research/generate/{type}
+	const lecturerGenerate = pathname.match(/^\/research\/generate\/([^/?#]+)\/?$/);
+	if (lecturerGenerate?.[1]) return lecturerGenerate[1];
+	const studentGenerate = pathname.match(/^\/student\/research\/generate\/([^/?#]+)\/?$/);
+	if (studentGenerate?.[1]) return studentGenerate[1];
+	// Legacy: /research/{type} and /student/research/{type}
 	const lecturer = pathname.match(/^\/research\/([^/?#]+)\/?$/);
-	if (lecturer?.[1]) return lecturer[1];
+	if (lecturer?.[1] && !RESEARCH_RESERVED_SEGMENTS.has(lecturer[1].toLowerCase())) {
+		return lecturer[1];
+	}
 	const student = pathname.match(/^\/student\/research\/([^/?#]+)\/?$/);
-	if (student?.[1]) return student[1];
+	if (student?.[1] && !RESEARCH_RESERVED_SEGMENTS.has(student[1].toLowerCase())) {
+		return student[1];
+	}
 	return null;
 }
 
@@ -117,6 +139,33 @@ export function researchGeneratePagePath(
 ): string {
 	const base = variant === "student" ? RESEARCH_GENERATE_PATH.student : RESEARCH_GENERATE_PATH.lecturer;
 	return `${base}?key=${encodeURIComponent(key)}`;
+}
+
+/** Dedicated live progress page for paper generation (all research types). */
+export function researchGeneratingPagePath(
+	key: string,
+	variant: "lecturer" | "student" = "lecturer",
+	topic?: string | null,
+	citationStyle?: string | null,
+): string {
+	const base = variant === "student" ? RESEARCH_GENERATING_PATH.student : RESEARCH_GENERATING_PATH.lecturer;
+	const params = new URLSearchParams();
+	params.set("key", key.trim());
+	const trimmed = topic?.trim();
+	if (trimmed) params.set("topic", trimmed);
+	const trimmedStyle = citationStyle?.trim();
+	if (trimmedStyle) params.set("style", trimmedStyle);
+	return `${base}?${params.toString()}`;
+}
+
+export function isResearchGeneratingPath(pathname: string | null | undefined): boolean {
+	if (!pathname) return false;
+	return (
+		pathname === RESEARCH_GENERATING_PATH.lecturer ||
+		pathname === RESEARCH_GENERATING_PATH.student ||
+		pathname.startsWith(`${RESEARCH_GENERATING_PATH.lecturer}/`) ||
+		pathname.startsWith(`${RESEARCH_GENERATING_PATH.student}/`)
+	);
 }
 
 export function researchPaperWorkspacePath(

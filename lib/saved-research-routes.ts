@@ -12,6 +12,11 @@ export function savedResearchPagePath(id: string, variant: "lecturer" | "student
 	return `${base}?id=${encodeURIComponent(id)}`;
 }
 
+export function savedResearchEffortPath(id: string, variant: "lecturer" | "student" = "lecturer"): string {
+	const base = variant === "student" ? "/student/research/saved/effort" : "/research/saved/effort";
+	return `${base}?id=${encodeURIComponent(id)}`;
+}
+
 export function savedResearchPageBase(variant: "lecturer" | "student" = "lecturer"): string {
 	return savedResearchListPath(variant);
 }

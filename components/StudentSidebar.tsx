@@ -1,9 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
-
 import { SavedResearchPanel } from "@/components/aula/SavedResearchPanel";
-import { parseNotificationsPayload } from "@/components/portal/features/notifications/student-notifications";
 import { StudentTokenQuotaBar } from "@/components/StudentTokenQuota";
 import {
 	SidebarBrand,
@@ -15,12 +12,8 @@ import {
 } from "@/components/sidebar/SidebarPrimitives";
 import { useAuth } from "@/hooks/useAuth";
 import type { AuthUser } from "@/lib/auth";
-import { apiFetch } from "@/lib/portal-api";
 import {
-	STUDENT_ASSISTANT_ITEM,
-	STUDENT_DASHBOARD_ITEM,
-	STUDENT_NOTEBOOK_ITEM,
-	STUDENT_RESEARCH_ITEM,
+	studentNavItemsForFeatures,
 } from "@/lib/student-nav";
 
 type Props = {
@@ -32,22 +25,6 @@ type Props = {
 
 export function StudentSidebar({ user, id, className, onNavigate }: Props) {
 	const { logout } = useAuth();
-	const [unreadCount, setUnreadCount] = useState(0);
-
-	useEffect(() => {
-		let cancelled = false;
-		void apiFetch("/api/v1/notifications")
-			.then((data) => {
-				if (cancelled) return;
-				setUnreadCount(parseNotificationsPayload(data).unreadCount);
-			})
-			.catch(() => {
-				if (!cancelled) setUnreadCount(0);
-			});
-		return () => {
-			cancelled = true;
-		};
-	}, []);
 
 	const handleLogout = () => {
 		onNavigate?.();
@@ -65,12 +42,7 @@ export function StudentSidebar({ user, id, className, onNavigate }: Props) {
 			<div className="sb-scroll">
 				<SidebarSection label="Main">
 					<SidebarNav>
-						{[
-							STUDENT_DASHBOARD_ITEM,
-							STUDENT_RESEARCH_ITEM,
-							STUDENT_NOTEBOOK_ITEM,
-							STUDENT_ASSISTANT_ITEM,
-						].map((item) => (
+						{studentNavItemsForFeatures(user.features).map((item) => (
 							<SidebarNavLink
 								key={item.id}
 								href={item.href}
@@ -78,13 +50,6 @@ export function StudentSidebar({ user, id, className, onNavigate }: Props) {
 								label={item.label}
 								description={item.description}
 								onNavigate={onNavigate}
-								badge={
-									item.id === "assistant" && unreadCount > 0
-										? unreadCount > 99
-											? "99+"
-											: String(unreadCount)
-										: undefined
-								}
 							/>
 						))}
 					</SidebarNav>

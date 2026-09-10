@@ -3,7 +3,6 @@
 import { IconStop } from "@/components/ui/ButtonIcon";
 import { useSmoothProgress } from "@/hooks/useSmoothProgress";
 import { getScopeDocumentLabel, getScopeProjectEyebrow } from "@/lib/research-ideas";
-import { getScopeRailHeadings } from "@/lib/research-scope-brief";
 
 type Props = {
 	projectName: string;
@@ -48,17 +47,12 @@ export function ResearchPaperLoadingScreen({
 }: Props) {
 	const documentLabel = getScopeDocumentLabel(scope);
 	const eyebrow = getScopeProjectEyebrow(scope);
-	const sectionSteps = getScopeRailHeadings(scope);
 	const percent = useSmoothProgress(Math.max(progress, 20), {
 		complete,
 		active: true,
 		floor: 20,
 		autoCreep: true,
 	});
-	const activeStep =
-		sectionSteps.length > 0
-			? Math.min(sectionSteps.length - 1, Math.floor((percent / 100) * sectionSteps.length))
-			: 0;
 
 	return (
 		<div
@@ -97,25 +91,6 @@ export function ResearchPaperLoadingScreen({
 						/>
 					</div>
 				</div>
-
-				{sectionSteps.length ? (
-					<ol className="research-paper-loading-steps">
-						{sectionSteps.map((heading, index) => (
-							<li
-								key={heading}
-								className={
-									index < activeStep
-										? "is-done"
-										: index === activeStep
-											? "is-active"
-											: undefined
-								}
-							>
-								{heading}
-							</li>
-						))}
-					</ol>
-				) : null}
 
 				{onStop && !complete ? (
 					<button

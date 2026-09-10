@@ -370,14 +370,18 @@ export function DocumentEditor({
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-xl border border-border bg-[#f3f3f3] shadow-sm",
+        "overflow-hidden rounded-xl border border-[#e2e8f0] bg-[#f3f3f3] shadow-none",
         fillHeight && "flex min-h-0 flex-1 flex-col",
         readOnly && "opacity-80",
         className,
       )}
     >
       {!readOnly && (
-      <div className="flex flex-wrap items-center gap-1 border-b border-border bg-[#fafafa] px-2 py-1.5">
+      <div
+        className="document-editor-toolbar"
+        role="toolbar"
+        aria-label="Document formatting"
+      >
         <ToolbarButton
           label="Undo"
           onClick={() => editor.chain().focus().undo().run()}
@@ -546,7 +550,7 @@ export function DocumentEditor({
         )}
 
         <span
-          className="ml-auto inline-flex items-center gap-1.5 px-1.5 text-[11px] text-foreground/45"
+          className="document-editor-toolbar-spell"
           title="Browser spellcheck is on. Right-click underlined words for suggestions."
         >
           <SpellCheck className="size-3.5 shrink-0" aria-hidden />
@@ -623,12 +627,13 @@ function ToolbarButton({
       type="button"
       title={label}
       aria-label={label}
+      aria-pressed={active ? true : undefined}
       disabled={disabled}
       onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}
       className={cn(
-        "inline-flex size-8 items-center justify-center rounded-md text-foreground/70 transition hover:bg-black/5 hover:text-foreground disabled:opacity-35",
-        active && "bg-[#deecf9] text-[#185abd]",
+        "document-editor-toolbar-btn",
+        active && "is-active",
       )}
     >
       {children}
@@ -637,7 +642,9 @@ function ToolbarButton({
 }
 
 function Separator() {
-  return <span className="mx-1 h-5 w-px bg-border" aria-hidden />;
+  return (
+    <span className="document-editor-toolbar-sep" aria-hidden />
+  );
 }
 
 /** Compare editor HTML ignoring ephemeral attrs TipTap adds (e.g. text-align). */

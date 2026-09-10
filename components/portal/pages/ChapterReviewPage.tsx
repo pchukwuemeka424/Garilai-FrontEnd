@@ -1,29 +1,66 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Bot, Check, Loader2, RotateCcw } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Brain,
+  CircleCheck,
+  Highlighter,
+  Loader2,
+  MessageSquarePlus,
+  RotateCcw,
+  ScanSearch,
+  ShieldCheck,
+  Sparkles,
+  UserRound,
+  WandSparkles,
+  X,
+} from "lucide-react";
 import { Badge } from "@/components/portal/ui/badge";
 import { Button } from "@/components/portal/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/portal/ui/card";
+import { ConfirmModal } from "@/components/portal/ui/confirm-modal";
 import { EmptyState } from "@/components/portal/feedback/empty-state";
 import { LoadingPage } from "@/components/portal/feedback/loading-page";
-import { AIReportPanel, type AiReportData } from "@/components/portal/features/ai/ai-report-panel";
+import {
+  DocumentEditor,
+  countWordsFromHtml,
+  toEditorHtml,
+} from "@/components/portal/editor/document-editor";
+import { ReviewAnnotator } from "@/components/portal/editor/review-annotator";
+import { stripRemarkHtml } from "@/lib/portal/remark-html";
+import {
+  AIReportPanel,
+  type AiReportData,
+} from "@/components/portal/features/ai/ai-report-panel";
 import { apiFetch } from "@/lib/portal-api";
 import {
-  applyReviewHighlights,
+  computeAreaScores,
   mergeHighlightQuotes,
   pickFallbackHighlightQuotes,
-  REVIEW_HIGHLIGHT_COLORS,
+  quotesFromFactCheckClaims,
+  type AreaScores,
   type ReviewTextHighlights,
 } from "@/lib/portal/apply-highlights";
+import {
+  analyzeDocumentClaimsAndCitations,
+  type FactCheckAuditReport,
+} from "@/lib/portal/fact-check-citations";
+import { cn } from "@/lib/portal/cn";
+import { ReviewTrailPanel } from "@/components/portal/features/review/review-trail-panel";
+import {
+  isAwaitingNewReview,
+  type ReviewTrailEvent,
+} from "@/lib/portal/review-trail";
 
 const AUTO_SAVE_MS = 1200;
 
@@ -40,6 +77,7 @@ type ReviewPayload = {
     aiReviewerReport?: AiReportData | null;
     aiReviewerAt?: string | null;
     approvedAt?: string;
+    updatedAt?: string;
   };
   version: {
     _id: string;
@@ -68,6 +106,7 @@ type ReviewPayload = {
     studentId: string;
   };
   student: { id: string; name: string; email: string } | null;
+  reviewTrail?: ReviewTrailEvent[];
 };
 
 type AiReviewerResult = AiReportData & {
@@ -84,59 +123,7 @@ type AiReviewerResult = AiReportData & {
   };
 };
 
-function statusBadge(status: string) {
-  if (status === "approved" || status === "locked") return "success" as const;
-  if (status === "needs_revision" || status === "rejected")
-    return "warning" as const;
-  if (status === "under_review" || status === "submitted")
-    return "warning" as const;
-  return "neutral" as const;
-}
-
-function canDecide(status: string) {
-  return status === "submitted" || status === "under_review";
-}
-
-function formatAiReviewerIntoRemark(result: AiReviewerResult) {
-  const lines: string[] = [];
-  if (result.remarksSummary) {
-    lines.push(result.remarksSummary);
-    return lines.join("\n");
-  }
-  if (result.projectTopic) {
-    lines.push(`Topic analysed: ${result.projectTopic}`);
-  }
-  if (result.topicAlignment?.score != null) {
-    lines.push(`Topic alignment: ${result.topicAlignment.score}/100`);
-  }
-  if (result.areaScores) {
-    lines.push(
-      `Scores — Weaknesses ${result.areaScores.weaknesses}/100 · Overall ${result.areaScores.overall}/100`,
-    );
-  }
-  if (result.executiveSummary) {
-    lines.push(`Summary: ${result.executiveSummary}`);
-  }
-  if (result.revisionPriorities?.length) {
-    lines.push(
-      `Priority revisions: ${result.revisionPriorities.join("; ")}`,
-    );
-  }
-  if (result.weaknesses?.length) {
-    lines.push(`Weaknesses: ${result.weaknesses.join("; ")}`);
-  }
-  if (result.researchGaps?.length) {
-    lines.push(`Research gaps: ${result.researchGaps.join("; ")}`);
-  }
-  const citationCount = result.highlightQuotes?.citations?.length || 0;
-  if (citationCount > 0) {
-    lines.push(`Needs in-text citation: ${citationCount} passage(s) marked`);
-  }
-  if (result.supervisorRecommendation) {
-    lines.push(`Recommendation: ${result.supervisorRecommendation}`);
-  }
-  return lines.join("\n");
-}
+type PendingConfirm = "approve" | "needs_revision" | null;
 
 function countMarks(html: string) {
   return (
@@ -145,30 +132,187 @@ function countMarks(html: string) {
   );
 }
 
-export default function ReviewWorkspacePage() {
+function countWords(html: string) {
+  const text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  return text ? text.split(/\s+/).length : 0;
+}
+
+function formatAiReviewerIntoRemarkHtml(result: AiReviewerResult): string {
+  const parts: string[] = [];
+  if (result.remarksSummary) {
+    parts.push(`<p>${result.remarksSummary.replace(/\n+/g, "</p><p>")}</p>`);
+    return parts.join("");
+  }
+  if (result.executiveSummary) {
+    parts.push(`<h3>Executive Summary</h3><p>${result.executiveSummary}</p>`);
+  }
+  if (result.strengths?.length) {
+    parts.push(
+      `<h3>Strengths</h3><ul>${result.strengths.map((s) => `<li>${s}</li>`).join("")}</ul>`,
+    );
+  }
+  if (result.weaknesses?.length) {
+    parts.push(
+      `<h3>Weaknesses & Action Items</h3><ul>${result.weaknesses.map((w) => `<li>${w}</li>`).join("")}</ul>`,
+    );
+  }
+  if (result.researchGaps?.length) {
+    parts.push(
+      `<h3>Research Gaps</h3><ul>${result.researchGaps.map((g) => `<li>${g}</li>`).join("")}</ul>`,
+    );
+  }
+  if (result.revisionPriorities?.length) {
+    parts.push(
+      `<h3>Revision Priorities</h3><ul>${result.revisionPriorities.map((p) => `<li>${p}</li>`).join("")}</ul>`,
+    );
+  }
+  if (result.supervisorRecommendation) {
+    parts.push(
+      `<h3>Supervisor Recommendation</h3><p>${result.supervisorRecommendation}</p>`,
+    );
+  }
+  return parts.join("");
+}
+
+function ReviewModal({
+  open,
+  title,
+  subtitle,
+  kicker,
+  icon,
+  onClose,
+  children,
+  footer,
+  footerMeta,
+  size = "md",
+  labelledBy,
+  escapeDisabled = false,
+  flushBody = false,
+}: {
+  open: boolean;
+  title: string;
+  subtitle?: string;
+  kicker?: string;
+  icon?: ReactNode;
+  onClose: () => void;
+  children: ReactNode;
+  footer?: ReactNode;
+  footerMeta?: ReactNode;
+  size?: "md" | "wide" | "narrow" | "editor";
+  labelledBy: string;
+  escapeDisabled?: boolean;
+  flushBody?: boolean;
+}) {
+  useEffect(() => {
+    if (!open || escapeDisabled) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose, escapeDisabled]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      className="portal-review-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={labelledBy}
+    >
+      <div
+        className="portal-review-modal-scrim"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <div
+        className={cn(
+          "portal-review-modal-panel",
+          size === "wide" && "is-wide",
+          size === "narrow" && "is-narrow",
+          size === "editor" && "is-editor",
+        )}
+      >
+        <div className="portal-review-modal-head">
+          <div className="portal-review-modal-head-main">
+            {icon ? (
+              <span className="portal-review-modal-icon">{icon}</span>
+            ) : null}
+            <div>
+              {kicker ? (
+                <p className="portal-review-modal-kicker">{kicker}</p>
+              ) : null}
+              <h2 id={labelledBy}>{title}</h2>
+              {subtitle ? (
+                <p className="portal-review-modal-sub">{subtitle}</p>
+              ) : null}
+            </div>
+          </div>
+          <button
+            type="button"
+            className="portal-review-modal-close"
+            aria-label="Close"
+            onClick={onClose}
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+        <div
+          className={cn(
+            "portal-review-modal-body",
+            flushBody && "is-flush",
+          )}
+        >
+          {children}
+        </div>
+        {footer || footerMeta ? (
+          <div className="portal-review-modal-foot">
+            <div className="portal-review-modal-foot-meta">
+              {footerMeta}
+            </div>
+            {footer ? (
+              <div className="portal-review-modal-foot-actions">{footer}</div>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+export default function ChapterReviewPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const [data, setData] = useState<ReviewPayload | null>(null);
-  const [reason, setReason] = useState("");
-  const [displayHtml, setDisplayHtml] = useState("");
+  const [remark, setRemark] = useState("");
+  const [annotatedHtml, setAnnotatedHtml] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
+  const [aiModalOpen, setAiModalOpen] = useState(false);
+  const [remarkModalOpen, setRemarkModalOpen] = useState(false);
+  const [factCheckModalOpen, setFactCheckModalOpen] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<PendingConfirm>(null);
   const [aiReviewer, setAiReviewer] = useState<AiReviewerResult | null>(null);
-  const [markCount, setMarkCount] = useState(0);
+  const [highlightToken, setHighlightToken] = useState(0);
+  const [highlightQuotes, setHighlightQuotes] =
+    useState<ReviewTextHighlights | null>(null);
+  const [areaScores, setAreaScores] = useState<AreaScores | null>(null);
   const [saveStatus, setSaveStatus] = useState<
     "idle" | "saving" | "saved" | "error"
   >("idle");
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
-  const reasonRef = useRef(reason);
-  const displayHtmlRef = useRef(displayHtml);
+  const remarkRef = useRef(remark);
+  const annotatedHtmlRef = useRef(annotatedHtml);
   const aiReviewerRef = useRef(aiReviewer);
   const skipAutoSaveRef = useRef(true);
   const saveChainRef = useRef(Promise.resolve(true));
-  reasonRef.current = reason;
-  displayHtmlRef.current = displayHtml;
+
+  remarkRef.current = remark;
+  annotatedHtmlRef.current = annotatedHtml;
   aiReviewerRef.current = aiReviewer;
 
   const persistReview = useCallback(
@@ -184,8 +328,8 @@ export default function ReviewWorkspacePage() {
           await apiFetch(`/api/v1/chapters/${params.id}/save-review`, {
             method: "POST",
             body: JSON.stringify({
-              remark: opts?.remark ?? reasonRef.current,
-              annotatedHtml: opts?.annotatedHtml ?? displayHtmlRef.current,
+              remark: opts?.remark ?? remarkRef.current,
+              annotatedHtml: opts?.annotatedHtml ?? annotatedHtmlRef.current,
               aiReviewerReport:
                 opts?.aiReviewerReport !== undefined
                   ? opts.aiReviewerReport
@@ -212,7 +356,6 @@ export default function ReviewWorkspacePage() {
         }
       };
 
-      // Queue saves so AI persist is never dropped by an in-flight auto-save
       const queued = saveChainRef.current.then(run, run);
       saveChainRef.current = queued.then(
         () => true,
@@ -229,7 +372,9 @@ export default function ReviewWorkspacePage() {
       setLoading(true);
       setError(null);
       setAiReviewer(null);
-      setMarkCount(0);
+      setHighlightQuotes(null);
+      setHighlightToken(0);
+      setAreaScores(null);
       skipAutoSaveRef.current = true;
       try {
         const payload = (await apiFetch(
@@ -238,52 +383,42 @@ export default function ReviewWorkspacePage() {
         if (cancelled) return;
         setData(payload);
 
+        const awaitingReview = isAwaitingNewReview(payload.reviewTrail);
         const savedRemark =
           payload.chapter.reviewDraftRemark ||
           payload.chapter.rejectionReason ||
           "";
-        setReason(savedRemark);
+        if (awaitingReview) {
+          setRemark("");
+        } else if (savedRemark.trim()) {
+          setRemark(toEditorHtml(savedRemark));
+        } else {
+          setRemark("");
+        }
 
         const savedAi =
           (payload.aiReviewer?.report as AiReviewerResult | undefined) ||
           (payload.chapter.aiReviewerReport as AiReviewerResult | null) ||
           null;
-        if (savedAi) setAiReviewer(savedAi);
 
-        let sourceHtml =
-          (payload.annotatedHtml || payload.chapter.reviewAnnotatedHtml || "").trim() ||
-          payload.html ||
-          "";
-
-        // Recover highlights if annotated HTML was lost but quotes were saved
-        const hasMarks = countMarks(sourceHtml) > 0;
-        if (!hasMarks && savedAi?.highlightQuotes && payload.html) {
-          const plain = payload.html
-            .replace(/<[^>]+>/g, " ")
-            .replace(/\s+/g, " ")
-            .trim();
-          const local = pickFallbackHighlightQuotes(plain);
-          const quotes = mergeHighlightQuotes(
-            savedAi.highlightQuotes,
-            local,
-          );
-          const rebuilt = applyReviewHighlights(payload.html, quotes);
-          if (countMarks(rebuilt) > 0) {
-            sourceHtml = rebuilt;
-            // Re-persist recovered marks so the next refresh finds them
-            void apiFetch(`/api/v1/chapters/${params.id}/save-review`, {
-              method: "POST",
-              body: JSON.stringify({
-                remark: savedRemark,
-                annotatedHtml: rebuilt,
-                aiReviewerReport: savedAi as unknown as Record<string, unknown>,
-              }),
-            }).catch(() => undefined);
+        if (savedAi) {
+          setAiReviewer(savedAi);
+          if (savedAi.areaScores) {
+            setAreaScores(savedAi.areaScores);
+          }
+          if (savedAi.highlightQuotes) {
+            setHighlightQuotes(savedAi.highlightQuotes);
+            setHighlightToken((t) => t + 1);
           }
         }
 
-        setDisplayHtml(sourceHtml);
-        setMarkCount(countMarks(sourceHtml));
+        const sourceHtml = awaitingReview
+          ? payload.html || ""
+          : payload.annotatedHtml ||
+            payload.chapter.reviewAnnotatedHtml ||
+            payload.html ||
+            "";
+        setAnnotatedHtml(sourceHtml);
 
         window.setTimeout(() => {
           if (!cancelled) skipAutoSaveRef.current = false;
@@ -291,7 +426,7 @@ export default function ReviewWorkspacePage() {
       } catch (err) {
         if (!cancelled) {
           setError(
-            err instanceof Error ? err.message : "Failed to load submission",
+            err instanceof Error ? err.message : "Failed to load chapter submission",
           );
           setData(null);
         }
@@ -305,7 +440,7 @@ export default function ReviewWorkspacePage() {
     };
   }, [params.id]);
 
-  // Debounced auto-save for remark + current highlights
+  // Debounced auto-save for remark + current annotated HTML
   useEffect(() => {
     if (loading || skipAutoSaveRef.current || !data) return;
     setSaveStatus((s) => (s === "saved" ? "idle" : s));
@@ -314,7 +449,15 @@ export default function ReviewWorkspacePage() {
       void persistReview({ silent: true });
     }, AUTO_SAVE_MS);
     return () => window.clearTimeout(timer);
-  }, [reason, displayHtml, loading, data, persistReview]);
+  }, [remark, annotatedHtml, loading, data, persistReview]);
+
+  const factCheckAudit: FactCheckAuditReport = useMemo(() => {
+    const source = annotatedHtml || data?.html || "";
+    return analyzeDocumentClaimsAndCitations(
+      source,
+      data?.project.topic || data?.project.title,
+    );
+  }, [annotatedHtml, data?.html, data?.project.topic, data?.project.title]);
 
   async function runAiReviewer() {
     if (!data?.version) {
@@ -331,84 +474,56 @@ export default function ReviewWorkspacePage() {
         { method: "POST" },
       )) as AiReviewerResult;
 
-      const sourceHtml = data.html || "";
-      const plain = sourceHtml
+      const plain = (data.html || "")
         .replace(/<[^>]+>/g, " ")
         .replace(/\s+/g, " ")
         .trim();
-      const local = pickFallbackHighlightQuotes(plain);
-      const quotes = mergeHighlightQuotes(result.highlightQuotes, local);
-      const highlighted = applyReviewHighlights(sourceHtml, quotes);
-      const marks = countMarks(highlighted);
-      const reportWithQuotes: AiReviewerResult = {
-        ...result,
-        highlightQuotes: quotes,
+
+      const baseArea = computeAreaScores(plain);
+      const mergedArea: AreaScores = {
+        strengths: result.areaScores?.strengths ?? baseArea.strengths,
+        weaknesses: result.areaScores?.weaknesses ?? baseArea.weaknesses,
+        overall: result.areaScores?.overall ?? baseArea.overall,
       };
-      const drafted = formatAiReviewerIntoRemark(reportWithQuotes);
-      const nextRemark = (() => {
-        const prev = reasonRef.current;
-        if (!prev.trim()) return drafted;
-        if (prev.includes("Topic analysed:") || prev.includes("Weaknesses:")) {
-          return drafted;
-        }
-        return `${prev.trim()}\n\n${drafted}`;
-      })();
 
-      // Update refs immediately so queued saves see the latest content
-      reasonRef.current = nextRemark;
-      displayHtmlRef.current = highlighted;
-      aiReviewerRef.current = reportWithQuotes;
-
-      setAiReviewer(reportWithQuotes);
-      setDisplayHtml(highlighted);
-      setMarkCount(marks);
-      setReason(nextRemark);
-
-      const saved = await persistReview({
-        remark: nextRemark,
-        annotatedHtml: highlighted,
-        aiReviewerReport: reportWithQuotes as unknown as Record<
-          string,
-          unknown
-        >,
-      });
-
-      if (!saved) {
-        setError(
-          "AI finished but the review could not be saved. Try Re-run AI Reviewer.",
-        );
-        return;
-      }
-
-      setData((prev) =>
-        prev
-          ? {
-              ...prev,
-              annotatedHtml: highlighted,
-              chapter: {
-                ...prev.chapter,
-                reviewDraftRemark: nextRemark,
-                reviewAnnotatedHtml: highlighted,
-                aiReviewerReport: reportWithQuotes,
-                aiReviewerAt: new Date().toISOString(),
-              },
-              aiReviewer: {
-                report: reportWithQuotes,
-                savedAt: new Date().toISOString(),
-              },
-            }
-          : prev,
+      const quotes = mergeHighlightQuotes(
+        result.highlightQuotes,
+        mergeHighlightQuotes(
+          quotesFromFactCheckClaims(factCheckAudit?.claims),
+          pickFallbackHighlightQuotes(plain),
+        ),
       );
 
-      if (marks === 0) {
-        setMessage(
-          "AI Reviewer finished and saved. Refresh anytime — results stay. Use Request revision to send feedback to the student.",
-        );
-      } else {
-        setMessage(
-          `Saved ${marks} highlighted passage(s). Refresh keeps them — no need to run AI again. Request revision to share with the student.`,
-        );
-      }
+      const reportWithQuotes: AiReviewerResult = {
+        ...result,
+        areaScores: mergedArea,
+        highlightQuotes: quotes,
+      };
+
+      setAiReviewer(reportWithQuotes);
+      setAreaScores(mergedArea);
+      setHighlightQuotes(quotes);
+      setHighlightToken((t) => t + 1);
+
+      const draftedHtml = formatAiReviewerIntoRemarkHtml(reportWithQuotes);
+      const currentRemark = remarkRef.current;
+      const nextRemark = !currentRemark.trim()
+        ? draftedHtml
+        : `${currentRemark}<br/><br/>${draftedHtml}`;
+
+      setRemark(nextRemark);
+      remarkRef.current = nextRemark;
+      aiReviewerRef.current = reportWithQuotes;
+
+      await persistReview({
+        remark: nextRemark,
+        annotatedHtml: annotatedHtmlRef.current,
+        aiReviewerReport: reportWithQuotes as unknown as Record<string, unknown>,
+      });
+
+      setMessage(
+        "AI Reviewer finished and saved. Highlights and report are persistent.",
+      );
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "AI Reviewer could not complete",
@@ -430,7 +545,7 @@ export default function ReviewWorkspacePage() {
       await apiFetch(`/api/v1/chapters/${params.id}/approve`, {
         method: "POST",
       });
-      setMessage("Chapter approved and locked. Next chapter is unlocked.");
+      setMessage("Chapter approved successfully.");
       const payload = (await apiFetch(
         `/api/v1/chapters/${params.id}`,
       )) as ReviewPayload;
@@ -439,11 +554,13 @@ export default function ReviewWorkspacePage() {
       setError(err instanceof Error ? err.message : "Approve failed");
     } finally {
       setBusy(false);
+      setConfirmAction(null);
     }
   }
 
   async function requestRevision() {
-    if (reason.trim().length < 3) {
+    const plain = stripRemarkHtml(remark);
+    if (plain.length < 3) {
       setError("Add a remark (at least 3 characters) explaining what to revise.");
       return;
     }
@@ -451,10 +568,9 @@ export default function ReviewWorkspacePage() {
     setError(null);
     setMessage(null);
     try {
-      // Persist current AI highlights + remark before publishing to the student
       await persistReview({
-        remark: reason.trim(),
-        annotatedHtml: displayHtml,
+        remark: remark.trim(),
+        annotatedHtml,
         aiReviewerReport: aiReviewerRef.current
           ? (aiReviewerRef.current as unknown as Record<string, unknown>)
           : undefined,
@@ -462,35 +578,66 @@ export default function ReviewWorkspacePage() {
       await apiFetch(`/api/v1/chapters/${params.id}/reject`, {
         method: "POST",
         body: JSON.stringify({
-          reason: reason.trim(),
+          reason: plain,
           needsRevision: true,
-          annotatedHtml: displayHtml,
+          annotatedHtml,
         }),
       });
       setMessage(
-        "Revision requested. The student can now see your remark and highlighted passages.",
+        "Revision requested. The student can now see your remarks and highlighted passages.",
       );
       const payload = (await apiFetch(
         `/api/v1/chapters/${params.id}`,
       )) as ReviewPayload;
       setData(payload);
-      const savedAnnotated =
-        payload.annotatedHtml ||
-        payload.chapter.reviewAnnotatedHtml ||
-        displayHtml;
-      setDisplayHtml(savedAnnotated);
-      setMarkCount(countMarks(savedAnnotated));
-      if (payload.aiReviewer?.report || payload.chapter.aiReviewerReport) {
-        setAiReviewer(
-          (payload.aiReviewer?.report ||
-            payload.chapter.aiReviewerReport) as AiReviewerResult,
-        );
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Reject failed");
     } finally {
       setBusy(false);
+      setConfirmAction(null);
     }
+  }
+
+  function autoAnnotateFactCheckClaims() {
+    const quotes = quotesFromFactCheckClaims(factCheckAudit.claims);
+    const merged = mergeHighlightQuotes(highlightQuotes, quotes);
+    setHighlightQuotes(merged);
+    setHighlightToken((t) => t + 1);
+    setMessage(
+      `Applied highlights for ${factCheckAudit.claims.length} fact-checked claim(s).`,
+    );
+    setFactCheckModalOpen(false);
+  }
+
+  function insertFactCheckClaimsIntoRemark() {
+    const flagged = factCheckAudit.claims.filter(
+      (c) => c.status !== "verified",
+    );
+    if (flagged.length === 0) {
+      setMessage("All detected claims have in-text citations or are verified.");
+      return;
+    }
+    const htmlNotes = `<h3>Scholarly Integrity & Fact-Check Notes</h3><ul>${flagged
+      .map(
+        (c) =>
+          `<li><strong>${c.badgeLabel}:</strong> "${c.sentence}" — <em>${c.explanation}</em>${
+            c.suggestedAction ? ` (Recommended: ${c.suggestedAction})` : ""
+          }</li>`,
+      )
+      .join("")}</ul>`;
+    setRemark((prev) => (prev ? `${prev}<br/><br/>${htmlNotes}` : htmlNotes));
+    setMessage("Inserted fact-check issues into remarks.");
+    setFactCheckModalOpen(false);
+    setRemarkModalOpen(true);
+  }
+
+  function insertAiIntoRemark() {
+    if (!aiReviewer) return;
+    const drafted = formatAiReviewerIntoRemarkHtml(aiReviewer);
+    setRemark((prev) => (prev ? `${prev}<br/><br/>${drafted}` : drafted));
+    setMessage("Inserted AI Reviewer findings into remarks.");
+    setAiModalOpen(false);
+    setRemarkModalOpen(true);
   }
 
   if (loading) return <LoadingPage label="Opening chapter review…" />;
@@ -509,242 +656,559 @@ export default function ReviewWorkspacePage() {
   }
 
   const { chapter, version, html, review, project, student } = data;
-  const decidable = canDecide(chapter.status);
+  const decidable = chapter.status === "submitted" || chapter.status === "under_review";
   const hasContent = Boolean(html.replace(/<[^>]+>/g, " ").trim());
-  const hasSavedAiReview = Boolean(
-    aiReviewer ||
-      data.aiReviewer?.report ||
-      chapter.aiReviewerReport ||
-      markCount > 0,
-  );
-  const savedAiAt =
-    data.aiReviewer?.savedAt || chapter.aiReviewerAt || null;
+  const words = countWords(annotatedHtml || html || "");
+  const latestTrail = data.reviewTrail?.[data.reviewTrail.length - 1];
+  const latestTrailKey = `${latestTrail?.type || "none"}-${latestTrail?.at || ""}`;
+  const remarkPreview = stripRemarkHtml(remark);
+  const remarkWords = countWordsFromHtml(remark);
   const activeReport = aiReviewer || review?.report;
-  const activeStatus = hasSavedAiReview
-    ? "completed"
-    : review?.status;
-  const activeMeta = aiReviewer
-    ? `AI Reviewer saved${aiReviewer.model ? ` · ${aiReviewer.model}` : ""} · ${markCount} highlighted passage(s)${
-        aiReviewer.projectTopic
-          ? ` · topic: ${aiReviewer.projectTopic}`
-          : project.topic
-            ? ` · topic: ${project.topic}`
-            : ""
-      }${savedAiAt ? ` · ${new Date(savedAiAt).toLocaleString()}` : ""}`
-    : review?.model
-      ? `Model: ${review.model}${
-          review.completedAt
-            ? ` · ${new Date(review.completedAt).toLocaleString()}`
-            : ""
-        }`
-      : "AI pre-read for this submission";
+  const marks = countMarks(annotatedHtml || html || "");
+
+  const statusTone =
+    chapter.status === "approved" || chapter.status === "locked"
+      ? "ok"
+      : chapter.status === "needs_revision" || chapter.status === "rejected"
+        ? "risk"
+        : "pending";
+
+  const statusLabel =
+    chapter.status === "needs_revision"
+      ? "Needs revision"
+      : chapter.status === "under_review"
+        ? "Under review"
+        : chapter.status.replace(/_/g, " ");
+
+  const aiPercent =
+    typeof aiReviewer?.aiContent?.percent === "number"
+      ? aiReviewer.aiContent.percent
+      : typeof review?.report?.aiContent?.percent === "number"
+        ? review.report.aiContent.percent
+        : null;
 
   return (
-    <div className="space-y-6">
-      <Link
-        href="/reviews"
-        className="inline-flex items-center gap-2 text-sm font-semibold text-foreground/60 hover:text-accent"
-      >
+    <div className="portal-review">
+      <Link href="/reviews" className="portal-students-back">
         <ArrowLeft className="size-4" />
         Back to reviews
       </Link>
 
-      <section className="rounded-3xl border border-border bg-card p-6 md:p-8">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-accent">
-              Chapter review
-            </p>
-            <h1 className="mt-2 font-display text-3xl font-bold tracking-tight">
-              {chapter.title}
-            </h1>
-            <p className="mt-2 text-foreground/65">
-              {student?.name || "Student"} · {project.title}
+      <header className="portal-students-hero">
+        <div className="portal-review-hero-top">
+          <div className="min-w-0">
+            <p className="portal-students-kicker">Chapter review</p>
+            <h1 className="portal-students-title">{chapter.title}</h1>
+            <p className="portal-students-lead">
+              {student?.name || "Student"}
+              {student?.email ? ` · ${student.email}` : ""}
+              {" · "}
+              {project.title}
               {version
                 ? ` · v${version.versionNumber}${
                     typeof version.wordCount === "number"
-                      ? ` · ${version.wordCount} words`
+                      ? ` · ${version.wordCount.toLocaleString()} words`
                       : ""
                   }`
                 : ""}
             </p>
-            {project.topic && (
-              <p className="mt-1 text-sm text-foreground/50">
-                Topic: {project.topic}
-              </p>
-            )}
-            <p className="mt-2 text-xs font-medium text-foreground/45" aria-live="polite">
-              {saveStatus === "saving" && "Saving review draft…"}
-              {saveStatus === "saved" && "Review draft saved"}
-              {saveStatus === "error" && "Auto-save failed — edit again to retry"}
-              {saveStatus === "idle" &&
-                (hasSavedAiReview
-                  ? "AI review is saved — no need to run it again unless the chapter changed"
-                  : "Highlights, remark, and AI review auto-save")}
-            </p>
+            <div className="portal-review-meta">
+              <span className={cn("portal-students-status", `is-${statusTone}`)}>
+                {statusLabel}
+              </span>
+              <span
+                className={cn(
+                  "portal-students-status",
+                  factCheckAudit.integrityScore >= 80
+                    ? "is-ok"
+                    : factCheckAudit.integrityScore >= 50
+                      ? "is-topic"
+                      : "is-risk",
+                )}
+              >
+                Fact-Check {factCheckAudit.integrityScore}%
+              </span>
+              {aiPercent != null ? (
+                <span className="portal-students-status is-topic">
+                  AI {aiPercent}%
+                </span>
+              ) : null}
+            </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Badge variant={statusBadge(chapter.status)}>
-              {chapter.status.replace(/_/g, " ")}
-            </Badge>
-            {hasSavedAiReview && (
-              <Badge variant="success">
-                AI review saved
-                {markCount > 0 ? ` · ${markCount} marks` : ""}
-              </Badge>
-            )}
+          <div className="portal-students-hero-actions">
             <Button
               type="button"
-              variant="outline"
-              size="sm"
-              disabled={aiBusy || busy || !version || !hasContent}
-              title={
-                hasSavedAiReview
-                  ? "Re-analyse only if the student resubmitted new content"
-                  : "Highlight weaknesses and missing in-text citations — results are saved"
-              }
+              variant="ai"
+              disabled={!activeReport}
+              onClick={() => setAiModalOpen(true)}
+            >
+              <Brain className="size-4" />
+              AI report
+            </Button>
+            <Button
+              variant="ai"
+              disabled={aiBusy || !hasContent}
               onClick={() => void runAiReviewer()}
             >
               {aiBusy ? (
                 <Loader2 className="size-4 animate-spin" />
               ) : (
-                <Bot className="size-4" />
+                <WandSparkles className="size-4" />
               )}
-              {aiBusy
-                ? "Analysing…"
-                : hasSavedAiReview
-                  ? "Re-run AI Reviewer"
-                  : "AI Reviewer"}
+              {aiBusy ? "Analysing…" : aiReviewer ? "Re-run AI Reviewer" : "AI Reviewer"}
             </Button>
             {student && (
               <Button
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  router.push(`/students/${student.id}`)
-                }
+                variant="info"
+                onClick={() => router.push(`/students/${student.id}`)}
               >
-                Student profile
+                <UserRound className="size-4" />
+                Student
               </Button>
             )}
           </div>
         </div>
-      </section>
+      </header>
 
       {error && (
-        <p className="rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">
-          {error}
-        </p>
+        <div className="portal-review-toast rounded-xl border border-rose-200 bg-rose-50/80 px-4 py-3 text-sm font-medium text-rose-800">
+          <span>{error}</span>
+        </div>
       )}
       {message && (
-        <p className="rounded-xl border border-success/30 bg-success/10 px-3 py-2 text-sm text-success">
-          {message}
-        </p>
+        <div className="portal-review-toast rounded-xl border border-emerald-200 bg-emerald-50/80 px-4 py-3 text-sm font-medium text-emerald-800">
+          <span>{message}</span>
+        </div>
       )}
 
-      <AIReportPanel
-        report={activeReport}
-        status={activeStatus}
-        meta={activeMeta}
-      />
-
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Submission content</CardTitle>
-            <CardDescription>
-              {hasSavedAiReview
-                ? "Saved highlights are shown below. Re-run AI only if the student submitted a new version."
-                : "Run AI Reviewer once — highlights and the report are saved automatically."}
-            </CardDescription>
-            <div className="flex flex-wrap gap-3 pt-2 text-[11px] text-foreground/55">
-              <span className="inline-flex items-center gap-1.5">
-                <span
-                  className="size-2.5 rounded-sm"
-                  style={{ background: REVIEW_HIGHLIGHT_COLORS.weakness }}
-                />
-                Weakness
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <span
-                  className="size-2.5 rounded-sm"
-                  style={{ background: REVIEW_HIGHLIGHT_COLORS.citation }}
-                />
-                Claim needs in-text citation
-              </span>
-              {markCount > 0 && (
-                <span className="ml-auto font-semibold tabular-nums text-foreground/70">
-                  {markCount} marked
+      <div className="portal-review-body">
+        {/* Main Document Workspace */}
+        <section className="portal-review-doc">
+          <div className="portal-review-doc-head">
+            <div>
+              <h2>{chapter.title}</h2>
+              <p>
+                {words.toLocaleString()} words ·{" "}
+                <span className="text-slate-400">
+                  {saveStatus === "saving" && "Saving draft…"}
+                  {saveStatus === "saved" && "Review draft saved"}
+                  {saveStatus === "error" && "Auto-save failed"}
+                  {saveStatus === "idle" && (marks > 0 ? `${marks} highlights saved` : "Select text to annotate.")}
                 </span>
-              )}
-            </div>
-          </CardHeader>
-          <CardContent>
-            {(displayHtml || html).trim() ? (
-              <div
-                className="review-highlight-content prose prose-sm max-w-none rounded-2xl border border-border bg-muted/20 px-5 py-4 text-foreground [&_h1]:text-xl [&_h2]:text-lg [&_img]:max-w-full"
-                dangerouslySetInnerHTML={{ __html: displayHtml || html }}
-              />
-            ) : (
-              <p className="rounded-2xl border border-dashed border-border px-4 py-10 text-center text-sm text-foreground/55">
-                No content in this submission.
               </p>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Decision</CardTitle>
-            <CardDescription>
-              Remark and highlights auto-save. Click{" "}
-              <strong>Request revision</strong> to send the marked passages to
-              the student so they can see where to work.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <label className="block space-y-2">
-              <span className="text-sm font-semibold">Remark</span>
-              <textarea
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                rows={8}
-                disabled={!decidable && !!chapter.rejectionReason}
-                placeholder="Required for rewrite — tell the student what to improve…"
-                className="w-full resize-y rounded-2xl border border-border bg-background px-3 py-2.5 text-sm outline-none ring-accent focus:ring-2 disabled:opacity-60"
-              />
-              <span className="text-xs text-foreground/50">
-                Changes auto-save with highlights and AI review.
+            </div>
+            <button
+              type="button"
+              onClick={() => setFactCheckModalOpen(true)}
+              className={cn(
+                "portal-review-audit-btn",
+                factCheckAudit.flaggedClaimsCount > 0
+                  ? "is-warn"
+                  : factCheckAudit.integrityScore >= 80
+                    ? "is-ok"
+                    : "is-risk",
+              )}
+              title="View detailed claims and citation audit"
+            >
+              <ShieldCheck className="size-3.5" />
+              <span>
+                {factCheckAudit.flaggedClaimsCount > 0
+                  ? `${factCheckAudit.flaggedClaimsCount} claim flags`
+                  : `Fact-check ${factCheckAudit.integrityScore}%`}
               </span>
-            </label>
+              <ScanSearch className="size-3.5 opacity-70" />
+            </button>
+          </div>
 
-            <div className="flex flex-col gap-2">
+          {hasContent || annotatedHtml.trim() ? (
+            <ReviewAnnotator
+              key={`${chapter._id}-${latestTrailKey}`}
+              contentKey={`${chapter._id}-${latestTrailKey}`}
+              value={annotatedHtml || html || ""}
+              onChange={setAnnotatedHtml}
+              highlightToken={highlightToken}
+              highlightQuotes={highlightQuotes}
+              areaScores={areaScores}
+              footerMeta={{
+                wordCount: words,
+                lastSaved: chapter.updatedAt || version?.submittedAt || null,
+                version: version ? `v${version.versionNumber}` : "v1",
+                authorName: student?.name || "Student",
+              }}
+            />
+          ) : (
+            <div className="portal-students-empty">
+              <h2>No writing yet</h2>
+              <p>This chapter submission has no text content to review.</p>
+            </div>
+          )}
+        </section>
+
+        {/* Sidebar Controls */}
+        <aside className="portal-review-aside">
+          <ReviewTrailPanel
+            trail={data.reviewTrail}
+            currentWordCount={words}
+          />
+
+          {/* Decision Card */}
+          <section className="portal-review-card">
+            <div className="portal-review-card-head">
+              <h2>Decision</h2>
+              <p>Approve chapter or request rewrite</p>
+            </div>
+            <div className="portal-review-actions">
               <Button
+                variant="success"
                 disabled={busy || !decidable}
-                onClick={() => void approve()}
+                onClick={() => setConfirmAction("approve")}
               >
-                <Check className="size-4" />
+                <CircleCheck className="size-4" />
                 Approve chapter
               </Button>
               <Button
-                variant="outline"
+                variant="warning"
                 disabled={busy || !decidable}
-                onClick={() => void requestRevision()}
+                onClick={() => setConfirmAction("needs_revision")}
               >
                 <RotateCcw className="size-4" />
                 Request revision
               </Button>
             </div>
-
             {!decidable && (
-              <p className="text-xs text-foreground/50">
-                This chapter is no longer awaiting a decision (
-                {chapter.status.replace(/_/g, " ")}).
+              <p className="portal-review-hint">
+                This chapter is already marked as{" "}
+                <span className="font-semibold">{statusLabel}</span>.
               </p>
             )}
-          </CardContent>
-        </Card>
+          </section>
+
+          {/* Remarks Card */}
+          <section className="portal-review-card">
+            <button
+              type="button"
+              className="portal-review-card-head is-button"
+              onClick={() => setRemarkModalOpen(true)}
+            >
+              <div>
+                <h2>Remarks</h2>
+                <p>
+                  {remarkWords > 0
+                    ? `${remarkWords} words written`
+                    : "No remarks drafted yet"}
+                </p>
+              </div>
+              <span className="portal-review-mark is-citation h-7 px-2.5 text-[11px]">
+                Open Word editor
+              </span>
+            </button>
+            <div className="portal-review-field">
+              <span>Remarks for the student</span>
+              <button
+                type="button"
+                className="portal-review-remark-trigger"
+                onClick={() => setRemarkModalOpen(true)}
+              >
+                {remarkPreview ? (
+                  <span className="portal-review-remark-preview">
+                    {remarkPreview}
+                  </span>
+                ) : (
+                  <span className="portal-review-remark-placeholder">
+                    Click to open the Word editor — write feedback the student
+                    will see…
+                  </span>
+                )}
+              </button>
+            </div>
+          </section>
+        </aside>
       </div>
+
+      {/* Fact Check Audit Modal */}
+      <ReviewModal
+        open={factCheckModalOpen}
+        labelledBy="factcheck-modal-title"
+        title="Scholarly Integrity & Fact-Check Audit"
+        subtitle="Automated analysis of claims, in-text citations, and bibliography integrity"
+        kicker="Scholarly Integrity"
+        icon={<ShieldCheck className="size-5 text-emerald-600" />}
+        size="wide"
+        onClose={() => setFactCheckModalOpen(false)}
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="slate"
+              onClick={() => setFactCheckModalOpen(false)}
+            >
+              <X className="size-3.5" />
+              Close
+            </Button>
+            <Button
+              type="button"
+              variant="warning"
+              onClick={autoAnnotateFactCheckClaims}
+              title="Apply citation and claim highlights across the document editor"
+            >
+              <Highlighter className="size-3.5" />
+              Highlight in editor
+            </Button>
+            <Button
+              type="button"
+              variant="ai"
+              onClick={insertFactCheckClaimsIntoRemark}
+              title="Append uncited and flagged claims to supervisor remarks"
+            >
+              <MessageSquarePlus className="size-3.5" />
+              Insert into remarks
+            </Button>
+            <Button
+              type="button"
+              variant="success"
+              onClick={() => setFactCheckModalOpen(false)}
+            >
+              <CircleCheck className="size-3.5" />
+              Done
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-center">
+              <p className="text-xs font-semibold text-slate-500 uppercase">Integrity Score</p>
+              <p className="text-2xl font-bold text-slate-900 mt-1">
+                {factCheckAudit.integrityScore}%
+              </p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-center">
+              <p className="text-xs font-semibold text-slate-500 uppercase">Claims Checked</p>
+              <p className="text-2xl font-bold text-slate-900 mt-1">
+                {factCheckAudit.totalClaims}
+              </p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-center">
+              <p className="text-xs font-semibold text-slate-500 uppercase">Missing Cites</p>
+              <p className="text-2xl font-bold text-amber-600 mt-1">
+                {factCheckAudit.missingCitationsCount}
+              </p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-center">
+              <p className="text-xs font-semibold text-slate-500 uppercase">Uncited Refs</p>
+              <p className="text-2xl font-bold text-rose-600 mt-1">
+                {factCheckAudit.unlinkedReferencesCount}
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">
+              Claims & In-Text Citation Analysis
+            </h3>
+            {factCheckAudit.claims.length === 0 ? (
+              <p className="text-sm text-slate-500">No claim sentences found in the submission.</p>
+            ) : (
+              <div className="space-y-2">
+                {factCheckAudit.claims.map((claim) => (
+                  <div
+                    key={claim.id}
+                    className="rounded-lg border border-slate-200 bg-white p-3 shadow-xs space-y-1.5"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <p className="font-medium text-slate-900 text-sm">“{claim.sentence}”</p>
+                      <Badge
+                        variant={
+                          claim.badgeTone === "danger"
+                            ? "danger"
+                            : claim.badgeTone === "warning" || claim.badgeTone === "caution"
+                              ? "warning"
+                              : claim.badgeTone === "success"
+                                ? "success"
+                                : "neutral"
+                        }
+                      >
+                        {claim.badgeLabel}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-slate-600">{claim.explanation}</p>
+                    {claim.suggestedAction && (
+                      <p className="text-xs font-medium text-amber-700 bg-amber-50 rounded px-2 py-1 inline-block">
+                        Recommended: {claim.suggestedAction}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-3 pt-2 border-t border-slate-200">
+            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">
+              References & Bibliography Reconciliation
+            </h3>
+            {factCheckAudit.references.length === 0 ? (
+              <p className="text-sm text-slate-500">No reference entries detected in the References section.</p>
+            ) : (
+              <div className="space-y-2">
+                {factCheckAudit.references.map((ref) => (
+                  <div
+                    key={ref.id}
+                    className="flex items-start justify-between gap-3 rounded-lg border border-slate-200 bg-white p-3"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="font-mono text-xs text-slate-800 leading-snug">
+                        {ref.rawEntry}
+                      </p>
+                      {ref.note && (
+                        <p className="text-xs text-slate-500 mt-1">{ref.note}</p>
+                      )}
+                    </div>
+                    <Badge
+                      variant={
+                        ref.badgeTone === "danger"
+                          ? "danger"
+                          : ref.badgeTone === "warning"
+                            ? "warning"
+                            : "success"
+                      }
+                      className="shrink-0"
+                    >
+                      {ref.badgeLabel}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </ReviewModal>
+
+      {/* AI Report Modal */}
+      <ReviewModal
+        open={aiModalOpen}
+        labelledBy="ai-modal-title"
+        title="Chapter AI Review Report"
+        subtitle={
+          aiReviewer?.model
+            ? `Generated by ${aiReviewer.model}`
+            : "Detailed chapter review report"
+        }
+        kicker="Academic Intelligence"
+        icon={<Brain className="size-5 text-violet-600" />}
+        size="wide"
+        onClose={() => setAiModalOpen(false)}
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="slate"
+              onClick={() => setAiModalOpen(false)}
+            >
+              <X className="size-3.5" />
+              Close
+            </Button>
+            <Button
+              type="button"
+              variant="ai"
+              onClick={() => {
+                insertAiIntoRemark();
+                setAiModalOpen(false);
+              }}
+            >
+              <MessageSquarePlus className="size-3.5" />
+              Copy to remarks
+            </Button>
+          </>
+        }
+      >
+        <AIReportPanel
+          report={activeReport}
+          status={statusLabel}
+          meta={`${chapter.title} · ${words.toLocaleString()} words`}
+        />
+      </ReviewModal>
+
+      {/* Remark Editor Modal */}
+      <ReviewModal
+        open={remarkModalOpen}
+        labelledBy="remark-modal-title"
+        title="Supervisor remarks"
+        subtitle="Write and format feedback in the full Word editor. Drafts auto-save."
+        kicker="Word editor"
+        icon={<Sparkles className="size-5 text-violet-600" />}
+        size="editor"
+        flushBody
+        onClose={() => setRemarkModalOpen(false)}
+        footerMeta={
+          <span className="text-xs text-slate-500">
+            {remarkWords} words · Auto-saves draft automatically
+          </span>
+        }
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="ai"
+              disabled={!aiReviewer}
+              onClick={insertAiIntoRemark}
+            >
+              <Sparkles className="size-4" />
+              Insert AI summary
+            </Button>
+            <Button
+              type="button"
+              variant="success"
+              onClick={() => {
+                void persistReview();
+                setRemarkModalOpen(false);
+              }}
+            >
+              <CircleCheck className="size-4" />
+              Done
+            </Button>
+          </>
+        }
+      >
+        <div className="portal-review-remark-editor">
+          <DocumentEditor
+            value={remark}
+            onChange={setRemark}
+            fillHeight
+            fullWidth
+            className="h-full min-h-0"
+            placeholder="Write detailed chapter feedback, recommendations, and corrections…"
+          />
+        </div>
+      </ReviewModal>
+
+      {/* Decision Confirmation Modal */}
+      <ConfirmModal
+        open={confirmAction !== null}
+        title={
+          confirmAction === "approve"
+            ? "Approve this chapter?"
+            : "Request a chapter rewrite?"
+        }
+        description={
+          confirmAction === "approve"
+            ? "This confirms the chapter meets supervisor standards and unlocks the next stage. Your remarks will be sent to the student."
+            : "Your remarks and highlighted passages will be sent to the student. They will need to revise and resubmit before this chapter can be approved."
+        }
+        confirmLabel={
+          confirmAction === "approve"
+            ? "Approve chapter"
+            : "Request rewrite"
+        }
+        loadingLabel={confirmAction === "approve" ? "Approving…" : "Sending…"}
+        variant={confirmAction === "approve" ? "primary" : "danger"}
+        loading={busy}
+        onConfirm={() => {
+          if (confirmAction === "approve") void approve();
+          else if (confirmAction === "needs_revision") void requestRevision();
+        }}
+        onCancel={() => setConfirmAction(null)}
+      />
     </div>
   );
 }

@@ -41,8 +41,15 @@ function blocksFromPlainText(source: string): InstructionBlock[] {
   return blocks;
 }
 
+function withImagePlaceholders(html: string) {
+  return html.replace(/<img\b[^>]*>/gi, (tag) => {
+    const alt = tag.match(/\balt=["']([^"']*)["']/i)?.[1]?.trim();
+    return alt ? `[Image: ${alt}]` : "[Image]";
+  });
+}
+
 function pushPlain(blocks: InstructionBlock[], html: string) {
-  const text = htmlToPlainText(html).replace(/\n{3,}/g, "\n\n").trim();
+  const text = htmlToPlainText(withImagePlaceholders(html)).replace(/\n{3,}/g, "\n\n").trim();
   if (text) blocks.push(...blocksFromPlainText(text));
 }
 

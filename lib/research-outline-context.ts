@@ -1,5 +1,6 @@
 import type { ResearchIdea, ResearchScope } from "@/lib/research-ideas";
 import type { ResearchSourceSelection } from "@/lib/research-assets-api";
+import type { CitationStyle } from "@/lib/citation-styles";
 import { loadSavedIdeas } from "@/lib/research-storage";
 import { getSavedOutlineByKey, outlineStorageKey } from "@/lib/research-outline-storage";
 
@@ -11,6 +12,7 @@ export type OutlinePageContext = {
 	discipline: string;
 	topic: string;
 	scope: ResearchScope;
+	citationStyle?: CitationStyle;
 	sources?: ResearchSourceSelection;
 	returnTo?: string;
 	/** Coursework brief / lecturer instructions for assignment generation. */
@@ -22,6 +24,7 @@ export function stageOutlinePageContext(input: {
 	discipline: string;
 	topic: string;
 	scope: ResearchScope;
+	citationStyle?: CitationStyle;
 	sources?: ResearchSourceSelection;
 	returnTo?: string;
 	assignmentInstructions?: string;

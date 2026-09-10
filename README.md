@@ -17,6 +17,8 @@ AI-powered academic research and paper writing platform built for Nigerian stude
 
 Built for universities, colleges, polytechnics, and individual lecturers across Nigeria and beyond.
 
+**Full project manual** (product + developer/ops): [docs/PROJECT_MANUAL.md](docs/PROJECT_MANUAL.md). Workflow deep-dive: [PROJECT_WORKFLOW.md](PROJECT_WORKFLOW.md).
+
 ---
 
 ## How the Agentic AI Works

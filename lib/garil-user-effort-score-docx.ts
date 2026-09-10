@@ -466,13 +466,24 @@ export function officialReportFromPaper(input: {
 	const lab = official.lab;
 	const hasEvidence = captureItems > 0 || writingWords > 0;
 	const band = officialBandLabel(overallScore, hasEvidence);
-	const notebook = input.topic.trim() || "Research Assistant manuscript";
+	const notebook =
+		input.evidence?.notebookTitle?.trim() ||
+		input.topic.trim() ||
+		"Research Assistant manuscript";
 	const compiledAt = input.createdAt ? new Date(input.createdAt) : new Date();
 
 	const manuscriptInserted = Math.max(0, effort.edits.wordsInserted);
-	const writingDetail = manuscriptInserted
-		? `${manuscriptInserted.toLocaleString()} inserted in the manuscript after generation`
-		: "no original text inserted in the manuscript after generation";
+	const notebookWriting = Math.max(0, evidence?.writingWords ?? 0);
+	let writingDetail: string;
+	if (notebookWriting > 0 && manuscriptInserted > 0) {
+		writingDetail = `${notebookWriting.toLocaleString()} in notebook pages and linked materials, plus ${manuscriptInserted.toLocaleString()} inserted in the manuscript after generation`;
+	} else if (notebookWriting > 0) {
+		writingDetail = `${notebookWriting.toLocaleString()} in notebook pages and linked materials`;
+	} else if (manuscriptInserted > 0) {
+		writingDetail = `${manuscriptInserted.toLocaleString()} inserted in the manuscript after generation`;
+	} else {
+		writingDetail = "no original text inserted in the notebook or manuscript";
+	}
 
 	const summaryParagraphs = [
 		`This document reports the User Effort Score for the research submission “${input.title.trim() || "Untitled research"}.” The GARIL AI Research Assistant generates the score from the inputs the researcher captured and the original text they inserted while the manuscript was developed inside the governed workspace. Its purpose is to give the examiner an evidenced view of the extent to which the final research reflects the researcher’s own work.`,

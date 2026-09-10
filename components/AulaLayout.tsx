@@ -5,7 +5,6 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import { AulaRightPanel } from "@/components/AulaRightPanel";
 import { AulaSidebar } from "@/components/AulaSidebar";
-import { AulaTopBar } from "@/components/AulaTopBar";
 import { TokenExhaustedModal } from "@/components/TokenExhaustedModal";
 import { dashboardPathForRole } from "@/lib/dashboard-routes";
 import { useAuth } from "@/hooks/useAuth";
@@ -15,9 +14,18 @@ type Props = {
 	showRightPanel?: boolean;
 	/** Zero-padding full-height content area (chat workspace). */
 	fullHeight?: boolean;
+	/**
+	 * @deprecated Top bar (title + workspace tabs) is removed project-wide.
+	 * Kept for call-site compatibility; ignored.
+	 */
+	hideTopBar?: boolean;
 };
 
-export function AulaLayout({ children, showRightPanel = true, fullHeight = false }: Props) {
+export function AulaLayout({
+	children,
+	showRightPanel = true,
+	fullHeight = false,
+}: Props) {
 	const router = useRouter();
 	const { user, loading } = useAuth();
 	const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -45,7 +53,7 @@ export function AulaLayout({ children, showRightPanel = true, fullHeight = false
 	}
 
 	return (
-		<div className="aula">
+		<div className="aula aula-no-topbar">
 			{sidebarOpen && (
 				<button
 					type="button"
@@ -63,7 +71,16 @@ export function AulaLayout({ children, showRightPanel = true, fullHeight = false
 			/>
 
 			<div className="aula-shell">
-				<AulaTopBar onMenuClick={() => setSidebarOpen(true)} />
+				<button
+					type="button"
+					className="aula-menu-btn aula-menu-btn-floating"
+					aria-label="Open navigation"
+					onClick={() => setSidebarOpen(true)}
+				>
+					<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+						<path d="M4 7h16M4 12h16M4 17h16" strokeLinecap="round" />
+					</svg>
+				</button>
 
 				<div className="aula-workspace">
 					<div className={fullHeight ? "aula-content aula-content-full" : "aula-content"}>{children}</div>

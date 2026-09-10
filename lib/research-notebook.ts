@@ -41,8 +41,11 @@ export function newNotebookId(): string {
 	return `nb_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-export function isImageDocument(mime: string): boolean {
-	return mime.toLowerCase().startsWith("image/");
+export function isImageDocument(mime?: string | null, fileName?: string | null): boolean {
+	const m = (mime ?? "").toLowerCase();
+	if (m.startsWith("image/")) return true;
+	const name = (fileName ?? "").toLowerCase();
+	return /\.(png|jpe?g|gif|webp|svg|bmp|ico|tiff?|heic|heif)$/i.test(name);
 }
 
 /** Assignment coursework lives under Assignments — never in the research notebook library. */

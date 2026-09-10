@@ -29,6 +29,7 @@ export function buildRefineResearchPaperPrompt(input: {
 	const topic = input.topic.trim() || "Research paper";
 	const draft = input.content.trim();
 	const profile = getScopeProfile(input.scope);
+	const isAssignment = profile.scope === "assignment";
 	const hasMethods = profile.headings.some((h) => /method/i.test(h));
 	const hasResults = profile.headings.some((h) => /result|finding|testing/i.test(h));
 	const hasLitReview = profile.headings.some((h) => /literature review/i.test(h));
@@ -60,8 +61,27 @@ export function buildRefineResearchPaperPrompt(input: {
 			: ["- Tighten Conclusion; eliminate duplicated summaries across sections."]),
 		"- Upgrade diction to strong academic register; strip stock AI phrasing; prefer analytical verbs over vague intensifiers.",
 		"- Eliminate duplicated summaries across overview/introduction/discussion/conclusion; vary wording within paragraphs.",
+		...(isAssignment
+			? [
+					`- Densify USE THIS CITE citation forms matching ${styleLabel} on every body paragraph from Introduction through Conclusion — including the first Introduction paragraph and the Conclusion.`,
+					"- Stay in-field: drop or replace cites whose abstracts do not support the claim’s discipline (e.g. finance papers for education ethics).",
+					"- Do not strip existing good bank cites; add missing cites; keep ≥20 distinct bank papers when the bank allows.",
+					"- Preserve brief-first structure from the current draft (named parts/tasks); do not force a generic journal layout.",
+				]
+			: []),
 		...profile.sectionJobs.map((job) => `- ${job}`),
 	];
+
+	const structureBlock = isAssignment
+		? [
+				"Revise the full document in Markdown. Preserve the current draft’s section order and any brief-named headings (brief-first). Only if the draft has no usable structure, fall back to:",
+				formatHeadingsForPrompt(profile) + ".",
+				`Use ONLY USE THIS CITE citation forms matching ${styleLabel} on every body paragraph from the first Introduction paragraph through Conclusion.`,
+			]
+		: [
+				`Revise the full document in Markdown. Keep this exact ${profile.label} section order with bold-only headings:`,
+				formatHeadingsForPrompt(profile) + ".",
+			];
 
 	return [
 		`Refine and improve the academic ${profile.label} below on: ${topic}`,
@@ -69,11 +89,14 @@ export function buildRefineResearchPaperPrompt(input: {
 		`Scope: ${profile.label}`,
 		`Reference style: ${styleLabel}`,
 		"",
-		`Revise the full document in Markdown. Keep this exact ${profile.label} section order with bold-only headings:`,
-		formatHeadingsForPrompt(profile) + ".",
+		...structureBlock,
 		"",
-		`Target body length: ${profile.wordTarget.min.toLocaleString()}–${profile.wordTarget.max.toLocaleString()} words excluding references.`,
-		`In-text citation floors: ${formatCitationFloorsForPrompt(profile)}. Across the full body, cite at least ${profile.minDistinctCites} distinct bank papers. Use the retrieval bank until this floor is met; only if retrieval returned fewer than ${profile.minDistinctCites} papers may you cite every retrieved paper — never invent fillers. Every References entry must be cited in the body.`,
+		`Target body length: ${profile.wordTarget.min.toLocaleString()}–${profile.wordTarget.max.toLocaleString()} words excluding references${
+			isAssignment ? " (unless the draft/brief sets another limit)." : "."
+		}`,
+		isAssignment
+			? `Across the full body, cite at least ${profile.minDistinctCites} distinct bank papers in the chosen reference style (${styleLabel}). Fallback section floors (only if using default headings): ${formatCitationFloorsForPrompt(profile)}. Use the retrieval bank until this floor is met; only if retrieval returned fewer papers may you cite every retrieved paper — never invent fillers. Every References entry must be cited in the body.`
+			: `In-text citation floors: ${formatCitationFloorsForPrompt(profile)}. Across the full body, cite at least ${profile.minDistinctCites} distinct bank papers. Use the retrieval bank until this floor is met; only if retrieval returned fewer than ${profile.minDistinctCites} papers may you cite every retrieved paper — never invent fillers. Every References entry must be cited in the body.`,
 		"",
 		"Improvement goals:",
 		...improvementGoals,
@@ -106,7 +129,7 @@ export function stagePendingResearchRefine(input: PendingResearchRefine): void {
 			} satisfies PendingResearchRefine),
 		);
 	} catch {
-		/* storage unavailable */
+		/* ignore quota / private mode */
 	}
 }
 
@@ -117,7 +140,7 @@ export function consumePendingResearchRefine(): PendingResearchRefine | null {
 		if (!raw) return null;
 		sessionStorage.removeItem(SESSION_KEY);
 		const parsed = JSON.parse(raw) as PendingResearchRefine;
-		if (!parsed?.prompt?.trim() || !parsed?.topic?.trim() || !parsed?.citationStyle) return null;
+		if (!parsed?.prompt?.trim() || !parsed?.topic?.trim()) return null;
 		return parsed;
 	} catch {
 		return null;

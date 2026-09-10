@@ -52,6 +52,8 @@ export function StudentTopBar({ onMenuClick }: Props) {
 	const onNotebookList = isNotebookListPath(pathname);
 	const onNotebookDetail = isNotebookDetailPath(pathname);
 	const onNotebook = onNotebookList || onNotebookDetail;
+	const onAssistantHub =
+		pathname === "/student/assistant" || pathname.startsWith("/student/assistant/");
 
 	function onNotebookCta() {
 		if (onNotebookDetail) {
@@ -88,7 +90,7 @@ export function StudentTopBar({ onMenuClick }: Props) {
 						</svg>
 						{onNotebookDetail ? "Compile note" : "Create notebook"}
 					</button>
-				) : (
+				) : onAssistantHub ? null : (
 					<LinkButton
 						href={
 							pathname.startsWith("/student/assignments")

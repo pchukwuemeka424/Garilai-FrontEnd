@@ -3,7 +3,7 @@
 import { useId, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { canonicalizeSectionTitle, sectionHeadingId } from "@/lib/research-paper-sections";
+import { canonicalizeSectionTitle, sectionHeadingId, stripTitleAboveAbstract } from "@/lib/research-paper-sections";
 import {
 	Area,
 	AreaChart,
@@ -317,18 +317,39 @@ function headingText(children: ReactNode): string {
 	return "";
 }
 
-function MarkdownSection({ content }: { content: string }) {
+function MarkdownSection({
+	content,
+	allowImages = true,
+}: {
+	content: string;
+	allowImages?: boolean;
+}) {
 	if (!content.trim()) return null;
 	return (
 		<ReactMarkdown
 			remarkPlugins={[remarkGfm]}
 			components={{
-				img: () => null,
+				img: allowImages
+					? ({ src, alt }) =>
+							src ? (
+								// eslint-disable-next-line @next/next/no-img-element
+								<img src={src} alt={alt ?? ""} className="research-paper-inline-img" />
+							) : null
+					: () => null,
 				a: ({ href, children }) => (
 					<a href={href} target="_blank" rel="noopener noreferrer">
 						{children}
 					</a>
 				),
+				table: ({ children }) => (
+					<div className="research-paper-table-wrap">
+						<table>{children}</table>
+					</div>
+				),
+				tbody: ({ children }) => {
+					const rows = Array.isArray(children) ? children : children ? [children] : [];
+					return <tbody>{rows.slice(0, 10)}</tbody>;
+				},
 				h2: ({ children }) => {
 					const text = headingText(children);
 					const canonical = canonicalizeSectionTitle(text) ?? text;
@@ -346,7 +367,54 @@ function MarkdownSection({ content }: { content: string }) {
 	);
 }
 
-export function ResearchPaperMarkdown({ content }: { content: string }) {
+function StreamingVisualPlaceholder({ kind }: { kind: string }) {
+	const label =
+		kind === "research-chart"
+			? "Rendering chart…"
+			: kind === "research-figure"
+				? "Loading figure…"
+				: kind === "research-image"
+					? "Rendering diagram…"
+					: "Rendering visual…";
+	return (
+		<figure className="research-paper-chart research-paper-visual-pending" aria-busy="true">
+			<p className="research-paper-figure-title">{label}</p>
+			<div className="research-paper-visual-pending-bar" aria-hidden />
+		</figure>
+	);
+}
+
+/** Hold back an incomplete trailing visual fence so streaming JSON is not dumped as text. */
+function splitTrailingIncompleteVisual(content: string): {
+	complete: string;
+	pendingKind: string | null;
+} {
+	const pattern = /```(research-chart|research-image|research-figure)[^\n]*\n/gi;
+	let pending: { index: number; kind: string } | null = null;
+	for (const match of content.matchAll(pattern)) {
+		const index = match.index ?? 0;
+		const after = content.slice(index + match[0].length);
+		if (!after.includes("```")) {
+			pending = { index, kind: (match[1] ?? "research-chart").toLowerCase() };
+		}
+	}
+	if (!pending) return { complete: content, pendingKind: null };
+	return {
+		complete: content.slice(0, pending.index).trimEnd(),
+		pendingKind: pending.kind,
+	};
+}
+
+export function ResearchPaperMarkdown({
+	content,
+	allowImages = true,
+}: {
+	content: string;
+	/** When false, strip markdown images (legacy chat panels). Default true for live generate. */
+	allowImages?: boolean;
+}) {
+	const stripped = stripTitleAboveAbstract(content);
+	const { complete, pendingKind } = splitTrailingIncompleteVisual(stripped);
 	const parts: Array<
 		| { kind: "markdown"; value: string }
 		| { kind: "chart"; spec: ResearchChartSpec }
@@ -355,9 +423,9 @@ export function ResearchPaperMarkdown({ content }: { content: string }) {
 	> = [];
 	const pattern = /```(research-chart|research-image|research-figure)\s*([\s\S]*?)```/gi;
 	let cursor = 0;
-	for (const match of content.matchAll(pattern)) {
+	for (const match of complete.matchAll(pattern)) {
 		const index = match.index ?? 0;
-		if (index > cursor) parts.push({ kind: "markdown", value: content.slice(cursor, index) });
+		if (index > cursor) parts.push({ kind: "markdown", value: complete.slice(cursor, index) });
 		const lang = match[1]?.toLowerCase() ?? "";
 		if (lang === "research-image") {
 			const spec = parseImage(match[2] ?? "");
@@ -374,8 +442,8 @@ export function ResearchPaperMarkdown({ content }: { content: string }) {
 		}
 		cursor = index + match[0].length;
 	}
-	if (cursor < content.length) parts.push({ kind: "markdown", value: content.slice(cursor) });
-	if (!parts.length) parts.push({ kind: "markdown", value: content });
+	if (cursor < complete.length) parts.push({ kind: "markdown", value: complete.slice(cursor) });
+	if (!parts.length && !pendingKind) parts.push({ kind: "markdown", value: complete });
 
 	return (
 		<>
@@ -387,9 +455,10 @@ export function ResearchPaperMarkdown({ content }: { content: string }) {
 				) : part.kind === "figure" ? (
 					<ResearchFigure key={`figure-${index}`} spec={part.spec} />
 				) : (
-					<MarkdownSection key={`markdown-${index}`} content={part.value} />
+					<MarkdownSection key={`markdown-${index}`} content={part.value} allowImages={allowImages} />
 				),
 			)}
+			{pendingKind ? <StreamingVisualPlaceholder kind={pendingKind} /> : null}
 		</>
 	);
 }

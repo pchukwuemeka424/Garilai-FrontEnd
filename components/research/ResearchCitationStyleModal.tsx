@@ -41,7 +41,7 @@ export function ResearchCitationStyleModal({
 	onClose,
 	onConfirm,
 	projectTitle,
-	variant = "lecturer",
+	variant: _variant = "lecturer",
 	note,
 	confirmLabel = "Generate paper",
 }: Props) {
@@ -49,8 +49,6 @@ export function ResearchCitationStyleModal({
 	const closeRef = useRef<HTMLButtonElement>(null);
 	const [mounted, setMounted] = useState(false);
 	const [citationStyle, setCitationStyle] = useState<CitationStyle | "">("");
-
-	const isStudent = variant === "student";
 
 	const popularStyles = useMemo(() => {
 		const all = CITATION_STYLE_GROUPS.flatMap((group) => group.styles);
@@ -102,7 +100,7 @@ export function ResearchCitationStyleModal({
 
 	return createPortal(
 		<div
-			className={`research-style-modal-backdrop${isStudent ? " research-style-modal-student" : ""}`}
+			className="research-style-modal-backdrop"
 			role="presentation"
 			onMouseDown={(event) => {
 				if (event.target === event.currentTarget) onClose();

@@ -50,7 +50,10 @@ export type GovernanceFeature =
 	| "policies"
 	| "governance_hub"
 	| "sessions"
-	| "backup";
+	| "backup"
+	| "modules"
+	| "supervision"
+	| "assessment";
 
 export type FeatureAction = "view" | "create" | "edit" | "delete" | "export";
 
@@ -83,6 +86,9 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, Partial<Record<GovernanceFeature,
 		contributions: ["view"],
 		provenance: ["view"],
 		governance_hub: ["view"],
+		modules: ["view", "edit"],
+		supervision: ["view", "edit"],
+		assessment: ["view", "edit"],
 	},
 	department_admin: {
 		dashboard: ["view"],
@@ -91,6 +97,8 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, Partial<Record<GovernanceFeature,
 		tokens: ["view"],
 		contributions: ["view"],
 		governance_hub: ["view"],
+		supervision: ["view"],
+		assessment: ["view"],
 	},
 	data_protection_officer: {
 		dashboard: ["view"],
@@ -121,6 +129,9 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, Partial<Record<GovernanceFeature,
 		retention: ["view"],
 		policies: ["view"],
 		governance_hub: ["view"],
+		modules: ["view"],
+		supervision: ["view"],
+		assessment: ["view"],
 	},
 };
 

@@ -17,8 +17,8 @@ import { useAuth } from "@/hooks/useAuth";
 import type { AuthUser } from "@/lib/auth";
 import {
 	AULA_ADMIN_ITEM,
-	AULA_NAV_GROUPS,
 	AULA_QUICK_ACCESS,
+	aulaNavGroupsForFeatures,
 	type AulaNavItem,
 } from "@/lib/aula-nav";
 import { apiFetch } from "@/lib/portal-api";
@@ -59,7 +59,7 @@ function AulaNavItemLink({
 export function AulaSidebar({ user, id, className, onNavigate }: Props) {
 	const { logout } = useAuth();
 	const [unreadCount, setUnreadCount] = useState(0);
-	const groups = [...AULA_NAV_GROUPS];
+	const groups = aulaNavGroupsForFeatures(user.features);
 	if (user.role === "admin") {
 		groups[0] = {
 			...groups[0]!,

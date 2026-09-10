@@ -69,10 +69,10 @@ export function ResearchNotebookLibraryPicker({
 		const next = selected
 			? selectedIds.filter((id) => id !== notebook.id)
 			: [...selectedIds, notebook.id].slice(0, MAX_SELECTED);
-		onChange(next);
 		if (!selected && next.includes(notebook.id)) {
 			onUseTitle?.({ id: notebook.id, title: notebook.title || "Untitled notebook" });
 		}
+		onChange(next);
 	};
 
 	const notebooksHref = notebookLibraryHref(variant);
@@ -96,8 +96,8 @@ export function ResearchNotebookLibraryPicker({
 						) : null}
 					</h2>
 					<p className="assign-library-help">
-						Optional: pick notebooks. Generation uses the whole folder — notes, files, data,
-						surveys, figures, and lab work. Assignments are not listed here.
+						Optional: pick a notebook to load its notes into the editor. Datasets and images appear
+						below. Generation still uses the whole folder. Assignments are not listed here.
 					</p>
 				</div>
 				<Link href={notebooksHref} className="assign-library-link">

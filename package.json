@@ -19,6 +19,7 @@
     "test:pdf": "npx tsx scripts/test-research-pdf-runner.ts"
   },
   "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
     "@sgratzl/chartjs-chart-boxplot": "^4.4.5",
     "@supabase/supabase-js": "^2.110.7",
     "@tiptap/extension-highlight": "^3.28.0",
@@ -37,6 +38,7 @@
     "class-variance-authority": "^0.7.1",
     "docx": "^9.7.1",
     "html2canvas": "^1.4.1",
+    "hugeicons-react": "^0.4.0",
     "idb": "^8.0.3",
     "jspdf": "^3.0.1",
     "jstat": "^1.9.6",

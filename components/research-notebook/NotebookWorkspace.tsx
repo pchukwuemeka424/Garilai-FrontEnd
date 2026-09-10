@@ -8,6 +8,7 @@ import {
 	ChevronLeft,
 	ClipboardList,
 	Download,
+	FileSpreadsheet,
 	FileText,
 	FlaskConical,
 	ImagePlus,
@@ -16,6 +17,7 @@ import {
 	Paperclip,
 	Pencil,
 	Plus,
+	Sparkles,
 	Trash2,
 	Upload,
 } from "lucide-react";
@@ -57,30 +59,130 @@ import type { ResearchQuestionnaire } from "@/lib/research-questionnaire";
 
 type Tab = "materials" | "survey" | "data" | "images" | "lab";
 
+type DatasetPreview = {
+	headers: string[];
+	rows: string[][];
+	totalLines: number;
+	truncated: boolean;
+};
+
 function isImageFile(file: File): boolean {
 	return file.type.startsWith("image/") && /jpeg|jpg|png|gif|webp/i.test(file.type);
+}
+
+function splitDelimitedLine(line: string, delimiter: string): string[] {
+	const cells: string[] = [];
+	let current = "";
+	let inQuotes = false;
+	for (let i = 0; i < line.length; i += 1) {
+		const ch = line[i];
+		if (ch === '"') {
+			if (inQuotes && line[i + 1] === '"') {
+				current += '"';
+				i += 1;
+			} else {
+				inQuotes = !inQuotes;
+			}
+			continue;
+		}
+		if (ch === delimiter && !inQuotes) {
+			cells.push(current.trim());
+			current = "";
+			continue;
+		}
+		current += ch;
+	}
+	cells.push(current.trim());
+	return cells;
+}
+
+function parseDatasetPreview(raw: string, formatHint: string): DatasetPreview | null {
+	const text = raw.replace(/^\uFEFF/, "").trim();
+	if (!text) return null;
+
+	const format = formatHint.toLowerCase();
+	if (format.includes("json") || text.startsWith("{") || text.startsWith("[")) {
+		try {
+			const parsed: unknown = JSON.parse(text);
+			if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === "object" && parsed[0]) {
+				const headers = Array.from(
+					new Set(
+						parsed.flatMap((row) =>
+							row && typeof row === "object" ? Object.keys(row as Record<string, unknown>) : [],
+						),
+					),
+				).slice(0, 12);
+				const rows = parsed.slice(0, 40).map((row) =>
+					headers.map((key) => {
+						const value = row && typeof row === "object" ? (row as Record<string, unknown>)[key] : "";
+						if (value == null) return "";
+						if (typeof value === "object") return JSON.stringify(value);
+						return String(value);
+					}),
+				);
+				return {
+					headers,
+					rows,
+					totalLines: parsed.length,
+					truncated: parsed.length > rows.length,
+				};
+			}
+		} catch {
+			/* fall through to delimited parse */
+		}
+	}
+
+	const delimiter = format.includes("tsv") || text.includes("\t") ? "\t" : ",";
+	const lines = text.split(/\r?\n/).filter((line) => line.trim().length > 0);
+	if (lines.length === 0) return null;
+	const headers = splitDelimitedLine(lines[0], delimiter).slice(0, 12);
+	const dataLines = lines.slice(1, 41);
+	const rows = dataLines.map((line) => {
+		const cells = splitDelimitedLine(line, delimiter);
+		return headers.map((_, i) => cells[i] ?? "");
+	});
+	return {
+		headers,
+		rows,
+		totalLines: Math.max(0, lines.length - 1),
+		truncated: lines.length - 1 > rows.length || headers.length < splitDelimitedLine(lines[0], delimiter).length,
+	};
+}
+
+function formatDatasetMeta(ds: ResearchDataset): string {
+	const format = (ds.format || "").trim().toUpperCase();
+	const fileName = (ds.fileName || ds.sizeLabel || "").trim();
+	if (format && fileName) return `${format} · ${fileName}`;
+	return format || fileName || "Dataset";
 }
 
 export function NotebookWorkspace({
 	project,
 	notebooksHref,
 	onProjectChange,
+	initialDocuments = [],
+	initialDatasets = [],
+	initialQuestionnaires = [],
 }: {
 	project: ResearchProject;
 	notebooksHref: string;
 	onProjectChange: (next: ResearchProject) => void;
+	initialDocuments?: ResearchDocument[];
+	initialDatasets?: ResearchDataset[];
+	initialQuestionnaires?: ResearchQuestionnaire[];
 }) {
 	const [tab, setTab] = useState<Tab>("materials");
 	const [notebook, setNotebook] = useState<ResearchNotebookData>(
 		project.notebookData ?? emptyNotebookData(),
 	);
 	const [pageId, setPageId] = useState<string | null>(notebook.pages[0]?.id ?? null);
-	const [datasets, setDatasets] = useState<ResearchDataset[]>([]);
-	const [documents, setDocuments] = useState<ResearchDocument[]>([]);
-	const [questionnaires, setQuestionnaires] = useState<ResearchQuestionnaire[]>([]);
+	const [datasets, setDatasets] = useState<ResearchDataset[]>(initialDatasets);
+	const [documents, setDocuments] = useState<ResearchDocument[]>(initialDocuments);
+	const [questionnaires, setQuestionnaires] = useState<ResearchQuestionnaire[]>(initialQuestionnaires);
 	const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
 	const [datasetId, setDatasetId] = useState<string | null>(null);
-	const [previewRows, setPreviewRows] = useState<string>("");
+	const [preview, setPreview] = useState<DatasetPreview | null>(null);
+	const [previewReady, setPreviewReady] = useState(false);
 	const [plotPrompt, setPlotPrompt] = useState("");
 	const [chartType, setChartType] = useState<GraphChartType>("bar");
 	const [plot, setPlot] = useState<GraphPlotResult | null>(null);
@@ -101,7 +203,12 @@ export function NotebookWorkspace({
 		() => documents.filter((d) => isImageDocument(d.fileMime)),
 		[documents],
 	);
+	const files = useMemo(
+		() => documents.filter((d) => !isImageDocument(d.fileMime)),
+		[documents],
+	);
 	const activePage = notebook.pages.find((p) => p.id === pageId) ?? null;
+	const activeDataset = datasets.find((ds) => ds.id === datasetId) ?? null;
 
 	const persistNotebook = useCallback(
 		async (next: ResearchNotebookData) => {
@@ -158,6 +265,50 @@ export function NotebookWorkspace({
 			setError(err instanceof Error ? err.message : "Could not load files.");
 		});
 	}, [loadAssets]);
+
+	useEffect(() => {
+		if (!datasetId) {
+			setPreview(null);
+			setPreviewReady(false);
+			return;
+		}
+		let cancelled = false;
+		setPreviewReady(false);
+		(async () => {
+			try {
+				const file = await fetchDatasetFile(datasetId);
+				if (cancelled) return;
+				if (!file?.data) {
+					setPreview(null);
+					setPreviewReady(true);
+					return;
+				}
+				const textLike =
+					/csv|tsv|json|text|plain/i.test(file.mime) || /\.(csv|tsv|json|txt)$/i.test(file.name);
+				if (!textLike) {
+					setPreview(null);
+					setPreviewReady(true);
+					return;
+				}
+				try {
+					const raw = file.data.includes("base64,")
+						? atob(file.data.split("base64,")[1] ?? "")
+						: file.data;
+					const formatHint = file.name.split(".").pop() || file.mime || "";
+					setPreview(parseDatasetPreview(raw.slice(0, 120_000), formatHint));
+				} catch {
+					setPreview(null);
+				}
+			} catch {
+				if (!cancelled) setPreview(null);
+			} finally {
+				if (!cancelled) setPreviewReady(true);
+			}
+		})();
+		return () => {
+			cancelled = true;
+		};
+	}, [datasetId]);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -308,6 +459,7 @@ export function NotebookWorkspace({
 			});
 			setDatasets((prev) => [created, ...prev]);
 			setDatasetId(created.id);
+			setPlot(null);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Upload failed.");
 		} finally {
@@ -315,28 +467,10 @@ export function NotebookWorkspace({
 		}
 	}
 
-	async function onSelectDataset(id: string) {
+	function onSelectDataset(id: string) {
+		if (id === datasetId) return;
 		setDatasetId(id);
 		setPlot(null);
-		setPreviewRows("");
-		try {
-			const file = await fetchDatasetFile(id);
-			if (!file?.data) return;
-			if (!/csv|tsv|json|text|plain/i.test(file.mime) && !/\.(csv|tsv|json|txt)$/i.test(file.name)) {
-				setPreviewRows("");
-				return;
-			}
-			try {
-				const raw = file.data.includes("base64,")
-					? atob(file.data.split("base64,")[1] ?? "")
-					: file.data;
-				setPreviewRows(raw.slice(0, 4000));
-			} catch {
-				setPreviewRows("");
-			}
-		} catch {
-			setPreviewRows("");
-		}
 	}
 
 	async function onPlot() {
@@ -374,6 +508,49 @@ export function NotebookWorkspace({
 			}
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Image upload failed.");
+		} finally {
+			setBusy("");
+		}
+	}
+
+	async function onUploadFiles(list: FileList | null) {
+		if (!list?.length) return;
+		setError("");
+		setBusy("Uploading files…");
+		try {
+			for (const file of Array.from(list)) {
+				if (isImageFile(file)) {
+					throw new Error("Use the Pictures tab for images.");
+				}
+				if (file.size > 32 * 1024 * 1024) {
+					throw new Error("Files must be 32 MB or smaller.");
+				}
+				const data = await readFileAsDataUrl(file);
+				const created = await createDocument({
+					title: file.name.replace(/\.[^.]+$/, "") || file.name,
+					fileName: file.name,
+					fileMime: file.type || "application/octet-stream",
+					fileData: data,
+					projectId: project.id,
+				});
+				setDocuments((prev) => [created, ...prev]);
+			}
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "File upload failed.");
+		} finally {
+			setBusy("");
+		}
+	}
+
+	async function onDownloadFile(doc: ResearchDocument) {
+		setError("");
+		setBusy(`Downloading ${doc.fileName || doc.title}…`);
+		try {
+			const file = await fetchDocumentFile(doc.id);
+			if (!file?.data) throw new Error("Could not download file.");
+			downloadDataUrl(file.data, file.name || doc.fileName || doc.title);
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Could not download file.");
 		} finally {
 			setBusy("");
 		}
@@ -451,7 +628,12 @@ export function NotebookWorkspace({
 	}, [compileNote]);
 
 	const tabs: Array<{ id: Tab; label: string; icon: ReactNode; count: number }> = [
-		{ id: "materials", label: "Document", icon: <FileText className="size-3.5" />, count: effort.pages },
+		{
+			id: "materials",
+			label: "Document",
+			icon: <FileText className="size-3.5" />,
+			count: files.length,
+		},
 		{ id: "survey", label: "Survey", icon: <ClipboardList className="size-3.5" />, count: effort.questionnaires },
 		{ id: "data", label: "Data", icon: <BarChart3 className="size-3.5" />, count: effort.datasets },
 		{ id: "images", label: "Pictures", icon: <Images className="size-3.5" />, count: effort.pictures },
@@ -525,27 +707,51 @@ export function NotebookWorkspace({
 				<div className="nb-studio-chrome-meta">
 					<div className="nb-effort-compact" aria-labelledby="nb-effort-title">
 						<div
-							className="saved-research-effort-ring"
-							style={{ ["--p" as string]: String(effort.userEffortScore) }}
+							className="nb-effort-circle"
 							aria-label={`Overall score of user’s input: ${effort.userEffortScore} out of 100`}
 						>
-							<span className="saved-research-effort-ring-value">{effort.userEffortScore}</span>
-							<span className="saved-research-effort-ring-max">/100</span>
+							<svg className="size-10 -rotate-90" viewBox="0 0 36 36" aria-hidden>
+								<circle
+									cx="18"
+									cy="18"
+									r="14"
+									fill="none"
+									stroke="#e2e8f0"
+									strokeWidth="3.2"
+								/>
+								<circle
+									cx="18"
+									cy="18"
+									r="14"
+									fill="none"
+									stroke="#2563eb"
+									strokeWidth="3.2"
+									strokeDasharray="88"
+									strokeDashoffset={88 - (88 * Math.max(0, Math.min(100, effort.userEffortScore))) / 100}
+									strokeLinecap="round"
+								/>
+							</svg>
+							<div className="nb-effort-circle-text">
+								<span className="nb-effort-circle-score">{effort.userEffortScore}</span>
+								<span className="nb-effort-circle-denom">/100</span>
+							</div>
 						</div>
 						<div className="nb-effort-copy">
-							<p id="nb-effort-title" className="nb-effort-label">
-								Overall score of user’s input
-							</p>
-							<p className="nb-effort-band">{effort.userBandLabel}</p>
+							<div className="nb-effort-header-row">
+								<p id="nb-effort-title" className="nb-effort-label">
+									User Effort Score
+								</p>
+								<span className="nb-effort-band-pill">{effort.userBandLabel}</span>
+							</div>
 							<div
 								className="nb-effort-bar"
 								role="progressbar"
 								aria-valuemin={0}
 								aria-valuemax={100}
-								aria-valuenow={effort.captureScore}
-								aria-label={`Capture score: ${effort.captureScore} percent`}
+								aria-valuenow={effort.userEffortScore}
+								aria-label={`User effort score: ${effort.userEffortScore} percent`}
 							>
-								<span style={{ width: `${effort.captureScore}%` }} />
+								<span style={{ width: `${Math.max(0, Math.min(100, effort.userEffortScore))}%` }} />
 							</div>
 							<p className="nb-effort-meta">
 								Capture {effort.captureScore}% · writing {effort.writingScore}% ·{" "}
@@ -559,8 +765,9 @@ export function NotebookWorkspace({
 						{saveState === "saved" ? <Check className="size-3.5" aria-hidden /> : null}
 						{saveLabel}
 					</p>
-					<button type="button" className="nb-btn nb-btn-ghost" onClick={() => void compileNote()} disabled={compiling}>
-						{compiling ? "Compiling…" : "Compile report"}
+					<button type="button" className="nb-btn nb-btn-ghost nb-compile-btn" onClick={() => void compileNote()} disabled={compiling}>
+						<Download className="size-3.5 mr-1" aria-hidden />
+						{compiling ? "Compiling…" : "Export report"}
 					</button>
 				</div>
 			</header>
@@ -604,6 +811,73 @@ export function NotebookWorkspace({
 
 			{tab === "materials" && (
 				<div className="nb-doc" role="tabpanel" id="nb-panel-materials" aria-labelledby="nb-tab-materials">
+					<section className="nb-files" aria-label="Uploaded files">
+						<header className="nb-files-toolbar">
+							<div>
+								<p className="nb-media-kicker">Source files</p>
+								<h2>Uploaded files</h2>
+							</div>
+							<label className="nb-btn nb-btn-primary">
+								<Upload className="size-3.5" />
+								Upload files
+								<input
+									type="file"
+									accept=".pdf,.doc,.docx,.txt,.md,.rtf,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown"
+									multiple
+									hidden
+									onChange={(e) => {
+										const list = e.target.files;
+										e.target.value = "";
+										void onUploadFiles(list);
+									}}
+								/>
+							</label>
+						</header>
+						{files.length === 0 ? (
+							<p className="nb-files-empty">
+								No PDFs or documents in this notebook yet. Upload briefs, papers, or notes here — they stay with
+								this project for Research Assistant and generation.
+							</p>
+						) : (
+							<ul className="nb-files-list">
+								{files.map((doc) => (
+									<li key={doc.id} className="nb-files-row">
+										<span className="nb-files-icon" aria-hidden>
+											<Paperclip className="size-4" />
+										</span>
+										<span className="nb-files-meta">
+											<strong>{doc.title || doc.fileName}</strong>
+											<small>
+												{[doc.fileName, doc.kind, doc.sizeLabel].filter(Boolean).join(" · ")}
+											</small>
+										</span>
+										<span className="nb-files-actions">
+											<button
+												type="button"
+												className="nb-icon-btn"
+												aria-label={`Download ${doc.fileName || doc.title}`}
+												onClick={() => void onDownloadFile(doc)}
+											>
+												<Download className="size-3.5" />
+											</button>
+											<button
+												type="button"
+												className="nb-icon-btn nb-icon-btn-danger"
+												aria-label={`Remove ${doc.fileName || doc.title}`}
+												onClick={() => {
+													void deleteDocument(doc.id).then(() => {
+														setDocuments((prev) => prev.filter((d) => d.id !== doc.id));
+													});
+												}}
+											>
+												<Trash2 className="size-3.5" />
+											</button>
+										</span>
+									</li>
+								))}
+							</ul>
+						)}
+					</section>
 					<div className="nb-switcher">
 						<p className="nb-switcher-label">Pages</p>
 						<div className="nb-switcher-scroll" role="list">
@@ -670,9 +944,9 @@ export function NotebookWorkspace({
 					onCaptureChange={setQuestionnaires}
 					onOpenInData={(id) => {
 						setDatasetId(id);
+						setPlot(null);
 						setTab("data");
 						void loadAssets();
-						void onSelectDataset(id);
 					}}
 				/>
 				</div>
@@ -680,37 +954,17 @@ export function NotebookWorkspace({
 
 			{tab === "data" && (
 				<div className="nb-data" role="tabpanel" id="nb-panel-data" aria-labelledby="nb-tab-data">
-					<div className="nb-switcher">
-						<p className="nb-switcher-label">Datasets</p>
-						<div className="nb-switcher-scroll" role="list">
-							{datasets.map((ds) => (
-								<div key={ds.id} className={`nb-chip ${ds.id === datasetId ? "is-on" : ""}`} role="listitem">
-									<button type="button" className="nb-chip-open" onClick={() => void onSelectDataset(ds.id)}>
-										<span>{ds.title}</span>
-										<small>{ds.format || ds.fileName || "dataset"}</small>
-									</button>
-									<button
-										type="button"
-										className="nb-chip-remove"
-										aria-label={`Remove ${ds.title}`}
-										onClick={() => {
-											void deleteDataset(ds.id).then(() => {
-												setDatasets((prev) => prev.filter((d) => d.id !== ds.id));
-												if (datasetId === ds.id) {
-													setDatasetId(null);
-													setPlot(null);
-												}
-											});
-										}}
-									>
-										×
-									</button>
-								</div>
-							))}
+					<header className="nb-data-head">
+						<div>
+							<p className="nb-data-kicker">Analysis studio</p>
+							<h2>Data</h2>
+							<p className="nb-data-lead">
+								Upload tabular files, inspect columns, and generate publication-ready figures with AI.
+							</p>
 						</div>
-						<label className="nb-data-upload">
+						<label className="nb-btn nb-btn-primary">
 							<Upload className="size-3.5" aria-hidden />
-							Upload
+							Upload dataset
 							<input
 								type="file"
 								accept=".csv,.tsv,.json,.xlsx,.xls,.txt"
@@ -722,88 +976,239 @@ export function NotebookWorkspace({
 								}}
 							/>
 						</label>
-					</div>
-					<div className="nb-data-stage">
-						{datasetId ? (
-							<>
-								<div className="nb-data-toolbar">
-									<label className="nb-data-field">
-										<span>Chart</span>
-										<select value={chartType} onChange={(e) => setChartType(e.target.value as GraphChartType)}>
-											{GRAPH_CHART_GROUPS.map((group) => (
-												<optgroup key={group.label} label={group.label}>
-													{group.options.map((opt) => (
-														<option key={opt.value} value={opt.value}>
-															{opt.label}
-														</option>
+					</header>
+
+					<div className="nb-data-shell">
+						<aside className="nb-data-library" aria-label="Dataset library">
+							<div className="nb-data-library-head">
+								<p>Datasets</p>
+								<span>{datasets.length}</span>
+							</div>
+							{datasets.length === 0 ? (
+								<div className="nb-data-library-empty">
+									<FileSpreadsheet className="size-5" aria-hidden />
+									<p>No datasets yet</p>
+									<span>CSV, TSV, JSON, or Excel</span>
+								</div>
+							) : (
+								<ul className="nb-data-library-list">
+									{datasets.map((ds) => (
+										<li key={ds.id} className={ds.id === datasetId ? "is-on" : ""}>
+											<button
+												type="button"
+												className="nb-data-file"
+												onClick={() => onSelectDataset(ds.id)}
+											>
+												<span className="nb-data-file-icon" aria-hidden>
+													<FileSpreadsheet className="size-4" />
+												</span>
+												<span className="nb-data-file-copy">
+													<strong>{ds.title}</strong>
+													<small>{formatDatasetMeta(ds)}</small>
+												</span>
+												<span className="nb-data-file-badge">{(ds.format || "file").toUpperCase()}</span>
+											</button>
+											<button
+												type="button"
+												className="nb-data-remove"
+												aria-label={`Remove ${ds.title}`}
+												onClick={() => {
+													void deleteDataset(ds.id).then(() => {
+														setDatasets((prev) => {
+															const next = prev.filter((d) => d.id !== ds.id);
+															if (datasetId === ds.id) {
+																setDatasetId(next[0]?.id ?? null);
+																setPlot(null);
+															}
+															return next;
+														});
+													});
+												}}
+											>
+												<Trash2 className="size-3.5" />
+											</button>
+										</li>
+									))}
+								</ul>
+							)}
+						</aside>
+
+						<div className="nb-data-stage">
+							{activeDataset ? (
+								<>
+									<section className="nb-data-active" aria-label="Selected dataset">
+										<div className="nb-data-active-copy">
+											<p className="nb-data-kicker">Active dataset</p>
+											<h3>{activeDataset.title}</h3>
+											<p>{formatDatasetMeta(activeDataset)}</p>
+										</div>
+										{preview ? (
+											<div className="nb-data-active-stats" aria-label="Dataset shape">
+												<div>
+													<strong>{preview.totalLines.toLocaleString()}</strong>
+													<span>Rows</span>
+												</div>
+												<div>
+													<strong>{preview.headers.length}</strong>
+													<span>Columns</span>
+												</div>
+												<div>
+													<strong>{(activeDataset.format || "file").toUpperCase()}</strong>
+													<span>Format</span>
+												</div>
+											</div>
+										) : null}
+									</section>
+
+									<section className="nb-data-composer" aria-label="Plot composer">
+										<div className="nb-data-composer-head">
+											<span className="nb-data-composer-icon" aria-hidden>
+												<Sparkles className="size-4" />
+											</span>
+											<div>
+												<p className="nb-data-kicker">Figure builder</p>
+												<strong>Describe the chart you need</strong>
+											</div>
+										</div>
+										<div className="nb-data-toolbar">
+											<label className="nb-data-field">
+												<span>Chart type</span>
+												<select
+													value={chartType}
+													onChange={(e) => setChartType(e.target.value as GraphChartType)}
+												>
+													{GRAPH_CHART_GROUPS.map((group) => (
+														<optgroup key={group.label} label={group.label}>
+															{group.options.map((opt) => (
+																<option key={opt.value} value={opt.value}>
+																	{opt.label}
+																</option>
+															))}
+														</optgroup>
 													))}
-												</optgroup>
-											))}
-										</select>
-									</label>
-									<label className="nb-data-field nb-data-field-grow">
-										<span>Ask AI</span>
+												</select>
+											</label>
+											<label className="nb-data-field nb-data-field-grow">
+												<span>Prompt</span>
+												<input
+													value={plotPrompt}
+													onChange={(e) => setPlotPrompt(e.target.value)}
+													placeholder="e.g. Plot mean yield by treatment as a grouped bar chart"
+													onKeyDown={(e) => {
+														if (e.key === "Enter" && !busy) {
+															e.preventDefault();
+															void onPlot();
+														}
+													}}
+												/>
+											</label>
+											<button
+												type="button"
+												className="nb-data-plot"
+												onClick={() => void onPlot()}
+												disabled={Boolean(busy)}
+											>
+												<Sparkles className="size-3.5" aria-hidden />
+												{busy.startsWith("Plot") ? "Plotting…" : "Plot with AI"}
+											</button>
+										</div>
+									</section>
+
+									{plot ? (
+										<NotebookPlot
+											plot={plot}
+											onSavePicture={async (dataUrl, fileName) => {
+												const created = await createDocument({
+													title: fileName.replace(/\.png$/i, ""),
+													fileName,
+													fileMime: "image/png",
+													fileData: dataUrl,
+													projectId: project.id,
+												});
+												setDocuments((prev) => [created, ...prev]);
+												setImageUrls((prev) => ({ ...prev, [created.id]: dataUrl }));
+											}}
+										/>
+									) : (
+										<div className="nb-data-canvas-empty">
+											<div className="nb-blank-icon" aria-hidden>
+												<BarChart3 className="size-7" />
+											</div>
+											<h3>Ready to plot</h3>
+											<p>
+												Choose a chart type and describe the figure. The plot will appear here for review,
+												export, and saving to Pictures.
+											</p>
+										</div>
+									)}
+
+									{preview && preview.headers.length > 0 ? (
+										<section className="nb-data-preview" aria-label="Dataset preview">
+											<header className="nb-data-preview-head">
+												<div>
+													<p className="nb-data-kicker">Table preview</p>
+													<strong>
+														Showing {preview.rows.length.toLocaleString()} of{" "}
+														{preview.totalLines.toLocaleString()} rows
+													</strong>
+												</div>
+												{preview.truncated ? <span className="nb-data-preview-note">Truncated for speed</span> : null}
+											</header>
+											<div className="nb-data-preview-scroll">
+												<table>
+													<thead>
+														<tr>
+															{preview.headers.map((header) => (
+																<th key={header} scope="col">
+																	{header || "—"}
+																</th>
+															))}
+														</tr>
+													</thead>
+													<tbody>
+														{preview.rows.map((row, rowIndex) => (
+															<tr key={`preview-row-${rowIndex}`}>
+																{row.map((cell, cellIndex) => (
+																	<td key={`${rowIndex}-${cellIndex}`}>{cell || "—"}</td>
+																))}
+															</tr>
+														))}
+													</tbody>
+												</table>
+											</div>
+										</section>
+									) : previewReady ? (
+										<p className="nb-data-preview-fallback">
+											Preview unavailable for this file type. You can still plot with AI using the figure
+											builder above.
+										</p>
+									) : (
+										<p className="nb-data-preview-fallback">Loading table preview…</p>
+									)}
+								</>
+							) : (
+								<BlankState
+									icon={<BarChart3 className="size-7" />}
+									title="No dataset selected"
+									body="Upload a CSV, TSV, JSON, or Excel file, then generate a figure with AI."
+								>
+									<label className="nb-btn nb-btn-primary">
+										<Upload className="size-3.5" />
+										Upload dataset
 										<input
-											value={plotPrompt}
-											onChange={(e) => setPlotPrompt(e.target.value)}
-											placeholder="Plot mean yield by treatment as a bar chart"
+											type="file"
+											accept=".csv,.tsv,.json,.xlsx,.xls,.txt"
+											hidden
+											onChange={(e) => {
+												const file = e.target.files?.[0];
+												e.target.value = "";
+												if (file) void onUploadDataset(file);
+											}}
 										/>
 									</label>
-									<button type="button" className="nb-data-plot" onClick={() => void onPlot()} disabled={Boolean(busy)}>
-										{busy.startsWith("Plot") ? "Plotting…" : "Plot with AI"}
-									</button>
-								</div>
-								{plot ? (
-									<NotebookPlot
-										plot={plot}
-										onSavePicture={async (dataUrl, fileName) => {
-											const created = await createDocument({
-												title: fileName.replace(/\.png$/i, ""),
-												fileName,
-												fileMime: "image/png",
-												fileData: dataUrl,
-												projectId: project.id,
-											});
-											setDocuments((prev) => [created, ...prev]);
-											setImageUrls((prev) => ({ ...prev, [created.id]: dataUrl }));
-										}}
-									/>
-								) : (
-									<BlankState
-										icon={<BarChart3 className="size-7" />}
-										title="Ready to plot"
-										body="Choose a chart type and describe the figure. The plot will appear here."
-									/>
-								)}
-								{previewRows ? (
-									<details className="nb-data-preview">
-										<summary>Data preview</summary>
-										<pre aria-label="Dataset preview">{previewRows}</pre>
-									</details>
-								) : null}
-							</>
-						) : (
-							<BlankState
-								icon={<BarChart3 className="size-7" />}
-								title="No dataset selected"
-								body="Upload a CSV, TSV, JSON, or Excel file, then generate a figure with AI."
-							>
-								<label className="nb-btn nb-btn-primary">
-									<Upload className="size-3.5" />
-									Upload dataset
-									<input
-										type="file"
-										accept=".csv,.tsv,.json,.xlsx,.xls,.txt"
-										hidden
-										onChange={(e) => {
-											const file = e.target.files?.[0];
-											e.target.value = "";
-											if (file) void onUploadDataset(file);
-										}}
-									/>
-								</label>
-							</BlankState>
-						)}
+								</BlankState>
+							)}
+						</div>
 					</div>
 				</div>
 			)}

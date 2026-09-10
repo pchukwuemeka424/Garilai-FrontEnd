@@ -151,7 +151,7 @@ function SavedResearchListContent({ variant = "lecturer" }: Props) {
 	const showFilters = !loading && !isEmpty;
 
 	return (
-		<div className={`research-page sc-saved-page${isStudent ? " research-page-student" : ""}`}>
+		<div className="research-page sc-saved-page">
 			<header className="research-page-header">
 				<div className="research-page-header-start">
 					<div className="research-page-icon" aria-hidden>
@@ -411,7 +411,7 @@ function SavedResearchListContent({ variant = "lecturer" }: Props) {
 					</section>
 				)}
 
-				{!loading && isStudent && (
+				{!loading && (
 					<section className="sc-saved-section">
 						<div className="sc-saved-ideas-card">
 							<p className="sc-saved-ideas-copy">

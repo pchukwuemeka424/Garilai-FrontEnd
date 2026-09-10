@@ -14,25 +14,14 @@ import {
   UserRound,
   X,
 } from "lucide-react";
-import { Badge } from "@/components/portal/ui/badge";
-import { Button } from "@/components/portal/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/portal/ui/card";
-import { EmptyState } from "@/components/portal/feedback/empty-state";
-import { LoadingPage } from "@/components/portal/feedback/loading-page";
 import {
   AssignmentBriefPanel,
   type AssignmentBriefView,
 } from "@/components/portal/features/assignment/assignment-brief-panel";
+import { RemarkHtml } from "@/components/portal/editor/remark-html";
 import { apiFetch } from "@/lib/portal-api";
 import { stripReviewMarks } from "@/lib/portal/apply-highlights";
 import { cn } from "@/lib/portal/cn";
-import { RemarkHtml } from "@/components/portal/editor/remark-html";
 
 type ProjectPage = {
   _id: string;
@@ -63,29 +52,34 @@ type AssignmentProject = {
   pages?: ProjectPage[];
 };
 
+type StatusMeta = {
+  label: string;
+  tone: "graded" | "approved" | "revision" | "submitted" | "progress" | "idle";
+};
+
 function primaryPage(pages: ProjectPage[] | undefined) {
   if (!Array.isArray(pages) || pages.length === 0) return null;
   return [...pages].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))[0] ?? null;
 }
 
-function statusMeta(project: AssignmentProject) {
+function statusMeta(project: AssignmentProject): StatusMeta {
   if (typeof project.score === "number") {
-    return { label: "Graded", variant: "success" as const };
+    return { label: "Graded", tone: "graded" };
   }
   const page = primaryPage(project.pages);
   if (page?.reviewStatus === "approved") {
-    return { label: "Approved", variant: "success" as const };
+    return { label: "Approved", tone: "approved" };
   }
   if (page?.reviewStatus === "needs_revision") {
-    return { label: "Needs revision", variant: "warning" as const };
+    return { label: "Needs revision", tone: "revision" };
   }
   if (page?.reviewStatus && page.reviewStatus !== "none") {
-    return { label: "Submitted", variant: "default" as const };
+    return { label: "Submitted", tone: "submitted" };
   }
   if (String(page?.content || "").trim()) {
-    return { label: "In progress", variant: "default" as const };
+    return { label: "In progress", tone: "progress" };
   }
-  return { label: "Not started", variant: "neutral" as const };
+  return { label: "Not started", tone: "idle" };
 }
 
 function stripHtmlToText(html: string) {
@@ -94,6 +88,22 @@ function stripHtmlToText(html: string) {
     .replace(/&nbsp;/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function formatToday() {
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  }).format(new Date());
+}
+
+function formatDue(dueAt: Date) {
+  return dueAt.toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 export default function StudentAssignmentDetailPage() {
@@ -105,6 +115,11 @@ export default function StudentAssignmentDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [briefModalOpen, setBriefModalOpen] = useState(false);
   const [feedbackModalOpen, setFeedbackModalOpen] = useState(false);
+  const [todayLabel, setTodayLabel] = useState("");
+
+  useEffect(() => {
+    setTodayLabel(formatToday());
+  }, []);
 
   useEffect(() => {
     if (!id) return;
@@ -154,24 +169,52 @@ export default function StudentAssignmentDetailPage() {
     [project?.pages],
   );
 
-  if (loading) return <LoadingPage label="Loading assignment…" />;
+  if (loading) {
+    return (
+      <div className="stu-asnd" aria-busy="true">
+        <header className="stu-asnd-intro">
+          <div className="stu-asnd-intro-copy">
+            <Link href="/student/assignments" className="stu-asnd-back">
+              <ArrowLeft size={14} />
+              Back to assignments
+            </Link>
+            <p className="stu-asnd-eyebrow">{todayLabel || "Assignment"}</p>
+            <h1>Assignment</h1>
+            <p>Loading brief, submission, and feedback...</p>
+          </div>
+        </header>
+        <div className="stu-asnd-skeleton-strip" aria-hidden />
+        <div className="stu-asnd-panel">
+          <div className="stu-asnd-skeleton-block" aria-hidden />
+        </div>
+      </div>
+    );
+  }
 
   if (error || !project) {
     return (
-      <div className="space-y-4">
-        <Link
-          href="/student/assignments"
-          className="inline-flex items-center gap-2 text-sm font-semibold text-foreground/55 hover:text-primary"
-        >
-          <ArrowLeft className="size-4" />
-          Back to assignments
-        </Link>
-        <EmptyState
-          title="Assignment not found"
-          description={error || "This assignment could not be loaded."}
-          action="View assignments"
-          href="/student/assignments"
-        />
+      <div className="stu-asnd">
+        <header className="stu-asnd-intro">
+          <div className="stu-asnd-intro-copy">
+            <Link href="/student/assignments" className="stu-asnd-back">
+              <ArrowLeft size={14} />
+              Back to assignments
+            </Link>
+            <p className="stu-asnd-eyebrow">{todayLabel || "Assignment"}</p>
+            <h1>Assignment not found</h1>
+            <p>{error || "This assignment could not be loaded."}</p>
+          </div>
+        </header>
+        <div className="stu-asnd-empty">
+          <span className="stu-asnd-empty-icon" aria-hidden>
+            <ClipboardList size={22} />
+          </span>
+          <h3>Unable to open this assignment</h3>
+          <p>It may have been removed, or you may not have access.</p>
+          <Link href="/student/assignments" className="stu-asnd-btn stu-asnd-btn-primary">
+            View assignments
+          </Link>
+        </div>
       </div>
     );
   }
@@ -198,205 +241,229 @@ export default function StudentAssignmentDetailPage() {
     page?.content?.trim() || page?.reviewAnnotatedHtml?.trim() || "",
   );
   const hasSubmission = Boolean(stripHtmlToText(submissionHtml));
+  const title = brief?.title || project.title;
+  const courseLine =
+    [brief?.courseName, brief?.courseYear].filter(Boolean).join(" · ") ||
+    project.topic ||
+    "Coursework assignment";
+  const lecturer = project.supervisor?.name || "No lecturer assigned";
 
   return (
-    <div className="space-y-5">
-      <Link
-        href="/student/assignments"
-        className="inline-flex items-center gap-2 text-sm font-semibold text-foreground/55 hover:text-primary"
-      >
-        <ArrowLeft className="size-4" />
-        Back to assignments
-      </Link>
+    <div className="stu-asnd">
+      <header className="stu-asnd-intro">
+        <div className="stu-asnd-intro-copy">
+          <Link href="/student/assignments" className="stu-asnd-back">
+            <ArrowLeft size={14} />
+            Back to assignments
+          </Link>
+          <p className="stu-asnd-eyebrow">{todayLabel || "Assignment"}</p>
+          <h1>{title}</h1>
+          <p>
+            {courseLine.trim()}. Review the brief, continue your submission, and
+            check feedback when it arrives.
+          </p>
+        </div>
+        <div className="stu-asnd-intro-actions">
+          {isGraded ? (
+            <p className="stu-asnd-score-hero" aria-label="Score">
+              <strong>{project.score}</strong>
+              <span>/{maxScore}</span>
+            </p>
+          ) : null}
+          <button
+            type="button"
+            className="stu-asnd-btn stu-asnd-btn-ghost"
+            onClick={() => setBriefModalOpen(true)}
+          >
+            <FileText size={15} />
+            Assignment brief
+          </button>
+          {isGraded ? (
+            <button
+              type="button"
+              className="stu-asnd-btn stu-asnd-btn-primary"
+              onClick={() => setFeedbackModalOpen(true)}
+            >
+              <MessageSquareText size={15} />
+              Feedback
+            </button>
+          ) : (
+            <Link href={writeHref} className="stu-asnd-btn stu-asnd-btn-primary">
+              <PenLine size={15} />
+              {hasSubmission ? "Continue writing" : "Open writing page"}
+              <ArrowRight size={14} />
+            </Link>
+          )}
+        </div>
+      </header>
 
-      <Card className="rounded-xl shadow-sm">
-        <CardHeader className="gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="min-w-0 space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="grid size-9 place-items-center rounded-xl bg-accent/10 text-accent">
-                <ClipboardList className="size-4" />
-              </span>
-              <Badge variant={status.variant}>{status.label}</Badge>
-            </div>
-            <CardTitle className="font-display text-2xl">
-              {brief?.title || project.title}
-            </CardTitle>
-            <CardDescription className="space-y-1.5 text-sm">
-              <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                <span className="inline-flex items-center gap-1">
-                  <UserRound className="size-3.5 text-primary" />
-                  {project.supervisor?.name || "No lecturer assigned"}
-                </span>
-                {dueValid && (
-                  <span className="inline-flex items-center gap-1">
-                    <Calendar className="size-3.5" />
-                    Due{" "}
-                    {dueAt!.toLocaleDateString(undefined, {
-                      day: "numeric",
-                      month: "short",
-                      year: "numeric",
-                    })}
-                  </span>
-                )}
-              </span>
-              {[brief?.courseName, brief?.courseYear]
-                .filter(Boolean)
-                .join(" · ") || project.topic || "Coursework assignment"}
-            </CardDescription>
-          </div>
-          <div className="flex shrink-0 flex-col gap-2 sm:items-end">
-            {isGraded && (
-              <p className="text-lg font-bold tabular-nums text-emerald-700">
+      <section className="stu-asnd-metrics" aria-label="Assignment details">
+        <div className="stu-asnd-metric">
+          <span className="stu-asnd-metric-label">Status</span>
+          <strong className="stu-asnd-metric-value">
+            <span className={cn("stu-asnd-badge", `tone-${status.tone}`)}>
+              {status.label}
+            </span>
+          </strong>
+          <span className="stu-asnd-metric-hint">Current stage</span>
+        </div>
+        <div className="stu-asnd-metric">
+          <span className="stu-asnd-metric-label">Lecturer</span>
+          <strong className="stu-asnd-metric-value stu-asnd-metric-text">
+            <UserRound size={14} aria-hidden />
+            {lecturer}
+          </strong>
+          <span className="stu-asnd-metric-hint">Assigned supervisor</span>
+        </div>
+        <div className="stu-asnd-metric">
+          <span className="stu-asnd-metric-label">Due</span>
+          <strong className="stu-asnd-metric-value stu-asnd-metric-text">
+            <Calendar size={14} aria-hidden />
+            {dueValid ? formatDue(dueAt!) : "No due date"}
+          </strong>
+          <span className="stu-asnd-metric-hint">
+            {typeof brief?.maxScore === "number"
+              ? `${brief.maxScore} marks`
+              : "Deadline"}
+          </span>
+        </div>
+        <div className="stu-asnd-metric">
+          <span className="stu-asnd-metric-label">Marks</span>
+          <strong className="stu-asnd-metric-value">
+            {isGraded ? (
+              <>
                 {project.score}
-                <span className="text-sm font-semibold text-foreground/45">
-                  /{maxScore}
-                </span>
-              </p>
+                <em>/{maxScore}</em>
+              </>
+            ) : (
+              <>
+                —
+                <em>/{maxScore}</em>
+              </>
             )}
-            <div className="flex flex-wrap gap-2 sm:justify-end">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setBriefModalOpen(true)}
-              >
-                <FileText className="size-4" />
-                Assignment brief
-              </Button>
-              {isGraded ? (
-                <Button
-                  type="button"
-                  onClick={() => setFeedbackModalOpen(true)}
-                >
-                  <MessageSquareText className="size-4" />
-                  Feedback
-                </Button>
-              ) : (
-                <Link href={writeHref}>
-                  <Button>
-                    <PenLine className="size-4" />
-                    {hasSubmission ? "Continue writing" : "Open writing page"}
-                    <ArrowRight className="size-4" />
-                  </Button>
-                </Link>
-              )}
-            </div>
-          </div>
-        </CardHeader>
-      </Card>
+          </strong>
+          <span className="stu-asnd-metric-hint">
+            {isGraded ? "Graded" : "Awaiting grade"}
+          </span>
+        </div>
+      </section>
 
-      <Card className="rounded-xl shadow-sm">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <PenLine className="size-4 text-primary" />
-            Your submission
-          </CardTitle>
-          <CardDescription>
-            {hasSubmission
-              ? "The written work you uploaded or typed for this assignment."
-              : "Nothing submitted yet — open the writing page to start."}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+      <section className="stu-asnd-panel" aria-labelledby="stu-asnd-submission-heading">
+        <div className="stu-asnd-panel-head">
+          <div>
+            <h2 id="stu-asnd-submission-heading">Your submission</h2>
+            <p>
+              {hasSubmission
+                ? "The written work you uploaded or typed for this assignment."
+                : "Nothing submitted yet — open the writing page to start."}
+            </p>
+          </div>
+          {!isGraded ? (
+            <Link href={writeHref} className="stu-asnd-btn stu-asnd-btn-ghost stu-asnd-btn-sm">
+              <PenLine size={14} />
+              {hasSubmission ? "Edit" : "Start"}
+            </Link>
+          ) : hasFeedbackContent ? (
+            <button
+              type="button"
+              className="stu-asnd-btn stu-asnd-btn-ghost stu-asnd-btn-sm"
+              onClick={() => setFeedbackModalOpen(true)}
+            >
+              <MessageSquareText size={14} />
+              View feedback
+            </button>
+          ) : null}
+        </div>
+
+        <div className="stu-asnd-panel-body">
           {hasSubmission ? (
             <div
-              className="document-editor-prose max-w-none rounded-xl border border-border bg-background px-4 py-4 text-foreground"
+              className="document-editor-prose stu-asnd-prose"
               dangerouslySetInnerHTML={{ __html: submissionHtml }}
             />
           ) : (
-            <div className="rounded-xl border border-dashed border-border bg-muted/20 px-4 py-10 text-center">
-              <FileText className="mx-auto size-8 text-foreground/35" />
-              <p className="mt-3 text-sm font-semibold text-foreground/80">
-                No submission yet
-              </p>
-              <p className="mt-1 text-sm text-foreground/55">
-                Write or upload your assignment to see it here.
-              </p>
+            <div className="stu-asnd-empty stu-asnd-empty-inset">
+              <span className="stu-asnd-empty-icon" aria-hidden>
+                <FileText size={22} />
+              </span>
+              <h3>No submission yet</h3>
+              <p>Write or upload your assignment to see it here.</p>
               {!isGraded ? (
-                <Link href={writeHref} className="mt-4 inline-flex">
-                  <Button size="sm">
-                    <PenLine className="size-4" />
-                    Open writing page
-                  </Button>
+                <Link href={writeHref} className="stu-asnd-btn stu-asnd-btn-primary">
+                  <PenLine size={15} />
+                  Open writing page
                 </Link>
               ) : null}
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
       {!isGraded ? (
-        <div className="flex flex-wrap gap-3">
-          <Link href={writeHref}>
-            <Button variant="secondary">
-              <PenLine className="size-4" />
-              Work on this assignment
-            </Button>
+        <div className="stu-asnd-footer-actions">
+          <Link href={writeHref} className="stu-asnd-btn stu-asnd-btn-primary">
+            <PenLine size={15} />
+            Work on this assignment
           </Link>
-          <Link href={`/student/projects/${project._id}`}>
-            <Button variant="ghost">Open project workspace</Button>
+          <Link
+            href={`/student/projects/${project._id}`}
+            className="stu-asnd-btn stu-asnd-btn-ghost"
+          >
+            Open project workspace
           </Link>
         </div>
       ) : null}
 
       {briefModalOpen ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          className="stu-asnd-modal"
           role="dialog"
           aria-modal="true"
           aria-labelledby="assignment-brief-modal-title"
         >
           <button
             type="button"
-            className="absolute inset-0 bg-black/45"
+            className="stu-asnd-modal-backdrop"
             aria-label="Close dialog"
             onClick={() => setBriefModalOpen(false)}
           />
-          <div className="relative flex max-h-[min(90vh,720px)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-xl">
-            <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-              <h2
-                id="assignment-brief-modal-title"
-                className="text-sm font-bold text-foreground"
-              >
-                Assignment brief
-              </h2>
-              <Button
+          <div className="stu-asnd-modal-card">
+            <div className="stu-asnd-modal-head">
+              <h2 id="assignment-brief-modal-title">Assignment brief</h2>
+              <button
                 type="button"
-                variant="outline"
-                size="sm"
-                className="shrink-0"
+                className="stu-asnd-btn stu-asnd-btn-ghost stu-asnd-btn-sm"
                 aria-label="Close"
                 onClick={() => setBriefModalOpen(false)}
               >
-                <X className="size-4" />
-              </Button>
+                <X size={14} />
+              </button>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto p-4">
+            <div className="stu-asnd-modal-body">
               {brief ? (
                 <AssignmentBriefPanel
                   brief={brief}
                   hideHeader
-                  className="border-0 shadow-none"
+                  className="stu-asnd-brief-panel"
                 />
               ) : (
-                <div className="rounded-xl border border-dashed border-border bg-muted/20 px-4 py-10 text-center">
-                  <FileText className="mx-auto size-8 text-foreground/35" />
-                  <p className="mt-3 text-sm font-semibold text-foreground/80">
-                    No assignment brief attached
-                  </p>
-                  <p className="mt-1 text-sm text-foreground/55">
-                    Your lecturer may still need to publish or attach one.
-                  </p>
+                <div className="stu-asnd-empty stu-asnd-empty-inset">
+                  <span className="stu-asnd-empty-icon" aria-hidden>
+                    <FileText size={22} />
+                  </span>
+                  <h3>No assignment brief attached</h3>
+                  <p>Your lecturer may still need to publish or attach one.</p>
                 </div>
               )}
             </div>
-            <div className="flex justify-end border-t border-border px-4 py-3">
-              <Button
+            <div className="stu-asnd-modal-foot">
+              <button
                 type="button"
-                variant="outline"
+                className="stu-asnd-btn stu-asnd-btn-ghost"
                 onClick={() => setBriefModalOpen(false)}
               >
                 Close
-              </Button>
+              </button>
             </div>
           </div>
         </div>
@@ -404,78 +471,58 @@ export default function StudentAssignmentDetailPage() {
 
       {feedbackModalOpen ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          className="stu-asnd-modal"
           role="dialog"
           aria-modal="true"
           aria-labelledby="assignment-feedback-modal-title"
         >
           <button
             type="button"
-            className="absolute inset-0 bg-black/45"
+            className="stu-asnd-modal-backdrop"
             aria-label="Close dialog"
             onClick={() => setFeedbackModalOpen(false)}
           />
-          <div className="relative flex max-h-[min(90vh,720px)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-xl">
-            <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-              <h2
-                id="assignment-feedback-modal-title"
-                className="text-sm font-bold text-foreground"
-              >
-                Feedback
-              </h2>
-              <Button
+          <div className="stu-asnd-modal-card">
+            <div className="stu-asnd-modal-head">
+              <h2 id="assignment-feedback-modal-title">Feedback</h2>
+              <button
                 type="button"
-                variant="outline"
-                size="sm"
-                className="shrink-0"
+                className="stu-asnd-btn stu-asnd-btn-ghost stu-asnd-btn-sm"
                 aria-label="Close"
                 onClick={() => setFeedbackModalOpen(false)}
               >
-                <X className="size-4" />
-              </Button>
+                <X size={14} />
+              </button>
             </div>
-            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+            <div className="stu-asnd-modal-body stu-asnd-feedback">
               {!hasFeedbackContent ? (
-                <div className="rounded-xl border border-dashed border-border bg-muted/20 px-4 py-10 text-center">
-                  <MessageSquareText className="mx-auto size-8 text-foreground/35" />
-                  <p className="mt-3 text-sm font-semibold text-foreground/80">
-                    No feedback yet
-                  </p>
-                  <p className="mt-1 text-sm text-foreground/55">
-                    Lecturer comments and marks will appear here after grading.
-                  </p>
+                <div className="stu-asnd-empty stu-asnd-empty-inset">
+                  <span className="stu-asnd-empty-icon" aria-hidden>
+                    <MessageSquareText size={22} />
+                  </span>
+                  <h3>No feedback yet</h3>
+                  <p>Lecturer comments and marks will appear here after grading.</p>
                 </div>
               ) : (
                 <>
                   {isGraded ? (
-                    <div className="rounded-xl border border-emerald-600/20 bg-emerald-50 px-4 py-3">
-                      <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-800/70">
-                        Lecturer score
-                      </p>
-                      <p className="mt-1 text-2xl font-bold tracking-tight text-emerald-800">
+                    <div className="stu-asnd-score-card">
+                      <p className="stu-asnd-score-card-label">Lecturer score</p>
+                      <p className="stu-asnd-score-card-value">
                         {project.score}
-                        <span className="text-sm font-semibold text-emerald-700/70">
-                          /{maxScore}
-                        </span>
+                        <span>/{maxScore}</span>
                       </p>
                       {scoreNote ? (
-                        <p className="mt-2 whitespace-pre-wrap text-sm text-emerald-900/80">
-                          {scoreNote}
-                        </p>
+                        <p className="stu-asnd-score-card-note">{scoreNote}</p>
                       ) : null}
                       {criterionScores.length > 0 ? (
-                        <ul className="mt-3 divide-y divide-emerald-600/15 rounded-lg border border-emerald-600/15 bg-white/60">
+                        <ul className="stu-asnd-criteria">
                           {criterionScores.map((row) => (
-                            <li
-                              key={row.name}
-                              className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
-                            >
-                              <span className="text-emerald-950/80">
-                                {row.name}
-                              </span>
-                              <span className="shrink-0 font-semibold text-emerald-900/70">
+                            <li key={row.name}>
+                              <span>{row.name}</span>
+                              <strong>
                                 {row.score}/{row.maxMarks}
-                              </span>
+                              </strong>
                             </li>
                           ))}
                         </ul>
@@ -486,43 +533,34 @@ export default function StudentAssignmentDetailPage() {
                   {feedbackRemark ? (
                     <div
                       className={cn(
-                        "rounded-xl border px-4 py-3 text-sm",
+                        "stu-asnd-remark",
                         page?.reviewStatus === "approved"
-                          ? "border-success/30 bg-success/10"
-                          : "border-amber-500/30 bg-amber-50",
+                          ? "is-approved"
+                          : "is-revision",
                       )}
                     >
-                      <p
-                        className={cn(
-                          "font-semibold",
-                          page?.reviewStatus === "approved"
-                            ? "text-success"
-                            : "text-amber-950",
-                        )}
-                      >
-                        Lecturer feedback
-                      </p>
+                      <p className="stu-asnd-remark-label">Lecturer feedback</p>
                       <RemarkHtml
                         html={feedbackRemark}
-                        className="mt-2 text-sm text-foreground/80"
+                        className="stu-asnd-remark-body"
                       />
                     </div>
                   ) : isGraded && !scoreNote ? (
-                    <p className="text-sm text-foreground/55">
+                    <p className="stu-asnd-muted">
                       No written remarks were left with this grade.
                     </p>
                   ) : null}
                 </>
               )}
             </div>
-            <div className="flex justify-end border-t border-border px-4 py-3">
-              <Button
+            <div className="stu-asnd-modal-foot">
+              <button
                 type="button"
-                variant="outline"
+                className="stu-asnd-btn stu-asnd-btn-ghost"
                 onClick={() => setFeedbackModalOpen(false)}
               >
                 Close
-              </Button>
+              </button>
             </div>
           </div>
         </div>

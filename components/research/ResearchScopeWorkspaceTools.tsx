@@ -1,12 +1,7 @@
 "use client";
 
 import { canonicalizeSectionTitle, sectionHeadingId } from "@/lib/research-paper-sections";
-import {
-	getScopeChecklistItems,
-	getScopeRailHeadings,
-	getScopeRefineChips,
-} from "@/lib/research-scope-brief";
-import { getScopeProfile } from "@/lib/research-scope-profiles";
+import { getScopeRefineChips } from "@/lib/research-scope-brief";
 
 function headingTextFromNode(node: Element): string {
 	return (node.textContent ?? "").replace(/\s+/g, " ").trim();
@@ -29,49 +24,6 @@ export function scrollToPaperSection(heading: string) {
 			return;
 		}
 	}
-}
-
-export function ResearchScopeSectionRail({
-	scope,
-	visible,
-}: {
-	scope: string | null | undefined;
-	visible: boolean;
-}) {
-	if (!visible) return null;
-	const headings = getScopeRailHeadings(scope);
-	const checklist = getScopeChecklistItems(scope);
-	const label = getScopeProfile(scope).label;
-
-	return (
-		<aside className="scope-tools-rail" aria-label={`${label} structure`}>
-			<section className="scope-tools-card">
-				<p className="scope-tools-kicker">{label}</p>
-				<h2 className="scope-tools-title">Sections</h2>
-				<nav className="scope-section-rail">
-					{headings.map((heading) => (
-						<button
-							key={heading}
-							type="button"
-							className="scope-section-rail-btn"
-							onClick={() => scrollToPaperSection(heading)}
-						>
-							{heading}
-						</button>
-					))}
-				</nav>
-			</section>
-			<section className="scope-tools-card">
-				<p className="scope-tools-kicker">Reader checklist</p>
-				<h2 className="scope-tools-title">Must include</h2>
-				<ul className="scope-checklist">
-					{checklist.map((item) => (
-						<li key={item}>{item}</li>
-					))}
-				</ul>
-			</section>
-		</aside>
-	);
 }
 
 export function ResearchScopeRefineChips({

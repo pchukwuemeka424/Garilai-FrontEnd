@@ -145,3 +145,23 @@ export function getDisciplineLabel(id: string): string {
 	}
 	return id;
 }
+
+/** Map a department/programme label (or id) to a research discipline id. */
+export function resolveDisciplineId(value: string | null | undefined): string {
+	const raw = (value ?? "").trim();
+	if (!raw) return "";
+	const lower = raw.toLowerCase();
+	for (const group of DISCIPLINE_GROUPS) {
+		for (const d of group.disciplines) {
+			if (d.id === lower || d.label.toLowerCase() === lower) return d.id;
+		}
+	}
+	for (const group of DISCIPLINE_GROUPS) {
+		for (const d of group.disciplines) {
+			if (lower.includes(d.label.toLowerCase()) || d.label.toLowerCase().includes(lower)) {
+				return d.id;
+			}
+		}
+	}
+	return "";
+}

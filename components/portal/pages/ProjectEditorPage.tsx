@@ -16,17 +16,6 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { Button } from "@/components/portal/ui/button";
-import { Input } from "@/components/portal/ui/input";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/portal/ui/card";
-import { EmptyState } from "@/components/portal/feedback/empty-state";
-import { LoadingPage } from "@/components/portal/feedback/loading-page";
 import { apiFetch, apiUpload } from "@/lib/portal-api";
 import {
   DocumentEditor,
@@ -45,6 +34,12 @@ import {
 } from "@/lib/portal/project-types";
 import { AssignmentBriefPanel } from "@/components/portal/features/assignment/assignment-brief-panel";
 import type { AssignmentBriefView } from "@/components/portal/features/assignment/assignment-brief-panel";
+import {
+  formatTrailDate,
+  sortTrailChronological,
+  trailEventLabel,
+  type ReviewTrailEvent,
+} from "@/lib/portal/review-trail";
 import { cn } from "@/lib/portal/cn";
 
 const AUTO_SAVE_MS = 1500;
@@ -57,6 +52,7 @@ type ProjectPage = {
   reviewStatus?: "none" | "approved" | "needs_revision";
   reviewRemark?: string;
   reviewAnnotatedHtml?: string;
+  reviewTrail?: ReviewTrailEvent[];
 };
 
 type Project = {
@@ -407,16 +403,62 @@ export default function StudentChapterEditorPage() {
             ? "Retry save"
             : `Save ${unitNoun}`;
 
-  if (loading) return <LoadingPage label={`Opening ${unitNoun}…`} />;
+  if (loading) {
+    return (
+      <div className="stu-ped" aria-busy="true">
+        <header className="stu-ped-intro">
+          <div className="stu-ped-intro-copy">
+            <Link
+              href={`/student/projects/${projectId}`}
+              className="stu-ped-back"
+            >
+              <ArrowLeft size={14} />
+              Back to project
+            </Link>
+            <p className="stu-ped-eyebrow">Writing workspace</p>
+            <h1>Opening editor…</h1>
+            <p>Loading your draft and review status.</p>
+          </div>
+        </header>
+        <div className="stu-ped-skeleton-strip" aria-hidden />
+        <div className="stu-ped-panel">
+          <div className="stu-ped-skeleton-block" aria-hidden />
+        </div>
+      </div>
+    );
+  }
 
   if (!project || !activePage) {
     return (
-      <EmptyState
-        title={`${unitLabel} not found`}
-        description={error || `This ${unitNoun} could not be loaded.`}
-        action="Back to project"
-        href={`/student/projects/${projectId}`}
-      />
+      <div className="stu-ped">
+        <header className="stu-ped-intro">
+          <div className="stu-ped-intro-copy">
+            <Link
+              href={`/student/projects/${projectId}`}
+              className="stu-ped-back"
+            >
+              <ArrowLeft size={14} />
+              Back to project
+            </Link>
+            <p className="stu-ped-eyebrow">Writing workspace</p>
+            <h1>{unitLabel} not found</h1>
+            <p>{error || `This ${unitNoun} could not be loaded.`}</p>
+          </div>
+        </header>
+        <div className="stu-ped-empty">
+          <span className="stu-ped-empty-icon" aria-hidden>
+            <FileText size={22} />
+          </span>
+          <h3>Unable to open this {unitNoun}</h3>
+          <p>Return to the project workspace and try again.</p>
+          <Link
+            href={`/student/projects/${projectId}`}
+            className="stu-ped-btn stu-ped-btn-primary"
+          >
+            Back to project
+          </Link>
+        </div>
+      </div>
     );
   }
 
@@ -439,9 +481,45 @@ export default function StudentChapterEditorPage() {
       : hasFeedbackContent
         ? 1
         : 0;
+  const previousRounds = sortTrailChronological(activePage.reviewTrail).filter(
+    (event) => event.type === "rewrite_requested" || event.type === "approved",
+  );
+  const isAssignment = project.projectType === "assignment";
+  const backHref = isAssignment
+    ? `/student/assignments/${projectId}`
+    : `/student/projects/${projectId}`;
+  const backLabel = isAssignment ? "Back to assignment" : "Back to project";
+  const maxScore =
+    typeof project.assignmentBrief?.maxScore === "number"
+      ? project.assignmentBrief.maxScore
+      : 100;
+  const wordCount = countWordsFromHtml(draftContent);
+  const wordTarget = (() => {
+    const brief = project.assignmentBrief;
+    if (!brief) return null;
+    const min =
+      typeof brief.wordCountMin === "number" ? brief.wordCountMin : null;
+    const max =
+      typeof brief.wordCountMax === "number" ? brief.wordCountMax : null;
+    if (min == null && max == null) return null;
+    if (min != null && max != null) {
+      return ` · target ${min.toLocaleString()}–${max.toLocaleString()}`;
+    }
+    if (min != null) return ` · min ${min.toLocaleString()}`;
+    return ` · max ${max!.toLocaleString()}`;
+  })();
+
+  const saveStatusClass =
+    editorLocked
+      ? "is-locked"
+      : saveStatus === "error"
+        ? "is-error"
+        : saveStatus === "dirty"
+          ? "is-dirty"
+          : "";
 
   return (
-    <div className="space-y-5">
+    <div className="stu-ped">
       {singlePage && (
         <input
           ref={reuploadInputRef}
@@ -454,175 +532,161 @@ export default function StudentChapterEditorPage() {
           }}
         />
       )}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <Link
-            href={`/student/projects/${projectId}`}
-            className="inline-flex items-center gap-2 text-sm font-semibold text-foreground/55 hover:text-blue-600"
-          >
-            <ArrowLeft className="size-4" />
-            Back to project
+
+      <header className="stu-ped-intro">
+        <div className="stu-ped-intro-copy">
+          <Link href={backHref} className="stu-ped-back">
+            <ArrowLeft size={14} />
+            {backLabel}
           </Link>
-          <p className="mt-2 truncate text-xs font-semibold uppercase tracking-wide text-foreground/45">
-            {project.title}
+          <p className="stu-ped-eyebrow">{project.title}</p>
+          <h1>{activePage.title}</h1>
+          <p>
+            {editorLocked
+              ? `This ${unitNoun} is read-only while awaiting ${advisorNoun} review or after approval.`
+              : `Write and refine this ${unitNoun}. Changes auto-save, then submit when ready.`}
           </p>
-          <h1 className="mt-1 truncate text-2xl font-bold tracking-tight">
-            {activePage.title}
-          </h1>
           {singlePage && typeof project.score === "number" ? (
-            <div className="mt-3 inline-flex flex-col gap-0.5 rounded-xl border border-emerald-600/15 bg-emerald-50/80 px-3.5 py-2.5">
-              <span className="text-[10px] font-bold uppercase tracking-wide text-emerald-800/70">
-                Lecturer score
-              </span>
-              <span className="text-xl font-bold tracking-tight text-emerald-800">
+            <div className="stu-ped-score-chip">
+              <span>Lecturer score</span>
+              <strong>
                 {project.score}
-                <span className="text-sm font-semibold text-emerald-700/70">
-                  /
-                  {typeof project.assignmentBrief?.maxScore === "number"
-                    ? project.assignmentBrief.maxScore
-                    : 100}
-                </span>
-              </span>
+                <em>/{maxScore}</em>
+              </strong>
               {project.scoreNote?.trim() ? (
-                <span className="max-w-md text-xs text-emerald-900/70">
-                  {project.scoreNote.trim()}
-                </span>
+                <p>{project.scoreNote.trim()}</p>
               ) : null}
             </div>
           ) : null}
         </div>
-        <div className="flex flex-wrap gap-2">
-          {project.projectType === "assignment" ? (
-            <Button
+
+        <div className="stu-ped-toolbar">
+          {isAssignment ? (
+            <button
               type="button"
-              variant="outline"
+              className="stu-ped-btn stu-ped-btn-ghost"
               onClick={() => setBriefModalOpen(true)}
             >
-              <FileText className="size-4" />
+              <FileText size={15} />
               Assignment brief
-            </Button>
+            </button>
           ) : null}
-          <Button
+          <button
             type="button"
-            variant="outline"
-            className="relative"
+            className="stu-ped-btn stu-ped-btn-ghost"
             onClick={() => setFeedbackModalOpen(true)}
           >
-            <MessageSquareText className="size-4" />
+            <MessageSquareText size={15} />
             Feedback note
             {feedbackBadgeCount > 0 ? (
               <span
-                className={cn(
-                  "ml-1 inline-flex min-w-5 items-center justify-center rounded-full",
-                  "bg-danger px-1.5 py-0.5 text-[10px] font-bold leading-none text-white",
-                )}
+                className="stu-ped-feedback-count"
                 aria-label={`${feedbackBadgeCount} feedback note${feedbackBadgeCount === 1 ? "" : "s"}`}
               >
                 {feedbackBadgeCount > 99 ? "99+" : feedbackBadgeCount}
               </span>
             ) : null}
-          </Button>
-          {prevPage && (
-            <Link href={`/student/projects/${projectId}/pages/${prevPage._id}`}>
-              <Button type="button" variant="outline">
-                <ChevronLeft className="size-4" />
-                Previous
-              </Button>
+          </button>
+          {prevPage ? (
+            <Link
+              href={`/student/projects/${projectId}/pages/${prevPage._id}`}
+              className="stu-ped-btn stu-ped-btn-ghost"
+            >
+              <ChevronLeft size={15} />
+              Previous
             </Link>
-          )}
-          {nextPage && (
-            <Link href={`/student/projects/${projectId}/pages/${nextPage._id}`}>
-              <Button type="button" variant="outline">
-                Next
-                <ChevronRight className="size-4" />
-              </Button>
+          ) : null}
+          {nextPage ? (
+            <Link
+              href={`/student/projects/${projectId}/pages/${nextPage._id}`}
+              className="stu-ped-btn stu-ped-btn-ghost"
+            >
+              Next
+              <ChevronRight size={15} />
             </Link>
-          )}
-          {singlePage && (
-            <Button
+          ) : null}
+          {singlePage ? (
+            <button
               type="button"
-              variant="outline"
+              className="stu-ped-btn stu-ped-btn-ghost"
               disabled={reuploading || editorLocked || saving}
               onClick={() => reuploadInputRef.current?.click()}
             >
               {reuploading ? (
-                <Loader2 className="size-4 animate-spin" />
+                <Loader2 size={15} className="animate-spin" />
               ) : (
-                <Upload className="size-4" />
+                <Upload size={15} />
               )}
               {reuploading
                 ? hasWritingContent
                   ? "Reuploading…"
                   : "Uploading…"
                 : uploadButtonLabel}
-            </Button>
-          )}
-          <Button
+            </button>
+          ) : null}
+          <button
             type="button"
-            variant="outline"
+            className="stu-ped-btn stu-ped-btn-danger"
             disabled={saving || editorLocked || reuploading}
             onClick={() => void deletePage()}
           >
-            <Trash2 className="size-4" />
+            <Trash2 size={15} />
             Delete
-          </Button>
-          <Button
+          </button>
+          <button
             type="button"
+            className="stu-ped-btn stu-ped-btn-ghost"
             disabled={saving || editorLocked || reuploading}
             onClick={() => void savePage({ manual: true })}
           >
             {saveStatus === "saving" ? (
-              <Loader2 className="size-4 animate-spin" />
+              <Loader2 size={15} className="animate-spin" />
             ) : saveStatus === "saved" ? (
-              <Check className="size-4" />
+              <Check size={15} />
             ) : (
-              <Save className="size-4" />
+              <Save size={15} />
             )}
             {saveLabel}
-          </Button>
-          <ProjectChapterPanel
-            key={pageId}
-            projectId={projectId}
-            pageId={pageId}
-            pageOrder={activePage.order ?? pageIndex}
-            pageTitle={draftTitle}
-            pageHtml={draftContent}
-            projectType={project.projectType}
-            reviewRemark={activePage.reviewRemark}
-            onGateChange={(gate) => {
-              setEditorLocked(gate.locked);
-              setSubmitHint(
-                !gate.canSubmit && gate.reason ? gate.reason : null,
-              );
-            }}
-            onFeedbackChange={(remark) => {
-              setChapterFeedback(remark);
-            }}
-            onMessage={(msg) => {
-              setMessage(msg);
-              setError(null);
-              void load();
-            }}
-            onError={(msg) => {
-              setError(msg);
-              setMessage(null);
-            }}
-            onRefresh={() => {
-              void load();
-            }}
-          />
+          </button>
+          <div className="stu-ped-submit-wrap">
+            <ProjectChapterPanel
+              key={pageId}
+              projectId={projectId}
+              pageId={pageId}
+              pageOrder={activePage.order ?? pageIndex}
+              pageTitle={draftTitle}
+              pageHtml={draftContent}
+              projectType={project.projectType}
+              reviewRemark={activePage.reviewRemark}
+              className="stu-ped-submit"
+              onGateChange={(gate) => {
+                setEditorLocked(gate.locked);
+                setSubmitHint(
+                  !gate.canSubmit && gate.reason ? gate.reason : null,
+                );
+              }}
+              onFeedbackChange={(remark) => {
+                setChapterFeedback(remark);
+              }}
+              onMessage={(msg) => {
+                setMessage(msg);
+                setError(null);
+                void load();
+              }}
+              onError={(msg) => {
+                setError(msg);
+                setMessage(null);
+              }}
+              onRefresh={() => {
+                void load();
+              }}
+            />
+          </div>
         </div>
-      </div>
+      </header>
 
       <p
-        className={cn(
-          "text-xs font-medium",
-          saveStatus === "error"
-            ? "text-danger"
-            : saveStatus === "dirty"
-              ? "text-amber-600"
-              : "text-foreground/45",
-        )}
+        className={cn("stu-ped-status", saveStatusClass)}
         aria-live="polite"
       >
         {editorLocked
@@ -630,43 +694,42 @@ export default function StudentChapterEditorPage() {
           : saveStatus === "saving"
             ? "Auto-saving…"
             : null}
-        {!editorLocked && saveStatus === "dirty" && "Unsaved changes — auto-saves shortly"}
+        {!editorLocked &&
+          saveStatus === "dirty" &&
+          "Unsaved changes — auto-saves shortly"}
         {!editorLocked && saveStatus === "saved" && "All changes saved"}
-        {!editorLocked && saveStatus === "error" && "Auto-save failed — try Save again"}
-        {!editorLocked && saveStatus === "idle" && "Changes auto-save as you write"}
+        {!editorLocked &&
+          saveStatus === "error" &&
+          "Auto-save failed — try Save again"}
+        {!editorLocked &&
+          saveStatus === "idle" &&
+          "Changes auto-save as you write"}
       </p>
 
-      {message && (
-        <p className="rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-sm text-success">
-          {message}
-        </p>
-      )}
-      {error && (
-        <p className="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">
-          {error}
-        </p>
-      )}
+      {message ? <p className="stu-ped-banner stu-ped-banner-ok">{message}</p> : null}
+      {error ? <p className="stu-ped-banner stu-ped-banner-err">{error}</p> : null}
 
-      {submitHint && !editorLocked && (
-        <div className="rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm">
-          <p className="font-semibold text-foreground/80">Submit unavailable</p>
-          <p className="mt-1 text-foreground/75">{submitHint}</p>
+      {submitHint && !editorLocked ? (
+        <div className="stu-ped-banner stu-ped-banner-hint">
+          <strong>Submit unavailable</strong>
+          <span>{submitHint}</span>
         </div>
-      )}
+      ) : null}
 
-      <Card className="w-full rounded-xl shadow-sm">
-        <CardHeader className="border-b border-border pb-4">
-          <CardTitle className="text-base">{unitLabel} editor</CardTitle>
-          <CardDescription>
+      <section className="stu-ped-panel" aria-labelledby="stu-ped-editor-heading">
+        <div className="stu-ped-panel-head">
+          <h2 id="stu-ped-editor-heading">{unitLabel} editor</h2>
+          <p>
             {editorLocked
               ? `This ${unitNoun} is read-only while awaiting ${advisorNoun} review or after approval`
               : "Writes auto-save as you type — then submit for review when ready"}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4 p-4 sm:p-6">
-          <label className="block max-w-2xl space-y-1.5">
-            <span className="text-sm font-semibold">{unitTitleLabel}</span>
-            <Input
+          </p>
+        </div>
+        <div className="stu-ped-panel-body">
+          <label className="stu-ped-field">
+            <span className="stu-ped-label">{unitTitleLabel}</span>
+            <input
+              className="stu-ped-input"
               value={draftTitle}
               onChange={(e) => setDraftTitle(e.target.value)}
               maxLength={200}
@@ -685,32 +748,13 @@ export default function StudentChapterEditorPage() {
                 : `Write “${draftTitle || `this ${unitNoun}`}” here…`
             }
             projectId={projectId}
-            className="w-full"
+            className="stu-ped-editor"
             fullWidth
             readOnly={editorLocked}
           />
-          <p className="text-xs text-foreground/45">
-            {countWordsFromHtml(draftContent).toLocaleString()} words
-            {(() => {
-              const brief = project.assignmentBrief;
-              if (!brief) return null;
-              const min =
-                typeof brief.wordCountMin === "number"
-                  ? brief.wordCountMin
-                  : null;
-              const max =
-                typeof brief.wordCountMax === "number"
-                  ? brief.wordCountMax
-                  : null;
-              if (min == null && max == null) return null;
-              const target =
-                min != null && max != null
-                  ? ` · target ${min.toLocaleString()}–${max.toLocaleString()}`
-                  : min != null
-                    ? ` · min ${min.toLocaleString()}`
-                    : ` · max ${max!.toLocaleString()}`;
-              return target;
-            })()}
+          <p className="stu-ped-meta">
+            {wordCount.toLocaleString()} words
+            {wordTarget}
             {editorLocked
               ? " · locked"
               : saveStatus === "dirty" || saveStatus === "saving"
@@ -719,69 +763,62 @@ export default function StudentChapterEditorPage() {
                   ? " · saved"
                   : ""}
           </p>
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
-      {project.projectType === "assignment" && briefModalOpen ? (
+      {isAssignment && briefModalOpen ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          className="stu-ped-modal"
           role="dialog"
           aria-modal="true"
           aria-labelledby="assignment-brief-modal-title"
         >
           <button
             type="button"
-            className="absolute inset-0 bg-black/45"
+            className="stu-ped-modal-backdrop"
             aria-label="Close dialog"
             onClick={() => setBriefModalOpen(false)}
           />
-          <div className="relative flex max-h-[min(90vh,720px)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-xl">
-            <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-              <h2
-                id="assignment-brief-modal-title"
-                className="text-sm font-bold text-foreground"
-              >
-                Assignment brief
-              </h2>
-              <Button
+          <div className="stu-ped-modal-card">
+            <div className="stu-ped-modal-head">
+              <h2 id="assignment-brief-modal-title">Assignment brief</h2>
+              <button
                 type="button"
-                variant="outline"
-                size="sm"
-                className="shrink-0"
+                className="stu-ped-btn stu-ped-btn-ghost stu-ped-btn-sm"
                 aria-label="Close"
                 onClick={() => setBriefModalOpen(false)}
               >
-                <X className="size-4" />
-              </Button>
+                <X size={14} />
+              </button>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto p-4">
+            <div className="stu-ped-modal-body">
               {project.assignmentBrief ? (
                 <AssignmentBriefPanel
                   brief={project.assignmentBrief}
-                  className="border-0 shadow-none"
+                  className="stu-ped-brief-panel"
                   hideHeader
-                  currentWordCount={countWordsFromHtml(draftContent)}
+                  currentWordCount={wordCount}
                 />
               ) : (
-                <div className="rounded-xl border border-dashed border-border bg-muted/20 px-4 py-10 text-center">
-                  <FileText className="mx-auto size-8 text-foreground/35" />
-                  <p className="mt-3 text-sm font-semibold text-foreground/80">
-                    No assignment brief attached
-                  </p>
-                  <p className="mt-1 text-sm text-foreground/55">
+                <div className="stu-ped-empty">
+                  <span className="stu-ped-empty-icon" aria-hidden>
+                    <FileText size={22} />
+                  </span>
+                  <h3>No assignment brief attached</h3>
+                  <p>
                     Your lecturer has not attached a brief to this project yet.
                   </p>
                 </div>
               )}
             </div>
-            <div className="flex justify-end border-t border-border px-4 py-3">
-              <Button
+            <div className="stu-ped-modal-foot">
+              <button
                 type="button"
-                variant="outline"
+                className="stu-ped-btn stu-ped-btn-ghost"
                 onClick={() => setBriefModalOpen(false)}
               >
                 Close
-              </Button>
+              </button>
             </div>
           </div>
         </div>
@@ -789,82 +826,63 @@ export default function StudentChapterEditorPage() {
 
       {feedbackModalOpen ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          className="stu-ped-modal"
           role="dialog"
           aria-modal="true"
           aria-labelledby="feedback-note-modal-title"
         >
           <button
             type="button"
-            className="absolute inset-0 bg-black/45"
+            className="stu-ped-modal-backdrop"
             aria-label="Close dialog"
             onClick={() => setFeedbackModalOpen(false)}
           />
-          <div className="relative flex max-h-[min(90vh,720px)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-xl">
-            <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-              <h2
-                id="feedback-note-modal-title"
-                className="text-sm font-bold text-foreground"
-              >
-                Feedback note
-              </h2>
-              <Button
+          <div className="stu-ped-modal-card">
+            <div className="stu-ped-modal-head">
+              <h2 id="feedback-note-modal-title">Feedback note</h2>
+              <button
                 type="button"
-                variant="outline"
-                size="sm"
-                className="shrink-0"
+                className="stu-ped-btn stu-ped-btn-ghost stu-ped-btn-sm"
                 aria-label="Close"
                 onClick={() => setFeedbackModalOpen(false)}
               >
-                <X className="size-4" />
-              </Button>
+                <X size={14} />
+              </button>
             </div>
-            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+            <div className="stu-ped-modal-body">
               {!hasFeedbackContent ? (
-                <div className="rounded-xl border border-dashed border-border bg-muted/20 px-4 py-10 text-center">
-                  <MessageSquareText className="mx-auto size-8 text-foreground/35" />
-                  <p className="mt-3 text-sm font-semibold text-foreground/80">
-                    No feedback notes yet
-                  </p>
-                  <p className="mt-1 text-sm text-foreground/55">
+                <div className="stu-ped-empty">
+                  <span className="stu-ped-empty-icon" aria-hidden>
+                    <MessageSquareText size={22} />
+                  </span>
+                  <h3>No feedback notes yet</h3>
+                  <p>
                     {advisorLabel} comments will appear here after a review.
                   </p>
                 </div>
               ) : (
                 <>
                   {singlePage && typeof project.score === "number" ? (
-                    <div className="rounded-xl border border-emerald-600/20 bg-emerald-50 px-4 py-3">
-                      <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-800/70">
-                        Lecturer score
-                      </p>
-                      <p className="mt-1 text-2xl font-bold tracking-tight text-emerald-800">
+                    <div className="stu-ped-score-card">
+                      <p className="stu-ped-score-card-label">Lecturer score</p>
+                      <p className="stu-ped-score-card-value">
                         {project.score}
-                        <span className="text-sm font-semibold text-emerald-700/70">
-                          /
-                          {typeof project.assignmentBrief?.maxScore === "number"
-                            ? project.assignmentBrief.maxScore
-                            : 100}
-                        </span>
+                        <span>/{maxScore}</span>
                       </p>
                       {project.scoreNote?.trim() ? (
-                        <p className="mt-2 whitespace-pre-wrap text-sm text-emerald-900/80">
+                        <p className="stu-ped-score-card-note">
                           {project.scoreNote.trim()}
                         </p>
                       ) : null}
                       {project.criterionScores &&
                       project.criterionScores.length > 0 ? (
-                        <ul className="mt-3 divide-y divide-emerald-600/15 rounded-lg border border-emerald-600/15 bg-white/60">
+                        <ul className="stu-ped-criteria">
                           {project.criterionScores.map((row) => (
-                            <li
-                              key={row.name}
-                              className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
-                            >
-                              <span className="text-emerald-950/80">
-                                {row.name}
-                              </span>
-                              <span className="shrink-0 font-semibold text-emerald-900/70">
+                            <li key={row.name}>
+                              <span>{row.name}</span>
+                              <strong>
                                 {row.score}/{row.maxMarks}
-                              </span>
+                              </strong>
                             </li>
                           ))}
                         </ul>
@@ -876,18 +894,11 @@ export default function StudentChapterEditorPage() {
                   feedbackRemark ? (
                     <div
                       className={cn(
-                        "rounded-xl border px-4 py-3 text-sm",
-                        feedbackApproved
-                          ? "border-success/30 bg-success/10"
-                          : "border-amber-500/30 bg-amber-50",
+                        "stu-ped-remark",
+                        feedbackApproved ? "is-approved" : "is-revision",
                       )}
                     >
-                      <p
-                        className={cn(
-                          "font-semibold",
-                          feedbackApproved ? "text-success" : "text-amber-950",
-                        )}
-                      >
+                      <p className="stu-ped-remark-label">
                         {feedbackApproved
                           ? `${advisorLabel} approved this ${unitNoun}`
                           : reviewStatus === "needs_revision"
@@ -897,29 +908,42 @@ export default function StudentChapterEditorPage() {
                       {feedbackRemark ? (
                         <RemarkHtml
                           html={feedbackRemark}
-                          className="mt-2 text-sm text-foreground/80"
+                          className="stu-ped-remark-body"
                         />
                       ) : (
-                        <p className="mt-2 text-foreground/55">
+                        <p className="stu-ped-remark-body">
                           No written remarks were left with this review.
                         </p>
                       )}
+                      {previousRounds.length > 1 ? (
+                        <ol className="stu-ped-remark-trail">
+                          {previousRounds.map((event, index) => (
+                            <li
+                              key={
+                                event._id ||
+                                `${event.type}-${event.at}-${index}`
+                              }
+                            >
+                              {trailEventLabel(event.type)} ·{" "}
+                              {formatTrailDate(event.at) || "Date unknown"}
+                            </li>
+                          ))}
+                        </ol>
+                      ) : null}
                     </div>
                   ) : null}
 
                   {feedbackNeedsWork &&
                   feedbackAnnotated &&
                   !feedbackApproved ? (
-                    <div className="rounded-xl border border-border bg-background px-4 py-3 text-sm">
-                      <p className="font-semibold text-foreground">
-                        Where to work — highlighted passages
-                      </p>
-                      <p className="mt-1 text-xs text-foreground/55">
+                    <div className="stu-ped-annotated">
+                      <p>Where to work — highlighted passages</p>
+                      <p>
                         Yellow = Weaknesses · Orange = Needs citation. Use these
                         marks while you revise in the editor.
                       </p>
                       <div
-                        className="review-highlight-content mt-3 max-h-[360px] overflow-y-auto rounded-xl border border-border bg-muted/20 px-4 py-3 text-foreground"
+                        className="review-highlight-content stu-ped-annotated-body"
                         dangerouslySetInnerHTML={{ __html: feedbackAnnotated }}
                       />
                     </div>
@@ -927,14 +951,14 @@ export default function StudentChapterEditorPage() {
                 </>
               )}
             </div>
-            <div className="flex justify-end border-t border-border px-4 py-3">
-              <Button
+            <div className="stu-ped-modal-foot">
+              <button
                 type="button"
-                variant="outline"
+                className="stu-ped-btn stu-ped-btn-ghost"
                 onClick={() => setFeedbackModalOpen(false)}
               >
                 Close
-              </Button>
+              </button>
             </div>
           </div>
         </div>

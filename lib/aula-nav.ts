@@ -1,3 +1,8 @@
+import {
+	DEFAULT_UNIVERSITY_FEATURES,
+	type UniversityFeatures,
+} from "@/lib/university-features";
+
 export type AulaNavItem = {
 	id: string;
 	label: string;
@@ -98,7 +103,7 @@ export const AULA_SUPERVISION_ITEM: AulaNavItem = {
 	id: "supervision",
 	label: "Supervision Assistant",
 	href: "/supervision",
-	description: "Projects, reviews, assignments, students, and analytics.",
+	description: "Assignments, projects, supervisees, reviews, and analytics.",
 };
 
 const SUPERVISION_ACTIVE_PREFIXES = [
@@ -238,7 +243,7 @@ function topbarCtaForItem(item: AulaTopbarNavItem): AulaTopbarContext["cta"] {
 		case "reviews":
 			return undefined;
 		case "assignments":
-			return { label: "New Assignment", href: "/assignments/new" };
+			return { label: "Create Assignment", href: "/assignments/new" };
 		case "students":
 			return undefined;
 		case "analytics":
@@ -308,6 +313,21 @@ export const AULA_ADMIN_ITEM: AulaNavItem = {
 };
 
 export const AULA_NAV_GROUPS: AulaNavGroup[] = [AULA_MAIN_NAV];
+
+export function aulaNavGroupsForFeatures(
+	features?: UniversityFeatures | null,
+): AulaNavGroup[] {
+	const flags = features ?? DEFAULT_UNIVERSITY_FEATURES;
+	return AULA_NAV_GROUPS.map((group) => ({
+		...group,
+		items: group.items.filter((item) => {
+			if (item.id === "research") return flags.researchAssistant;
+			if (item.id === "notebook") return flags.researchNotebook;
+			if (item.id === "supervision") return flags.supervisionAssistant;
+			return true;
+		}),
+	})).filter((group) => group.items.length > 0);
+}
 
 export function aulaHrefPath(href: string): string {
 	return href.split("#")[0] ?? href;

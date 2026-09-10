@@ -11,6 +11,8 @@ export type ResearchJob = {
 	status: ResearchJobStatus;
 	/** 0–100 generation progress from the server. */
 	progress: number;
+	/** Live partial paper text while streaming. */
+	draftContent?: string;
 	savedResearchId: string | null;
 	error: string | null;
 	createdAt: string;
@@ -21,6 +23,7 @@ export async function startResearchPaperJob(input: {
 	prompt: string;
 	topic?: string;
 	figureDocumentIds?: string[];
+	visualizationMarkdown?: string;
 	sources?: import("@/lib/research-assets-api").ResearchSourceSelection | null;
 }): Promise<ResearchJob> {
 	const res = await fetch(apiUrl("/api/research/jobs"), {
@@ -30,6 +33,9 @@ export async function startResearchPaperJob(input: {
 			prompt: input.prompt,
 			...(input.topic?.trim() ? { topic: input.topic.trim() } : {}),
 			...(input.figureDocumentIds?.length ? { figureDocumentIds: input.figureDocumentIds } : {}),
+			...(input.visualizationMarkdown?.trim()
+				? { visualizationMarkdown: input.visualizationMarkdown.trim() }
+				: {}),
 			...(input.sources ? { sources: input.sources } : {}),
 		}),
 	});

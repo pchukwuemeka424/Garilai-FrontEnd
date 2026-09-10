@@ -303,15 +303,20 @@ export async function getSavedResearchPaperById(id: string): Promise<SavedResear
 
 export async function updateSavedResearchPaper(
 	id: string,
-	input: { topic: string; content: string },
+	input: {
+		topic?: string;
+		content?: string;
+		sources?: ResearchSourceSelection | null;
+	},
 ): Promise<{ paper: SavedResearchPaper | null; error?: string }> {
-	const trimmedTopic = input.topic.trim();
-	const trimmedContent = input.content.trim();
-	if (!trimmedTopic || !trimmedContent) {
-		return { paper: null, error: "Topic and content are required." };
-	}
+	const trimmedTopic = input.topic !== undefined ? input.topic.trim() : undefined;
+	const trimmedContent = input.content !== undefined ? input.content.trim() : undefined;
 
-	const fromApi = await updateSavedResearchOnApi(id, { topic: trimmedTopic, content: trimmedContent });
+	const fromApi = await updateSavedResearchOnApi(id, {
+		topic: trimmedTopic,
+		content: trimmedContent,
+		sources: input.sources,
+	});
 	if (fromApi) {
 		const papers = mergePaperIntoLocalCache(fromApi);
 		notifySavedResearchChanged();
@@ -324,14 +329,17 @@ export async function updateSavedResearchPaper(
 	}
 
 	const now = new Date().toISOString();
+	const nextTopic = trimmedTopic !== undefined ? trimmedTopic : existing.topic;
+	const nextContent = trimmedContent !== undefined ? trimmedContent : existing.content;
 	const baseline = existing.aiBaselineContent?.trim() || existing.content;
 	const updated: SavedResearchPaper = {
 		...existing,
-		topic: trimmedTopic,
-		title: extractPaperTitle(trimmedContent, trimmedTopic),
-		content: trimmedContent,
+		topic: nextTopic,
+		title: extractPaperTitle(nextContent, nextTopic),
+		content: nextContent,
 		aiBaselineContent: baseline,
-		humanEdited: trimmedContent.trim() !== baseline.trim(),
+		humanEdited: nextContent.trim() !== baseline.trim(),
+		sources: input.sources !== undefined ? input.sources : existing.sources,
 		updatedAt: now,
 	};
 	const papers = writeLocalPapers(

@@ -84,7 +84,11 @@ export async function fetchSavedResearchById(id: string): Promise<SavedResearchP
 
 export async function updateSavedResearchOnApi(
 	id: string,
-	input: { topic: string; content: string },
+	input: {
+		topic?: string;
+		content?: string;
+		sources?: import("@/lib/research-assets-api").ResearchSourceSelection | null;
+	},
 ): Promise<SavedResearchPaper | null> {
 	if (!isSavedResearchDbId(id)) return null;
 	try {

@@ -115,6 +115,67 @@ const PLAIN_SECTION_WITH_BODY =
 const BOLD_SECTION_WITH_BODY =
 	/^\*\*([^*\n]+?)\*\*\s*:?\s+(.+)$/;
 
+const SMALL_HEADING_WORDS =
+	/^(and|or|of|the|in|to|for|a|an|on|vs\.?|via|with|within|into|from|by|as|at|per)$/i;
+
+/**
+ * True for bold spans that should become section / subsection headings
+ * (IMRaD titles and Title-Case subsection labels), not mid-sentence emphasis.
+ */
+export function looksLikeBoldHeadingTitle(raw: string): boolean {
+	const title = raw.replace(/:+\s*$/, "").trim();
+	if (title.length < 3 || title.length > 120) return false;
+	if (canonicalizeSectionTitle(title) || /^references$/i.test(title)) return true;
+	if (!/^[A-ZÀ-Ö0-9]/.test(title)) return false;
+	if (/\(\s*(?:19|20)\d{2}/.test(title)) return false;
+	if (/[,;]/.test(title) && title.split(/\s+/).length > 8) return false;
+
+	const words = title.split(/\s+/).filter(Boolean);
+	if (words.length === 1) {
+		return /^(Introduction|Conclusion|Conclusions|References|Methodology|Methods|Discussion|Abstract|Keywords|Findings|Analysis|Recommendations|Background|Objectives|Limitations|Appendix|Appendices)$/i.test(
+			title,
+		);
+	}
+	const headingLike = words.filter(
+		(word) => /^[A-ZÀ-Ö0-9]/.test(word) || SMALL_HEADING_WORDS.test(word),
+	).length;
+	return headingLike >= Math.ceil(words.length * 0.6);
+}
+
+/**
+ * Models often glue `**Subsection**` onto the previous paragraph or next body line.
+ * Lift those bold titles onto their own lines so spacing / HTML conversion can treat them as headings.
+ */
+export function splitGluedBoldHeadings(content: string): string {
+	const source = content.replace(/\r/g, "");
+	const re = /\*\*([^*\n]{2,120}?)\*\*\s*:?/g;
+	let result = "";
+	let lastIndex = 0;
+	let match: RegExpExecArray | null;
+
+	while ((match = re.exec(source))) {
+		const title = (match[1] ?? "").replace(/:+\s*$/, "").trim();
+		if (!looksLikeBoldHeadingTitle(title)) continue;
+
+		const before = source.slice(lastIndex, match.index);
+		result += before.replace(/[ \t]+$/g, "");
+		if (result && !/\n\n$/.test(result)) {
+			if (!/\n$/.test(result)) result += "\n";
+			result += "\n";
+		}
+		result += `**${title}**\n\n`;
+		lastIndex = match.index + match[0].length;
+		while (lastIndex < source.length && /[ \t]/.test(source[lastIndex]!)) lastIndex += 1;
+		if (source[lastIndex] === "\n") {
+			lastIndex += 1;
+			if (source[lastIndex] === "\n") lastIndex += 1;
+		}
+	}
+
+	result += source.slice(lastIndex);
+	return result.replace(/\n{3,}/g, "\n\n").trim();
+}
+
 /** Journal-style keyword separators (middot), matching Springer-style papers. */
 export function formatKeywordTerms(raw: string): string {
 	return raw
@@ -441,17 +502,116 @@ export function sectionHeadingId(heading: string): string {
 		.replace(/^-+|-+$/g, "")}`;
 }
 
-/** Use markdown headings in the UI so Abstract, Introduction, etc. are easy to spot. */
+const RESEARCH_VISUAL_FENCE =
+	/```(?:research-chart|research-image|research-figure)\b[\s\S]*?```/gi;
+
+/**
+ * Strips duplicate or redundant paper title lines appearing at the very top of
+ * the manuscript before the Abstract (or first canonical section).
+ */
+export function stripTitleAboveAbstract(content: string, fallbackTitle?: string): string {
+	if (!content || !content.trim()) return "";
+
+	const lines = content.replace(/\r/g, "").split("\n");
+	let firstSectionIndex = -1;
+
+	// Find the index of the first canonical section heading (e.g. Abstract, Introduction, Chapter One, etc.)
+	for (let i = 0; i < lines.length; i++) {
+		const trimmed = lines[i]!.trim();
+		if (!trimmed) continue;
+
+		const boldMatch = trimmed.match(/^\*\*([^*\n]+?)\*\*\s*:?\s*$/);
+		const hashMatch = trimmed.match(/^#{1,6}\s+(.+?)\s*$/);
+		const plainMatch = trimmed.match(
+			/^(Abstract|Summary|Executive summary|Keywords|Study area|Introduction|Chapter One|Literature Review|Methodology|Methods|Results|Discussion|Conclusion|References)\b/i,
+		);
+
+		const candidate = (
+			boldMatch?.[1] ??
+			hashMatch?.[1] ??
+			(plainMatch ? plainMatch[0] : "")
+		)
+			.replace(/:+\s*$/, "")
+			.trim();
+		if (candidate) {
+			const canonical = canonicalizeSectionTitle(candidate);
+			if (
+				canonical ||
+				/^abstract$/i.test(candidate) ||
+				/^introduction$/i.test(candidate) ||
+				/^chapter\s+one/i.test(candidate) ||
+				/^executive\s+summary/i.test(candidate) ||
+				/^summary$/i.test(candidate)
+			) {
+				firstSectionIndex = i;
+				break;
+			}
+		}
+	}
+
+	if (firstSectionIndex >= 0) {
+		const beforeLines = lines.slice(0, firstSectionIndex);
+		const afterLines = lines.slice(firstSectionIndex);
+
+		// Keep any visual fences or comments that might be before the section
+		const preservedBefore = beforeLines.filter((l) => {
+			const t = l.trim();
+			return t.startsWith("@@RESEARCH_VISUAL_") || t.startsWith("```");
+		});
+
+		return [...preservedBefore, ...afterLines].join("\n").replace(/\n{3,}/g, "\n\n").trim();
+	}
+
+	// If no canonical section was found yet (e.g. during live streaming when only title has arrived)
+	const nonEmpty = lines.map((l) => l.trim()).filter(Boolean);
+	if (nonEmpty.length <= 2) {
+		const first = nonEmpty[0] ?? "";
+		const cleanFirst = first.replace(/^#+\s*/, "").replace(/\*\*/g, "").trim();
+		const isTitleLike =
+			first.startsWith("#") ||
+			first.startsWith("**") ||
+			(fallbackTitle &&
+				cleanFirst.toLowerCase().includes(fallbackTitle.toLowerCase().slice(0, 20)));
+		if (isTitleLike) {
+			return "";
+		}
+	}
+
+	return content;
+}
+
+/** Use markdown headings in the UI so Abstract, Introduction, etc. are easy to spot without duplicate title. */
 export function promoteBoldSectionsForDisplay(content: string): string {
-	const normalized = standardizeResearchSectionHeadings(content);
-	const promoted = normalized.replace(BOLD_SECTION_LINE, (line, title: string) => {
+	const fences: string[] = [];
+	const withoutVisuals = content.replace(RESEARCH_VISUAL_FENCE, (match) => {
+		fences.push(match.trim());
+		return `\n\n@@RESEARCH_VISUAL_${fences.length - 1}@@\n\n`;
+	});
+	const withoutTitle = stripTitleAboveAbstract(withoutVisuals);
+	const split = splitGluedBoldHeadings(withoutTitle);
+	const normalized = standardizeResearchSectionHeadings(split);
+	const stripped = stripTitleAboveAbstract(normalized);
+	let sawCanonicalSection = false;
+	const promoted = stripped.replace(BOLD_SECTION_LINE, (line, title: string) => {
 		const canonical = canonicalizeSectionTitle(title);
 		if (canonical) {
+			sawCanonicalSection = true;
 			return `## ${canonical}`;
 		}
 		const trimmed = title.trim();
-		if (/^references$/i.test(trimmed)) return "## References";
+		if (/^references$/i.test(trimmed)) {
+			sawCanonicalSection = true;
+			return "## References";
+		}
+		// Subsections after the first section become ### Subsection
+		if (looksLikeBoldHeadingTitle(trimmed)) {
+			return sawCanonicalSection ? `### ${trimmed}` : "";
+		}
 		return line;
 	});
-	return ensureResearchSectionSpacing(promoted);
+	const spaced = ensureResearchSectionSpacing(promoted);
+	return spaced
+		.replace(/@@RESEARCH_VISUAL_(\d+)@@/g, (_m, index: string) => fences[Number(index)] ?? "")
+		.replace(/\n{3,}/g, "\n\n")
+		.trim();
 }

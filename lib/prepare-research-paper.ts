@@ -8,12 +8,15 @@ import { getDisciplineLabel } from "@/lib/research-disciplines";
 import { buildResearchPaperPrompt } from "@/lib/research-generate";
 import { peekOutlinePageContext, resolveOutlinePageContext } from "@/lib/research-outline-context";
 import { loadSavedOutline, saveResearchOutline } from "@/lib/research-outline-storage";
+import { extractLiveVisualizationMarkdown } from "@/lib/research-live-figures";
 import { stagePaperSources } from "@/lib/research-paper-sources";
 import type { StudentTokenQuota } from "@/lib/student-tokens";
 
 export type PreparedResearchPaper = {
 	prompt: string;
 	figureDocumentIds: string[];
+	/** Canonical dataset tables + research-chart fences for live draft injection. */
+	visualizationMarkdown: string;
 };
 
 const EMPTY_VIZ = {
@@ -90,17 +93,33 @@ export async function prepareResearchPaperPrompt(
 				});
 				return result;
 			})
-		: hasSelectedSources
-			? fetchResearchSourceContextFromApi(context.sources!, { signal: options?.signal }).then((ctx) => ({
-					outline: outline!,
-					sourceContext: ctx,
-				}))
-			: Promise.resolve({ outline: outline!, sourceContext: undefined as string | undefined });
+		: Promise.resolve({
+				outline: outline!,
+				sourceContext: undefined as string | undefined,
+			});
 
-	const [outlineResult, vizResult] = await Promise.all([outlineTask, vizTask]);
+	const sourceContextTask =
+		hasSelectedSources && context.sources
+			? fetchResearchSourceContextFromApi(context.sources, { signal: options?.signal }).catch(
+					() => "",
+				)
+			: Promise.resolve("");
+
+	const [outlineResult, vizResult, fetchedSourceContext] = await Promise.all([
+		outlineTask,
+		vizTask,
+		sourceContextTask,
+	]);
 
 	outline = outlineResult.outline;
-	sourceContext = outlineResult.sourceContext;
+	sourceContext =
+		(fetchedSourceContext || outlineResult.sourceContext || "").trim() || undefined;
+
+	if (projectIds.length && !sourceContext?.trim()) {
+		throw new Error(
+			"Could not load the selected research notebook. Re-select the notebook and try again.",
+		);
+	}
 
 	return {
 		prompt: buildResearchPaperPrompt({
@@ -116,5 +135,6 @@ export async function prepareResearchPaperPrompt(
 			assignmentInstructions: context.assignmentInstructions,
 		}),
 		figureDocumentIds: vizResult.figureDocumentIds,
+		visualizationMarkdown: extractLiveVisualizationMarkdown(vizResult.artifacts || ""),
 	};
 }

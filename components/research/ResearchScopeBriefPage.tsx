@@ -1,27 +1,36 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AulaLayout } from "@/components/AulaLayout";
 import { GarilApp } from "@/components/GarilApp";
+import { toEditorHtml } from "@/components/portal/editor/document-editor";
 import { ResearchCitationStyleModal } from "@/components/research/ResearchCitationStyleModal";
+import { ResearchNotebookAssetsPreview } from "@/components/research/ResearchNotebookAssetsPreview";
 import { ResearchNotebookLibraryPicker } from "@/components/research/ResearchNotebookLibraryPicker";
+import { ResearchNotebookLoadingModal } from "@/components/research/ResearchNotebookLoadingModal";
+import { htmlHasText } from "@/components/research/ResearchDocEditor";
+import { ScopeBriefRichEditor } from "@/components/research/ScopeBriefRichEditor";
 import { StudentLayout } from "@/components/StudentLayout";
 import { studentHasResearchTokens } from "@/components/StudentTokenQuota";
+import { assignmentInstructionsToText } from "@/lib/portal/assignment-instructions";
 import {
 	IconChevronLeft,
-	IconEdit,
 	IconFileText,
 	IconBrain,
 	IconSparkles,
 	IconStickyNote,
 	IconTarget,
+	IconUpload,
 } from "@/components/ui/ButtonIcon";
 import { useAuth } from "@/hooks/useAuth";
+import { saveChatCitationStyle } from "@/lib/chat-research-citations";
 import { DEFAULT_CITATION_STYLE, type CitationStyle } from "@/lib/citation-styles";
-import { getDisciplineLabel } from "@/lib/research-disciplines";
-import { researchPaperWorkspacePath } from "@/lib/research-generate-routes";
+import { createDocument, readFileAsDataUrl } from "@/lib/research-assets-api";
+import { fetchResearchSourceContextFromApi } from "@/lib/research-api";
+import { getDisciplineLabel, resolveDisciplineId } from "@/lib/research-disciplines";
+import { researchGeneratingPagePath } from "@/lib/research-generate-routes";
 import {
 	getGenerateResearchLabel,
 	getScopeDocumentLabel,
@@ -29,6 +38,11 @@ import {
 	type ResearchIdea,
 	type ResearchScope,
 } from "@/lib/research-ideas";
+import {
+	loadNotebookBriefPrefill,
+	type NotebookBriefDatasetPreview,
+	type NotebookBriefImagePreview,
+} from "@/lib/research-notebook-brief-html";
 import { stageOutlinePageContext } from "@/lib/research-outline-context";
 import { researchOutlinePagePath } from "@/lib/research-outline-routes";
 import { loadSavedOutline, saveResearchOutline } from "@/lib/research-outline-storage";
@@ -46,9 +60,81 @@ import { getScopeProfile } from "@/lib/research-scope-profiles";
 import { findSectionAgent, sectionAgentKicker } from "@/lib/research-section-agents";
 import { loadResearchWizardDraft } from "@/lib/research-wizard-draft";
 
+const BRIEF_UPLOAD_ACCEPT =
+	".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown";
+const BRIEF_UPLOAD_MAX_BYTES = 12 * 1024 * 1024;
+
+type BriefUpload = {
+	id: string;
+	fileName: string;
+	sizeLabel: string;
+};
+
 function fieldValueReady(field: ScopeBriefField, values: Record<string, string>): boolean {
 	if (!field.required) return true;
-	return Boolean(values[field.id]?.trim());
+	const value = values[field.id] ?? "";
+	if (field.kind === "textarea") {
+		return htmlHasText(value) || Boolean(assignmentInstructionsToText(value));
+	}
+	return Boolean(value.trim());
+}
+
+function plainFromRich(value: string): string {
+	return assignmentInstructionsToText(value) || value.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function isAllowedBriefFile(file: File): boolean {
+	const name = file.name.toLowerCase();
+	const mime = (file.type || "").toLowerCase();
+	if (file.size <= 0 || file.size > BRIEF_UPLOAD_MAX_BYTES) return false;
+	if (name.endsWith(".pdf") || mime === "application/pdf") return true;
+	if (
+		name.endsWith(".docx") ||
+		mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+	) {
+		return true;
+	}
+	if (name.endsWith(".txt") || name.endsWith(".md") || mime.startsWith("text/")) return true;
+	return false;
+}
+
+function formatBriefSize(bytes: number): string {
+	if (bytes < 1024) return `${bytes} B`;
+	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function readFileAsText(file: File): Promise<string> {
+	return new Promise((resolve, reject) => {
+		const reader = new FileReader();
+		reader.onload = () => {
+			if (typeof reader.result === "string") resolve(reader.result);
+			else reject(new Error("Could not read file."));
+		};
+		reader.onerror = () => reject(new Error("Could not read file."));
+		reader.readAsText(file);
+	});
+}
+
+function plainTextFromSourceContext(ctx: string): string {
+	const trimmed = ctx.trim();
+	if (!trimmed) return "";
+	const documentMatch = trimmed.match(/DOCUMENT:\s*[^\n]*\n([\s\S]*)/i);
+	if (documentMatch?.[1]?.trim()) return documentMatch[1].trim();
+	return trimmed.replace(/^[\s\S]*?\n\n/, "").trim() || trimmed;
+}
+
+function normalizePrefillHtml(html: string): string {
+	return html
+		.replace(/\s+style="[^"]*"/gi, "")
+		.replace(/\s+class="[^"]*"/gi, "")
+		.replace(/>\s+</g, "><")
+		.replace(/<p><\/p>/g, "")
+		.trim();
+}
+
+function titleFromFileName(fileName: string): string {
+	return fileName.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim().slice(0, 500);
 }
 
 export function ResearchScopeBriefPage({
@@ -67,6 +153,7 @@ export function ResearchScopeBriefPage({
 	const profile = getScopeProfile(scope);
 	const documentLabel = getScopeDocumentLabel(scope);
 
+	/** Refine / regenerate still mounts the workspace via `?generate=1`. Fresh generates use `/research/generating`. */
 	const [workspaceMode, setWorkspaceMode] = useState(() => searchParams.get("generate") === "1");
 
 	useEffect(() => {
@@ -77,13 +164,32 @@ export function ResearchScopeBriefPage({
 		const fromQuery = searchParams.get("discipline")?.trim() ?? "";
 		if (fromQuery) return fromQuery;
 		if (!user?.id) return "";
-		return loadResearchWizardDraft(variant, user.id)?.discipline ?? "";
-	}, [searchParams, user?.id, variant]);
+		const fromWizard = loadResearchWizardDraft(variant, user.id)?.discipline ?? "";
+		if (fromWizard) return fromWizard;
+		return (
+			resolveDisciplineId(user.department) ||
+			resolveDisciplineId(user.programme) ||
+			""
+		);
+	}, [searchParams, user?.id, user?.department, user?.programme, variant]);
 
 	const [topic, setTopic] = useState("");
 	const [instructions, setInstructions] = useState("");
+	const [briefHtml, setBriefHtml] = useState("");
+	const [briefUpload, setBriefUpload] = useState<BriefUpload | null>(null);
+	const [uploadingBrief, setUploadingBrief] = useState(false);
+	const [briefDragOver, setBriefDragOver] = useState(false);
+	const briefFileInputRef = useRef<HTMLInputElement>(null);
 	const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
 	const [notebookTitles, setNotebookTitles] = useState<Record<string, string>>({});
+	const notebookTitlesRef = useRef<Record<string, string>>({});
+	const [loadingNotebookPrefill, setLoadingNotebookPrefill] = useState(false);
+	const [loadingNotebookTitle, setLoadingNotebookTitle] = useState("");
+	const [notebookDatasets, setNotebookDatasets] = useState<NotebookBriefDatasetPreview[]>([]);
+	const [notebookImages, setNotebookImages] = useState<NotebookBriefImagePreview[]>([]);
+	const [editorRemountKey, setEditorRemountKey] = useState(0);
+	const autoPrefillHtmlRef = useRef("");
+	const notebookPrefillSeqRef = useRef(0);
 	const [fieldValues, setFieldValues] = useState<Record<string, string>>(() => {
 		const initial: Record<string, string> = {};
 		for (const field of copy.fields) {
@@ -102,17 +208,33 @@ export function ResearchScopeBriefPage({
 	const generateLabel = getGenerateResearchLabel(scope);
 	const showOutlineButton = scope !== "assignment";
 	const requiredFieldsReady = copy.fields.every((field) => fieldValueReady(field, fieldValues));
-	const notesReady = copy.showNotes === false || !copy.notesRequired || Boolean(instructions.trim());
+	const instructionsPlain = plainFromRich(instructions);
+	const notesReady =
+		copy.showNotes === false ||
+		!copy.notesRequired ||
+		htmlHasText(instructions) ||
+		Boolean(instructionsPlain);
 	const allowNotebookLibrary = scope !== "assignment";
 	const firstNotebookTitle = selectedProjectIds
 		.map((id) => notebookTitles[id]?.trim())
 		.find(Boolean);
-	const topicReady = Boolean(topic.trim()) || (allowNotebookLibrary && selectedProjectIds.length > 0);
+	const isComposer = copy.fields.length === 0 && copy.showNotes === false;
+	/** Rich formatting (bullets, headings, images) on every generate composer. */
+	const useRichBrief = isComposer;
+	/** PDF/Word brief upload remains assignment-only. */
+	const allowBriefUpload = scope === "assignment" && isComposer;
+	const briefPlain = useRichBrief ? assignmentInstructionsToText(briefHtml) : "";
+	const hasTypedBrief = useRichBrief && (htmlHasText(briefHtml) || Boolean(briefPlain));
+	const hasUploadedBrief = allowBriefUpload && Boolean(briefUpload);
+	const topicReady = useRichBrief
+		? hasTypedBrief || hasUploadedBrief || (allowNotebookLibrary && selectedProjectIds.length > 0)
+		: htmlHasText(topic) ||
+			Boolean(plainFromRich(topic)) ||
+			(allowNotebookLibrary && selectedProjectIds.length > 0);
 	const canGenerate = topicReady && notesReady && requiredFieldsReady;
 	const showError = touched && !canGenerate;
 	const topicPlaceholder = topicPlaceholderFor(scope, discipline);
-	const isComposer = copy.fields.length === 0 && copy.showNotes === false;
-	const busy = Boolean(submitting);
+	const busy = Boolean(submitting) || uploadingBrief;
 
 	if (workspaceMode) {
 		return isStudent ? (
@@ -129,28 +251,145 @@ export function ResearchScopeBriefPage({
 	};
 
 	const selectedSources = () => ({
-		documentIds: [] as string[],
-		datasetIds: [] as string[],
+		// Uploaded assignment brief + notebook figure files (images) for generation/visuals.
+		documentIds: [
+			...(briefUpload ? [briefUpload.id] : []),
+			...notebookImages.map((image) => image.id),
+		].filter((id, index, all) => Boolean(id) && all.indexOf(id) === index),
+		// Notebook datasets explicitly, in addition to full folder via projectIds.
+		datasetIds: notebookDatasets
+			.map((dataset) => dataset.id)
+			.filter((id, index, all) => Boolean(id) && all.indexOf(id) === index),
 		questionnaireIds: [] as string[],
 		noteIds: [] as string[],
+		// Whole research notebook folder (notes, files, data, surveys, lab).
 		projectIds: allowNotebookLibrary ? [...selectedProjectIds] : [],
 	});
 
 	const buildIdea = (): { idea: ResearchIdea; trimmedTopic: string; brief: string } | null => {
 		if (!discipline || !canGenerate) return null;
-		const trimmedTopic = topic.trim() || firstNotebookTitle || copy.fallbackTopic;
-		const brief = formatScopeBrief(scope, fieldValues, instructions);
-		const questions = parseResearchQuestions(fieldValues.questions);
+		const briefFromRich = useRichBrief ? briefPlain : "";
+		const editorHtml = useRichBrief ? briefHtml : topic;
+		const uneditedNotebookPrefill =
+			selectedProjectIds.length > 0 &&
+			Boolean(autoPrefillHtmlRef.current) &&
+			normalizePrefillHtml(editorHtml) === normalizePrefillHtml(autoPrefillHtmlRef.current);
+		const notebookDirective =
+			selectedProjectIds.length > 0
+				? `Use the selected research notebook library as primary source material${
+						firstNotebookTitle ? ` (“${firstNotebookTitle}”)` : ""
+					}. Ground the study title, claims, methods, and findings in notebook notes, datasets, files, figures, and lab work. Do not invent a different topic or ignore the selected notebook.`
+				: "";
+		const trimmedTopic = (
+			useRichBrief
+				? (uneditedNotebookPrefill
+						? firstNotebookTitle ||
+							briefFromRich.split(/\n/).map((line) => line.trim()).find(Boolean) ||
+							""
+						: briefFromRich.split(/\n/).map((line) => line.trim()).find(Boolean) ||
+							(briefUpload ? titleFromFileName(briefUpload.fileName) : "") ||
+							"")
+				: plainFromRich(topic).split(/\n/).map((line) => line.trim()).find(Boolean) || ""
+		)
+			.slice(0, 500) || firstNotebookTitle || copy.fallbackTopic;
+		const plainFieldValues: Record<string, string> = {};
+		for (const field of copy.fields) {
+			const raw = fieldValues[field.id] ?? "";
+			plainFieldValues[field.id] =
+				field.kind === "textarea" ? plainFromRich(raw) : raw;
+		}
+		const brief = useRichBrief
+			? [notebookDirective, briefFromRich].filter(Boolean).join("\n\n")
+			: [
+					notebookDirective,
+					formatScopeBrief(scope, plainFieldValues, instructionsPlain),
+				]
+					.filter(Boolean)
+					.join("\n\n");
+		const questions = parseResearchQuestions(plainFieldValues.questions);
 		const idea: ResearchIdea = {
 			id: `${scope}-${discipline}`,
 			title: trimmedTopic,
-			rationale: brief || `Draft a cited ${documentLabel} on “${trimmedTopic}”.`,
+			rationale:
+				brief ||
+				(briefUpload
+					? `Draft a cited ${documentLabel} from the uploaded assignment brief “${briefUpload.fileName}”.`
+					: `Draft a cited ${documentLabel} on “${trimmedTopic}”.`),
 			approach: copy.ideaApproach,
 			type: resolveBriefIdeaType(scope, fieldValues),
 			feasibility: "medium",
 			...(questions.length ? { researchQuestions: questions } : {}),
 		};
 		return { idea, trimmedTopic, brief };
+	};
+
+	const clearBriefUpload = () => {
+		setBriefUpload(null);
+		setSubmitError(null);
+		if (briefFileInputRef.current) briefFileInputRef.current.value = "";
+	};
+
+	const handleBriefFile = async (file: File | null | undefined) => {
+		if (!allowBriefUpload || !file || busy) return;
+		if (!isAllowedBriefFile(file)) {
+			setSubmitError(
+				file.size > BRIEF_UPLOAD_MAX_BYTES
+					? "Assignment briefs must be 12 MB or smaller."
+					: "Upload a PDF, Word (.docx), or text (.txt / .md) brief.",
+			);
+			return;
+		}
+
+		setUploadingBrief(true);
+		setSubmitError(null);
+		try {
+			const name = file.name.toLowerCase();
+			const isPlainText = name.endsWith(".txt") || name.endsWith(".md") || (file.type || "").startsWith("text/");
+			let extracted = "";
+
+			if (isPlainText) {
+				extracted = (await readFileAsText(file)).trim();
+			}
+
+			const fileData = await readFileAsDataUrl(file);
+			const document = await createDocument({
+				title: titleFromFileName(file.name) || "Assignment brief",
+				fileName: file.name,
+				fileMime: file.type || "application/octet-stream",
+				fileData,
+				sizeLabel: formatBriefSize(file.size),
+			});
+
+			if (!extracted) {
+				const sourceContext = await fetchResearchSourceContextFromApi({
+					documentIds: [document.id],
+					datasetIds: [],
+					noteIds: [],
+					questionnaireIds: [],
+					projectIds: [],
+				});
+				extracted = plainTextFromSourceContext(sourceContext);
+			}
+
+			if (extracted) {
+				const nextHtml = toEditorHtml(extracted);
+				setBriefHtml((prev) => (htmlHasText(prev) ? `${prev}${nextHtml}` : nextHtml));
+			} else {
+				setSubmitError(
+					"Uploaded. Text could not be previewed in the editor — you can still Generate from the file, or paste the brief manually.",
+				);
+			}
+			setBriefUpload({
+				id: document.id,
+				fileName: document.fileName || file.name,
+				sizeLabel: document.sizeLabel || formatBriefSize(file.size),
+			});
+		} catch (error) {
+			setSubmitError(error instanceof Error ? error.message : "Could not upload assignment brief.");
+		} finally {
+			setUploadingBrief(false);
+			if (briefFileInputRef.current) briefFileInputRef.current.value = "";
+		}
 	};
 
 	const validateReady = (): boolean => {
@@ -215,6 +454,8 @@ export function ResearchScopeBriefPage({
 
 	const confirmGenerate = async (style: CitationStyle) => {
 		if (!discipline || !canGenerate) return;
+		const chosenStyle = style || DEFAULT_CITATION_STYLE;
+		saveChatCitationStyle(chosenStyle);
 		setShowCitationStyleModal(false);
 		setSubmitting("paper");
 		setSubmitError(null);
@@ -233,17 +474,23 @@ export function ResearchScopeBriefPage({
 				discipline,
 				topic: trimmedTopic,
 				scope,
+				citationStyle: chosenStyle,
 				sources,
 				returnTo: backHref,
 				assignmentInstructions: brief || undefined,
 			});
 			stagePendingResearchPaper({
 				key,
-				citationStyle: style || DEFAULT_CITATION_STYLE,
+				citationStyle: chosenStyle,
 				projectName: trimmedTopic,
 			});
 			router.push(
-				researchPaperWorkspacePath(trimmedTopic, isStudent ? "student" : "lecturer", key, scope),
+				researchGeneratingPagePath(
+					key,
+					isStudent ? "student" : "lecturer",
+					trimmedTopic,
+					chosenStyle,
+				),
 			);
 		} catch (error) {
 			setSubmitting(null);
@@ -266,21 +513,112 @@ export function ResearchScopeBriefPage({
 	const handleNotebookTitle = (notebook: { id: string; title: string }) => {
 		const trimmed = notebook.title.trim().slice(0, 500);
 		if (trimmed) {
-			setNotebookTitles((prev) => ({ ...prev, [notebook.id]: trimmed }));
-			if (!topic.trim()) setTopic(trimmed);
+			notebookTitlesRef.current = { ...notebookTitlesRef.current, [notebook.id]: trimmed };
+			setNotebookTitles(notebookTitlesRef.current);
 		}
+	};
+
+	const applyNotesHtml = (html: string) => {
+		const next = html.trim() ? html : "";
+		if (useRichBrief) {
+			setBriefHtml(next);
+		} else {
+			setTopic(next);
+		}
+		autoPrefillHtmlRef.current = next;
+		// Remount TipTap so parent-driven prefill always wins over skipContentSync races.
+		setEditorRemountKey((key) => key + 1);
+	};
+
+	const prefillFromSelectedNotebooks = async (ids: string[]) => {
+		if (!ids.length) {
+			setNotebookDatasets([]);
+			setNotebookImages([]);
+			setLoadingNotebookTitle("");
+			return;
+		}
+
+		const seq = ++notebookPrefillSeqRef.current;
+		const title =
+			ids.map((id) => notebookTitlesRef.current[id]?.trim()).find(Boolean) ||
+			"Selected notebook";
+		setLoadingNotebookTitle(title);
+		setLoadingNotebookPrefill(true);
+		setSubmitError(null);
+		try {
+			const prefill = await loadNotebookBriefPrefill(ids);
+			if (seq !== notebookPrefillSeqRef.current) return;
+
+			setNotebookDatasets(prefill.datasets);
+			setNotebookImages(prefill.images);
+			if (prefill.title?.trim()) setLoadingNotebookTitle(prefill.title.trim());
+
+			const notes =
+				prefill.notesHtml.trim() ||
+				toEditorHtml(
+					ids.map((id) => notebookTitlesRef.current[id]?.trim()).find(Boolean) ||
+						prefill.title ||
+						"Selected research notebook",
+				);
+			applyNotesHtml(notes);
+		} catch (error) {
+			if (seq !== notebookPrefillSeqRef.current) return;
+			setNotebookDatasets([]);
+			setNotebookImages([]);
+			setSubmitError(
+				error instanceof Error ? error.message : "Could not load notebook content into the editor.",
+			);
+		} finally {
+			if (seq === notebookPrefillSeqRef.current) {
+				setLoadingNotebookPrefill(false);
+			}
+		}
+	};
+
+	const handleNotebookSelection = (ids: string[]) => {
+		setSelectedProjectIds(ids);
+		if (!ids.length) {
+			setNotebookDatasets([]);
+			setNotebookImages([]);
+			return;
+		}
+		void prefillFromSelectedNotebooks(ids);
 	};
 
 	const libraryPicker = allowNotebookLibrary ? (
 		<ResearchNotebookLibraryPicker
 			selectedIds={selectedProjectIds}
-			onChange={(ids) => setSelectedProjectIds(ids)}
+			onChange={handleNotebookSelection}
 			onUseTitle={handleNotebookTitle}
 			variant={variant}
 			compact={isComposer}
 			disabled={busy}
 		/>
 	) : null;
+
+	const notebookAssets = allowNotebookLibrary ? (
+		<ResearchNotebookAssetsPreview
+			datasets={notebookDatasets}
+			images={notebookImages}
+			loading={loadingNotebookPrefill && selectedProjectIds.length > 0}
+		/>
+	) : null;
+
+	const notebookGenerateNote =
+		allowNotebookLibrary && selectedProjectIds.length > 0 ? (
+			<p className="assign-notebook-generate-note" role="status">
+				Generate will use {selectedProjectIds.length === 1 ? "notebook" : "notebooks"}{" "}
+				<strong>
+					{selectedProjectIds
+						.map((id) => notebookTitles[id]?.trim() || "Untitled notebook")
+						.join(", ")}
+				</strong>
+				{notebookDatasets.length || notebookImages.length
+					? ` · ${notebookDatasets.length} dataset${notebookDatasets.length === 1 ? "" : "s"} · ${notebookImages.length} image${notebookImages.length === 1 ? "" : "s"}`
+					: ""}{" "}
+				as primary source material.
+			</p>
+		) : null;
 
 	const outlineButton = showOutlineButton ? (
 		<button
@@ -310,7 +648,7 @@ export function ResearchScopeBriefPage({
 
 	const page = (
 		<div
-			className={`assign-page${isComposer ? " assign-page-composer" : ""}${isStudent ? " research-page research-page-student" : " research-page"}`}
+			className={`assign-page${isComposer ? " assign-page-composer" : ""} research-page`}
 		>
 			<button type="button" className="assign-back" onClick={() => router.push(backHref)}>
 				<IconChevronLeft size={16} />
@@ -344,36 +682,153 @@ export function ResearchScopeBriefPage({
 			{isComposer ? (
 				<div className="assign-composer">
 					<div className="assign-composer-head">
-						<label className="assign-composer-label" htmlFor={`${scope}-topic`}>
+						<label className="assign-composer-label" htmlFor={useRichBrief ? undefined : `${scope}-topic`}>
 							{copy.topicTitle}
 						</label>
 						{copy.topicHelp ? <p className="assign-card-help">{copy.topicHelp}</p> : null}
 					</div>
-					<div className="assign-composer-field">
-						<textarea
-							id={`${scope}-topic`}
-							className="assign-composer-input"
-							rows={5}
-							maxLength={500}
-							placeholder={topicPlaceholder}
-							value={topic}
-							onChange={(event) => setTopic(event.target.value)}
-							onKeyDown={(event) => {
-								if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-									event.preventDefault();
-									handleGenerateClick();
-								}
-							}}
-						/>
+					<div
+						className={`assign-composer-field${useRichBrief ? " assign-composer-field-rich" : ""}${briefDragOver ? " is-brief-over" : ""}`}
+						onDragEnter={
+							allowBriefUpload
+								? (event) => {
+										event.preventDefault();
+										event.stopPropagation();
+										if (!busy) setBriefDragOver(true);
+									}
+								: undefined
+						}
+						onDragOver={
+							allowBriefUpload
+								? (event) => {
+										event.preventDefault();
+										event.stopPropagation();
+										if (!busy) setBriefDragOver(true);
+									}
+								: undefined
+						}
+						onDragLeave={
+							allowBriefUpload
+								? (event) => {
+										event.preventDefault();
+										event.stopPropagation();
+										setBriefDragOver(false);
+									}
+								: undefined
+						}
+						onDrop={
+							allowBriefUpload
+								? (event) => {
+										event.preventDefault();
+										event.stopPropagation();
+										setBriefDragOver(false);
+										const file = event.dataTransfer.files?.[0];
+										void handleBriefFile(file);
+									}
+								: undefined
+						}
+					>
+						{useRichBrief ? (
+							<ScopeBriefRichEditor
+								key={`brief-${editorRemountKey}`}
+								value={briefHtml}
+								onChange={setBriefHtml}
+								placeholder={topicPlaceholder}
+								ariaLabel={copy.topicTitle}
+								disabled={busy}
+							/>
+						) : (
+							<textarea
+								id={`${scope}-topic`}
+								className="assign-composer-input"
+								rows={5}
+								maxLength={500}
+								placeholder={topicPlaceholder}
+								value={topic}
+								onChange={(event) => setTopic(event.target.value)}
+								onKeyDown={(event) => {
+									if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+										event.preventDefault();
+										handleGenerateClick();
+									}
+								}}
+							/>
+						)}
+						{allowBriefUpload ? (
+							<input
+								ref={briefFileInputRef}
+								type="file"
+								accept={BRIEF_UPLOAD_ACCEPT}
+								hidden
+								onChange={(event) => {
+									const file = event.target.files?.[0];
+									void handleBriefFile(file);
+								}}
+							/>
+						) : null}
 						<div className="assign-composer-bar">
-							<p className="assign-count">{topic.length} / 500</p>
+							{allowBriefUpload ? (
+								<div className="assign-composer-bar-start">
+									<button
+										type="button"
+										className={`assign-composer-upload${briefUpload ? " has-file" : ""}`}
+										disabled={busy}
+										onClick={() => briefFileInputRef.current?.click()}
+										title={
+											briefUpload
+												? `${briefUpload.fileName} · click to replace`
+												: "Upload PDF, Word, or text — enough to generate without typing"
+										}
+									>
+										{briefUpload ? <IconFileText size={15} /> : <IconUpload size={15} />}
+										<span>
+											{uploadingBrief
+												? "Uploading…"
+												: briefUpload
+													? briefUpload.fileName
+													: "Upload brief"}
+										</span>
+									</button>
+									{briefUpload ? (
+										<button
+											type="button"
+											className="assign-composer-upload-clear"
+											onClick={clearBriefUpload}
+											disabled={busy}
+											aria-label="Remove uploaded brief"
+											title="Remove uploaded brief"
+										>
+											×
+										</button>
+									) : null}
+									<span className="assign-composer-or-hint">
+										{hasTypedBrief && hasUploadedBrief
+											? "Using editor + upload"
+											: hasUploadedBrief
+												? "Ready from upload"
+												: hasTypedBrief
+													? "Ready from editor"
+													: "Type or upload"}
+									</span>
+								</div>
+							) : useRichBrief ? (
+								<p className="assign-composer-or-hint">
+									{loadingNotebookPrefill
+										? "Loading notebook notes…"
+										: "Bullets, headings, lists, tables, images · scroll for longer briefs"}
+								</p>
+							) : (
+								<p className="assign-count">{topic.length} / 500</p>
+							)}
 							<div className="assign-composer-actions">
 								{outlineButton}
 								{generateButton}
 							</div>
 						</div>
 					</div>
+					{notebookAssets}
 					{libraryPicker}
+					{notebookGenerateNote}
 					{alerts}
 				</div>
 			) : (
@@ -389,21 +844,17 @@ export function ResearchScopeBriefPage({
 								<p className="assign-card-help">{copy.topicHelp}</p>
 							</div>
 						</div>
-						<div className="assign-input-wrap">
-							<span className="assign-input-icon" aria-hidden>
-								<IconEdit size={16} />
-							</span>
-							<textarea
-								id={`${scope}-topic`}
-								className="assign-input assign-input-topic"
-								rows={3}
-								maxLength={500}
-								placeholder={topicPlaceholder}
+						<div className="assign-input-wrap assign-input-wrap-rich">
+							<ScopeBriefRichEditor
+								key={`topic-${editorRemountKey}`}
 								value={topic}
-								onChange={(event) => setTopic(event.target.value)}
+								onChange={setTopic}
+								placeholder={topicPlaceholder}
+								ariaLabel={copy.topicTitle}
+								disabled={busy}
 							/>
 						</div>
-						<p className="assign-count">{topic.length} / 500</p>
+						{notebookAssets}
 					</section>
 
 					{copy.fields.map((field) => (
@@ -431,20 +882,13 @@ export function ResearchScopeBriefPage({
 									))}
 								</select>
 							) : field.kind === "textarea" ? (
-								<>
-									<textarea
-										id={`${scope}-${field.id}`}
-										className="assign-input"
-										rows={field.rows ?? 5}
-										maxLength={field.maxLength ?? 1500}
-										placeholder={field.placeholder}
-										value={fieldValues[field.id] ?? ""}
-										onChange={(event) => setField(field.id, event.target.value)}
-									/>
-									<p className="assign-count">
-										{(fieldValues[field.id] ?? "").length} / {field.maxLength ?? 1500}
-									</p>
-								</>
+								<ScopeBriefRichEditor
+									value={fieldValues[field.id] ?? ""}
+									onChange={(html) => setField(field.id, html)}
+									placeholder={field.placeholder}
+									ariaLabel={field.label}
+									disabled={busy}
+								/>
 							) : (
 								<input
 									id={`${scope}-${field.id}`}
@@ -470,20 +914,18 @@ export function ResearchScopeBriefPage({
 									<p className="assign-card-help">{copy.notesHelp}</p>
 								</div>
 							</div>
-							<textarea
-								id={`${scope}-instructions`}
-								className="assign-input"
-								rows={8}
-								maxLength={4000}
-								placeholder={copy.notesPlaceholder}
+							<ScopeBriefRichEditor
 								value={instructions}
-								onChange={(event) => setInstructions(event.target.value)}
+								onChange={setInstructions}
+								placeholder={copy.notesPlaceholder}
+								ariaLabel={copy.notesTitle}
+								disabled={busy}
 							/>
-							<p className="assign-count">{instructions.length} / 4000</p>
 						</section>
 					) : null}
 
 					{libraryPicker}
+					{notebookGenerateNote}
 					{alerts}
 				</div>
 			</div>
@@ -506,11 +948,22 @@ export function ResearchScopeBriefPage({
 			</footer>
 			)}
 
+			<ResearchNotebookLoadingModal
+				open={loadingNotebookPrefill}
+				notebookTitle={loadingNotebookTitle}
+			/>
+
 			<ResearchCitationStyleModal
 				open={showCitationStyleModal}
 				onClose={() => setShowCitationStyleModal(false)}
 				onConfirm={(style) => void confirmGenerate(style)}
-				projectTitle={topic.trim() || copy.fallbackTopic}
+				projectTitle={
+					(useRichBrief
+						? briefPlain.split(/\n/).map((line) => line.trim()).find(Boolean) ||
+							(briefUpload ? titleFromFileName(briefUpload.fileName) : "")
+						: plainFromRich(topic).split(/\n/).map((line) => line.trim()).find(Boolean) || "") ||
+						copy.fallbackTopic
+				}
 				variant={isStudent ? "student" : "lecturer"}
 				note={`Citations and the References list will use your chosen style throughout the generated ${documentLabel}.`}
 				confirmLabel={generateLabel}
@@ -518,5 +971,5 @@ export function ResearchScopeBriefPage({
 		</div>
 	);
 
-	return isStudent ? <StudentLayout>{page}</StudentLayout> : <AulaLayout showRightPanel={false}>{page}</AulaLayout>;
+	return isStudent ? <StudentLayout>{page}</StudentLayout> : <AulaLayout showRightPanel={false} hideTopBar>{page}</AulaLayout>;
 }

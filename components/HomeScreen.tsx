@@ -7,6 +7,9 @@ import { SiteFooter } from "@/components/SiteFooter";
 import { useAuth } from "@/hooks/useAuth";
 import { APP_NAME, APP_TAGLINE } from "@/lib/brand";
 
+const PILOT_MAILTO = "mailto:hello@trustledai.com?subject=GARIL%20AI%20pilot%20enquiry";
+const DEMO_MAILTO = "mailto:hello@trustledai.com?subject=GARIL%20AI%20demo%20request";
+
 const INTRO_POINTS = [
 	"Structured academic workflows",
 	"Search trusted research databases from one workspace",
@@ -33,7 +36,7 @@ const ROLES = [
 	{
 		title: "Lecturers",
 		description:
-			"Prepare lectures, create teaching materials, supervise student research and support learning more effectively.",
+			"Supervise student research, review submissions against your own requirements and issue structured feedback, while keeping full academic judgement over every assessment.",
 		icon: "lecturer",
 	},
 	{
@@ -46,39 +49,48 @@ const ROLES = [
 
 const PLATFORM_FEATURES = [
 	{
-		title: "Deep Research",
-		description: "Search arXiv, Semantic Scholar and Crossref simultaneously.",
+		title: "Academic Contribution & Provenance",
+		description:
+			"GARIL AI helps students evidence the work behind their results, so genuine contribution can be recognised and academic integrity is supported by more than a declaration.",
+		points: [
+			"Evidence of authentic student contribution",
+			"Supports fair, confident assessment",
+			"Strengthens academic integrity across the institution",
+		],
+		icon: "provenance",
+	},
+	{
+		title: "AI Research Assistant",
+		description:
+			"An academic research assistant that helps students and researchers work from their own evidence and trusted scholarly sources, keeping their ideas and arguments at the centre of the work.",
+		points: [
+			"Organise literature and synthesise evidence",
+			"Identify research gaps and strengthen outputs",
+			"Verified citations in standard academic styles",
+		],
 		icon: "search",
 	},
 	{
-		title: "Literature Reviews",
-		description: "Generate comprehensive reviews grounded in scholarly evidence.",
-		icon: "file",
+		title: "AI-Assisted Supervision",
+		description:
+			"Supervision support that helps lecturers manage growing research workloads with structured, timely feedback, while every academic decision stays with the lecturer.",
+		points: [
+			"Faster, more consistent feedback for students",
+			"Less time spent on repetitive review",
+			"Full lecturer ownership of assessment",
+		],
+		icon: "lecturer",
 	},
 	{
-		title: "Research Writing",
-		description: "Develop papers, proposals, theses and dissertations through structured workflows.",
-		icon: "pen",
-	},
-	{
-		title: "Citation Verification",
-		description: "Validate citations before submission.",
-		icon: "shield",
-	},
-	{
-		title: "Research Memory",
-		description: "Continue long-term projects without losing context.",
-		icon: "brain",
-	},
-	{
-		title: "Multi-Agent Research",
-		description: "Specialised AI agents support different stages of the research lifecycle.",
-		icon: "sparkles",
-	},
-	{
-		title: "Lecture Assist",
-		description: "Create lecture notes, teaching resources and classroom materials.",
-		icon: "presentation",
+		title: "Evidence-Backed Governance",
+		description:
+			"Institutional oversight of AI use across research, teaching and learning, giving leadership the visibility it needs while individual research stays private.",
+		points: [
+			"Insight into AI adoption across the institution",
+			"Reporting ready for Management and Senate",
+			"Oversight without access to private research content",
+		],
+		icon: "governance",
 	},
 ] as const;
 
@@ -115,7 +127,7 @@ const FAQS = [
 	},
 	{
 		question: `Is ${APP_NAME} only for research?`,
-		answer: `No. ${APP_NAME} supports the full academic journey. Users can conduct research, prepare lectures, supervise projects, develop teaching materials, write dissertations and explore scholarly literature from one platform.`,
+		answer: `No. ${APP_NAME} supports the full academic journey. Users can conduct research, supervise student projects, write dissertations and explore scholarly literature from one platform.`,
 	},
 ] as const;
 
@@ -173,13 +185,20 @@ function FeatureIcon({ name }: { name: string }) {
 					<path d="m12 3-1.9 5.8H4.4L10 13.2 8.1 19 12 15.4 15.9 19 14 13.2l5.6-4.4h-6.1L12 3Z" />
 				</svg>
 			);
-		case "presentation":
+		case "provenance":
 			return (
 				<svg {...props}>
-					<path d="M2 3h20" />
-					<path d="M12 3v18" />
-					<path d="M7 21h10" />
-					<path d="M5 3v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3" />
+					<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+					<path d="M14 2v6h6M9 15l2 2 4-4" />
+				</svg>
+			);
+		case "governance":
+			return (
+				<svg {...props}>
+					<path d="M3 21h18" />
+					<path d="M5 21V8l7-4 7 4v13" />
+					<path d="M9 21v-4h6v4" />
+					<path d="M9 10h1M14 10h1M9 14h1M14 14h1" />
 				</svg>
 			);
 		case "student":
@@ -275,6 +294,18 @@ export function HomeScreen() {
 								? "Continue research, teaching and academic projects in your institutional workspace."
 								: "A purpose-built academic AI workspace for universities — with institutional visibility built in."}
 						</p>
+						<div
+							className="home-hero-actions home-hero-animate home-hero-animate-4"
+							role="group"
+							aria-label="Contact"
+						>
+							<a href={PILOT_MAILTO} className="home-btn home-btn-light">
+								Request a pilot
+							</a>
+							<a href={DEMO_MAILTO} className="home-btn home-btn-ghost-light">
+								Book a demo
+							</a>
+						</div>
 					</div>
 				</div>
 			</section>
@@ -384,8 +415,12 @@ export function HomeScreen() {
 					<header className="home-section-intro home-section-intro-row">
 						<div>
 							<p className="home-kicker">Capabilities</p>
-							<h2 className="home-section-title">AI Capabilities</h2>
-							<p className="home-section-lead">Everything you need for academic research in one environment.</p>
+							<h2 className="home-section-title">Four Capabilities, One Governed Environment</h2>
+							<p className="home-section-lead">
+								GARIL AI brings research, teaching, supervision and oversight into a single academic workspace,
+								where AI supports the work while students keep ownership of their ideas, lecturers keep academic
+								judgement, and the University keeps institutional oversight.
+							</p>
 						</div>
 						<figure className="home-media home-media-wide">
 							{/* eslint-disable-next-line @next/next/no-img-element */}
@@ -405,6 +440,16 @@ export function HomeScreen() {
 								<div>
 									<h3>{feature.title}</h3>
 									<p>{feature.description}</p>
+									<ul className="home-checklist">
+										{feature.points.map((point) => (
+											<li key={point}>
+												<span className="home-checklist-icon" aria-hidden>
+													<CheckIcon />
+												</span>
+												<span>{point}</span>
+											</li>
+										))}
+									</ul>
 								</div>
 							</article>
 						))}
@@ -450,8 +495,8 @@ export function HomeScreen() {
 						<p>{APP_NAME} wasn&apos;t built to answer general questions.</p>
 						<p>It was built to support the work that happens every day in universities.</p>
 						<p>
-							From planning lectures and supervising student research to writing dissertations and exploring
-							academic literature, every capability is designed around higher education.
+							From supervising student research to writing dissertations and exploring academic literature, every
+							capability is designed around higher education.
 						</p>
 					</div>
 				</div>
@@ -470,6 +515,20 @@ export function HomeScreen() {
 								<p>{faq.answer}</p>
 							</details>
 						))}
+					</div>
+				</div>
+			</section>
+
+			<section className="home-band" id="pilot" aria-labelledby="home-pilot-heading">
+				<div className="home-section-inner home-band-inner">
+					<h2 className="home-band-title" id="home-pilot-heading">
+						Bring governed AI to your institution
+					</h2>
+					<p className="home-band-lead">Talk to us about a structured pilot for your university.</p>
+					<div className="home-band-actions">
+						<a href={PILOT_MAILTO} className="home-btn home-btn-light">
+							Request a pilot
+						</a>
 					</div>
 				</div>
 			</section>
