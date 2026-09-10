@@ -9,7 +9,6 @@ import {
 } from "react";
 import { useParams } from "next/navigation";
 import {
-  AlertTriangle,
   ArrowLeft,
   Brain,
   CircleCheck,
@@ -750,35 +749,6 @@ export default function SupervisorPageReviewPage() {
     } finally {
       setBusy(false);
     }
-  }
-
-  function handleCriterionChange(name: string, value: string) {
-    setCriterionInputs((prev) => {
-      const next = { ...prev, [name]: value };
-      const rubricList = data?.project.assignmentBrief?.rubric || [];
-      let sum = 0;
-      let anyFilled = false;
-      for (const r of rubricList) {
-        const val = next[r.name];
-        if (val != null && val.trim() !== "") {
-          const num = Number(val);
-          if (Number.isFinite(num)) {
-            sum += num;
-            anyFilled = true;
-          }
-        }
-      }
-      if (anyFilled) {
-        const maxScoreVal =
-          typeof data?.project.maxScore === "number"
-            ? data.project.maxScore
-            : typeof data?.project.assignmentBrief?.maxScore === "number"
-              ? data.project.assignmentBrief.maxScore
-              : 100;
-        setScoreInput(String(Math.min(sum, maxScoreVal)));
-      }
-      return next;
-    });
   }
 
   function insertFactCheckClaimsIntoRemark() {

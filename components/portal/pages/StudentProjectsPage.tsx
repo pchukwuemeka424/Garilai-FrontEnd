@@ -3,10 +3,8 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
-	AlertCircle,
 	Award,
 	BookOpen,
-	CheckCircle2,
 	FileText,
 	FlaskConical,
 	FolderKanban,
@@ -15,7 +13,6 @@ import {
 	List,
 	MoreVertical,
 	Newspaper,
-	Pencil,
 	Plus,
 	Search,
 	Trash2,

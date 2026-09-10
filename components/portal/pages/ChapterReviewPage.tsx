@@ -11,7 +11,6 @@ import {
 } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
-  AlertTriangle,
   ArrowLeft,
   Brain,
   CircleCheck,
