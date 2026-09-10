@@ -606,7 +606,9 @@ New hits are upserted into the paper library for reuse (deduped by arXiv ID / ti
 
 ## 17. Deployment
 
-Hub: [deploy/README.md](../deploy/README.md). **Not Vercel** — Coolify / Docker / VPS / Nixpacks. **No in-repo CI.**
+Hub: [deploy/README.md](../deploy/README.md). **Not Vercel** — Coolify / Docker / VPS / Nixpacks.
+
+Production split apps auto-redeploy when `main` is pushed to [Garilai-FrontEnd](https://github.com/pchukwuemeka424/Garilai-FrontEnd) and [garila-backend](https://github.com/pchukwuemeka424/garila-backend). There is no GitHub Actions test workflow yet.
 
 ### Modes
 
@@ -656,9 +658,9 @@ docker compose up -d --build
 | Backend typecheck | `cd backend && npm run typecheck` |
 | PDF smoke | `npm run test:pdf` → `scripts/test-research-pdf-runner.ts` |
 
-**Missing:** Jest/Vitest/Playwright/Cypress; no `*.test.*` / `*.spec.*`; **no `.github/workflows` CI**.
+**Missing:** Jest/Vitest/Playwright/Cypress; no `*.test.*` / `*.spec.*`; **no `.github/workflows` test CI**.
 
-Release path today: Coolify git deploy, Docker build, or VPS `setup-vps.sh` / PM2 / systemd. Suggested future CI: lint + `tsc` + health probe.
+Release path today: push `main` on the standalone frontend/backend GitHub repos (Coolify auto-redeploy), Docker build, or VPS `setup-vps.sh` / PM2 / systemd. Suggested future CI: lint + `tsc` + health probe.
 
 Recommended manual smoke: [Local development](#11-local-development) checklist plus portal project create and admin token page.
 

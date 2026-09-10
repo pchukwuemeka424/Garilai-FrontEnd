@@ -20,6 +20,8 @@ Talks to the backend via `NEXT_PUBLIC_FEYNMAN_BACKEND` (or same-origin proxy).
 
 Must match the public URL of the **backend** Coolify resource (HTTPS, no trailing slash). Leave empty only if the browser will call the API same-origin via a reverse proxy.
 
+Pushes to `main` on https://github.com/pchukwuemeka424/Garilai-FrontEnd auto-redeploy this Coolify app. Use `[skip cd]` in the commit message to skip.
+
 ## Docker (standalone — matches Dockerfile)
 
 ```bash

@@ -281,7 +281,7 @@ Create **two** Coolify applications from this repo:
 | Backend | `deploy/backend/Dockerfile` | `3141` | Env: `OPENROUTER_API_KEY`, `AUTH_SECRET`, `MONGODB_URI` · health `/api/health` |
 | Frontend | `deploy/frontend/Dockerfile` | `80` | Build arg `NEXT_PUBLIC_FEYNMAN_BACKEND` = backend public URL · health `/healthz` |
 
-See [deploy/README.md](deploy/README.md), [deploy/backend/README.md](deploy/backend/README.md), [deploy/frontend/README.md](deploy/frontend/README.md).
+See [deploy/README.md](deploy/README.md), [deploy/backend/README.md](deploy/backend/README.md), [deploy/frontend/README.md](deploy/frontend/README.md). Pushes to `main` on the standalone GitHub frontend/backend repos auto-redeploy Coolify.
 
 ### Docker Compose (split)
 
