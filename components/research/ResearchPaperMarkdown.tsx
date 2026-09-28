@@ -55,9 +55,37 @@ type ResearchFigureSpec = {
 const CHART_TYPES = new Set<ChartType>(["bar", "line", "area", "pie", "scatter"]);
 const COLORS = ["#4f46e5", "#0891b2", "#059669", "#d97706", "#dc2626", "#7c3aed"];
 
+function parseFigure(raw: string): ResearchFigureSpec | null {
+	const trimmed = raw.trim();
+	try {
+		const value = JSON.parse(trimmed) as Partial<ResearchFigureSpec>;
+		const dataUrl = typeof value.dataUrl === "string" ? value.dataUrl.trim() : "";
+		if (!dataUrl.startsWith("data:image/")) return null;
+		return {
+			type: "research-figure",
+			title: value.title?.trim() || "Research figure",
+			caption: value.caption?.trim() || "From research note Figures.",
+			mime: value.mime?.trim() || "image/png",
+			dataUrl,
+		};
+	} catch {
+		const dataUrlMatch = trimmed.match(/data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=\s]+/i);
+		const dataUrl = dataUrlMatch?.[0]?.replace(/\s+/g, "") ?? "";
+		if (!dataUrl.startsWith("data:image/")) return null;
+		const mime = dataUrl.slice("data:".length, dataUrl.indexOf(";")) || "image/png";
+		return {
+			type: "research-figure",
+			title: "Research figure",
+			caption: "From research note Figures.",
+			mime,
+			dataUrl,
+		};
+	}
+}
+
 function parseChart(raw: string): ResearchChartSpec | null {
 	try {
-		const value = JSON.parse(raw) as Partial<ResearchChartSpec>;
+		const value = JSON.parse(raw.trim()) as Partial<ResearchChartSpec>;
 		if (!value.type || !CHART_TYPES.has(value.type)) return null;
 		if (!value.xKey?.trim() || !Array.isArray(value.yKeys) || !value.yKeys.length) return null;
 		if (!Array.isArray(value.data) || !value.data.length) return null;
@@ -87,7 +115,7 @@ function parseChart(raw: string): ResearchChartSpec | null {
 
 function parseImage(raw: string): ResearchImageSpec | null {
 	try {
-		const value = JSON.parse(raw) as Partial<ResearchImageSpec>;
+		const value = JSON.parse(raw.trim()) as Partial<ResearchImageSpec>;
 		if (value.type !== "conceptual-diagram" || !Array.isArray(value.nodes)) return null;
 		const nodes = value.nodes
 			.filter((node) => node && String(node.id).trim() && String(node.label).trim())
@@ -109,23 +137,6 @@ function parseImage(raw: string): ResearchImageSpec | null {
 			caption: value.caption?.trim() || "AI-generated conceptual illustration.",
 			nodes,
 			edges,
-		};
-	} catch {
-		return null;
-	}
-}
-
-function parseFigure(raw: string): ResearchFigureSpec | null {
-	try {
-		const value = JSON.parse(raw) as Partial<ResearchFigureSpec>;
-		const dataUrl = typeof value.dataUrl === "string" ? value.dataUrl.trim() : "";
-		if (!dataUrl.startsWith("data:image/")) return null;
-		return {
-			type: "research-figure",
-			title: value.title?.trim() || "Research figure",
-			caption: value.caption?.trim() || "From research note Figures.",
-			mime: value.mime?.trim() || "image/png",
-			dataUrl,
 		};
 	} catch {
 		return null;
@@ -348,7 +359,7 @@ function MarkdownSection({
 				),
 				tbody: ({ children }) => {
 					const rows = Array.isArray(children) ? children : children ? [children] : [];
-					return <tbody>{rows.slice(0, 10)}</tbody>;
+					return <tbody>{rows.slice(0, 30)}</tbody>;
 				},
 				h2: ({ children }) => {
 					const text = headingText(children);
@@ -408,12 +419,15 @@ function splitTrailingIncompleteVisual(content: string): {
 export function ResearchPaperMarkdown({
 	content,
 	allowImages = true,
+	stripLeadingTitle = true,
 }: {
 	content: string;
 	/** When false, strip markdown images (legacy chat panels). Default true for live generate. */
 	allowImages?: boolean;
+	/** When false, skip stripTitleAboveAbstract (caller already prepared display content). */
+	stripLeadingTitle?: boolean;
 }) {
-	const stripped = stripTitleAboveAbstract(content);
+	const stripped = stripLeadingTitle ? stripTitleAboveAbstract(content) : content;
 	const { complete, pendingKind } = splitTrailingIncompleteVisual(stripped);
 	const parts: Array<
 		| { kind: "markdown"; value: string }
@@ -421,7 +435,7 @@ export function ResearchPaperMarkdown({
 		| { kind: "image"; spec: ResearchImageSpec }
 		| { kind: "figure"; spec: ResearchFigureSpec }
 	> = [];
-	const pattern = /```(research-chart|research-image|research-figure)\s*([\s\S]*?)```/gi;
+	const pattern = /```(research-chart|research-image|research-figure)[^\n]*\r?\n([\s\S]*?)```/gi;
 	let cursor = 0;
 	for (const match of complete.matchAll(pattern)) {
 		const index = match.index ?? 0;

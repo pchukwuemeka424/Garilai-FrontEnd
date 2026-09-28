@@ -2,11 +2,10 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { ArrowRight, FileText, Lightbulb, Search, Sparkles } from "lucide-react";
 
-import { NavIcon } from "@/components/aula/NavIcon";
 import { AulaLayout } from "@/components/AulaLayout";
 import { StudentLayout } from "@/components/StudentLayout";
-import { IconFileText, IconLightbulb, IconSparkles } from "@/components/ui/ButtonIcon";
 import {
 	loadAllSavedPapers,
 	removeSavedPaper,
@@ -15,7 +14,7 @@ import {
 } from "@/lib/chat-research-storage";
 import { getDisciplineLabel } from "@/lib/research-disciplines";
 import { getFeasibilityLabel, getTypeLabel } from "@/lib/research-ideas";
-import { extractPaperTitle } from "@/lib/research-paper-title";
+import { resolvePaperDisplayTitle } from "@/lib/research-paper-title";
 import {
 	loadAllSavedIdeas,
 	removeSavedIdea,
@@ -114,7 +113,7 @@ function SavedResearchListContent({ variant = "lecturer" }: Props) {
 		return [...papers]
 			.filter((paper) => {
 				if (topicFilter !== "all" && paper.topic.trim() !== topicFilter) return false;
-				const title = extractPaperTitle(paper.content, paper.topic);
+				const title = resolvePaperDisplayTitle(paper.content, paper.topic);
 				return matchesQuery(`${title} ${paper.topic}`, normalizedQuery);
 			})
 			.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -151,45 +150,40 @@ function SavedResearchListContent({ variant = "lecturer" }: Props) {
 	const showFilters = !loading && !isEmpty;
 
 	return (
-		<div className="research-page sc-saved-page">
-			<header className="research-page-header">
-				<div className="research-page-header-start">
-					<div className="research-page-icon" aria-hidden>
-						<NavIcon id="folder" size={24} />
-					</div>
-					<div>
-						<p className="research-page-eyebrow">Your library</p>
-						<h1 className="research-page-title">Saved research</h1>
-						<p className="research-page-lead">
-							Browse papers and bookmarked ideas by topic, with created and updated dates.
-						</p>
-					</div>
+		<div className="sc-saved-hub">
+			<header className="sc-saved-intro">
+				<div className="sc-saved-intro-copy">
+					<p className="sc-saved-intro-kicker">Your library</p>
+					<h1 className="sc-saved-intro-title">Saved research</h1>
+					<p className="sc-saved-intro-subtitle">
+						Browse papers and bookmarked ideas by topic, with created and updated dates.
+					</p>
 				</div>
-				<div className="research-page-actions">
-					<Link href={researchPath} className="research-btn research-btn-outline research-btn-sm">
-						<IconSparkles size={16} />
-						New research
-					</Link>
-				</div>
+				<Link href={researchPath} className="sc-saved-primary-btn">
+					<Sparkles size={16} strokeWidth={1.75} />
+					New research
+				</Link>
 			</header>
 
 			<div className="sc-saved-body">
 				{loading && (
-					<div className="lp-state lp-state-loading" role="status">
-						<div className="lp-spinner" aria-hidden />
-						<p className="lp-state-title">Loading saved research…</p>
+					<div className="sc-saved-empty" role="status">
+						<div className="sc-saved-spinner" aria-hidden />
+						<p className="sc-saved-empty-title">Loading saved research…</p>
 					</div>
 				)}
 
 				{!loading && isEmpty && (
 					<div className="sc-saved-empty">
 						<div className="sc-saved-empty-icon" aria-hidden>
-							<NavIcon id="folder" size={32} />
+							<FileText size={22} strokeWidth={1.75} />
 						</div>
-						<h2>No saved research yet</h2>
-						<p>Generated papers and bookmarked ideas from Research Assistant will appear here.</p>
-						<Link href={researchPath} className="research-btn research-btn-outline">
-							<IconSparkles size={16} />
+						<h2 className="sc-saved-empty-title">No saved research yet</h2>
+						<p className="sc-saved-empty-copy">
+							Generated papers and bookmarked ideas from Research Assistant will appear here.
+						</p>
+						<Link href={researchPath} className="sc-saved-primary-btn">
+							<Sparkles size={16} strokeWidth={1.75} />
 							Start researching
 						</Link>
 					</div>
@@ -219,34 +213,35 @@ function SavedResearchListContent({ variant = "lecturer" }: Props) {
 						</div>
 
 						<div className="sc-saved-toolbar">
-							<div className="research-history-tabs" role="tablist" aria-label="Saved library">
+							<div className="sc-saved-tabs" role="tablist" aria-label="Saved library">
 								<button
 									type="button"
 									role="tab"
-									className={tab === "papers" ? "research-history-tab active" : "research-history-tab"}
+									className={tab === "papers" ? "sc-saved-tab is-active" : "sc-saved-tab"}
 									aria-selected={tab === "papers"}
 									onClick={() => setTab("papers")}
 								>
-									<IconFileText size={14} />
+									<FileText size={14} strokeWidth={1.75} />
 									Papers
-									<span className="research-history-tab-count">{papers.length}</span>
+									<span className="sc-saved-tab-count">{papers.length}</span>
 								</button>
 								<button
 									type="button"
 									role="tab"
-									className={tab === "ideas" ? "research-history-tab active" : "research-history-tab"}
+									className={tab === "ideas" ? "sc-saved-tab is-active" : "sc-saved-tab"}
 									aria-selected={tab === "ideas"}
 									onClick={() => setTab("ideas")}
 								>
-									<IconLightbulb size={14} />
+									<Lightbulb size={14} strokeWidth={1.75} />
 									Ideas
-									<span className="research-history-tab-count">{ideas.length}</span>
+									<span className="sc-saved-tab-count">{ideas.length}</span>
 								</button>
 							</div>
 
 							<div className="sc-saved-filters">
-								<label className="sc-saved-filter">
+								<label className="sc-saved-filter sc-saved-filter-search">
 									<span className="sr-only">Search library</span>
+									<Search size={15} strokeWidth={1.75} aria-hidden />
 									<input
 										type="search"
 										className="sc-saved-search"
@@ -278,20 +273,23 @@ function SavedResearchListContent({ variant = "lecturer" }: Props) {
 				{!loading && tab === "papers" && papers.length === 0 && ideas.length > 0 && (
 					<div className="sc-saved-empty sc-saved-empty-compact">
 						<div className="sc-saved-empty-icon" aria-hidden>
-							<IconFileText size={28} />
+							<FileText size={20} strokeWidth={1.75} />
 						</div>
-						<h2>No saved papers yet</h2>
-						<p>Generate a paper from Research Assistant and it will appear here with its topic and dates.</p>
-						<Link href={researchPath} className="research-btn research-btn-outline research-btn-sm">
+						<h2 className="sc-saved-empty-title">No saved papers yet</h2>
+						<p className="sc-saved-empty-copy">
+							Generate a paper from Research Assistant and it will appear here with its topic and dates.
+						</p>
+						<Link href={researchPath} className="sc-saved-ghost-btn">
 							Start a paper
+							<ArrowRight size={14} />
 						</Link>
 					</div>
 				)}
 
 				{!loading && tab === "papers" && papers.length > 0 && sortedPapers.length === 0 && (
 					<div className="sc-saved-empty sc-saved-empty-compact">
-						<h2>No matching papers</h2>
-						<p>Try another topic filter or search term.</p>
+						<h2 className="sc-saved-empty-title">No matching papers</h2>
+						<p className="sc-saved-empty-copy">Try another topic filter or search term.</p>
 					</div>
 				)}
 
@@ -299,7 +297,7 @@ function SavedResearchListContent({ variant = "lecturer" }: Props) {
 					<section className="sc-saved-section">
 						<ul className="sc-saved-list">
 							{sortedPapers.map((paper) => {
-								const title = extractPaperTitle(paper.content, paper.topic);
+								const title = resolvePaperDisplayTitle(paper.content, paper.topic);
 								const href = savedResearchPagePath(paper.id, variant);
 								const words = estimateWords(paper.content);
 								const created = formatDateOnly(paper.createdAt);
@@ -312,17 +310,20 @@ function SavedResearchListContent({ variant = "lecturer" }: Props) {
 												{title}
 											</Link>
 											<div className="sc-saved-card-meta">
-												<span className="sc-saved-chip sc-saved-chip-topic">{paper.topic}</span>
+												<span className="sc-saved-chip">{paper.topic}</span>
 												{words > 0 && (
-													<span className="sc-saved-chip">{words.toLocaleString()} words</span>
+													<span className="sc-saved-meta-item">
+														{words.toLocaleString()} words
+													</span>
 												)}
-												<span>Created {created}</span>
-												<span>Updated {updated}</span>
+												<span className="sc-saved-meta-item">Created {created}</span>
+												<span className="sc-saved-meta-item">Updated {updated}</span>
 											</div>
 										</div>
 										<div className="sc-saved-card-actions">
-											<Link href={href} className="sc-saved-action">
+											<Link href={href} className="sc-saved-ghost-btn">
 												Open
+												<ArrowRight size={14} />
 											</Link>
 											<button
 												type="button"
@@ -344,20 +345,23 @@ function SavedResearchListContent({ variant = "lecturer" }: Props) {
 				{!loading && tab === "ideas" && ideas.length === 0 && (
 					<div className="sc-saved-empty sc-saved-empty-compact">
 						<div className="sc-saved-empty-icon" aria-hidden>
-							<IconLightbulb size={28} />
+							<Lightbulb size={20} strokeWidth={1.75} />
 						</div>
-						<h2>No saved ideas yet</h2>
-						<p>Bookmark an idea in Research Assistant and it will show up here with its topic and date.</p>
-						<Link href={researchPath} className="research-btn research-btn-outline research-btn-sm">
+						<h2 className="sc-saved-empty-title">No saved ideas yet</h2>
+						<p className="sc-saved-empty-copy">
+							Bookmark an idea in Research Assistant and it will show up here with its topic and date.
+						</p>
+						<Link href={researchPath} className="sc-saved-ghost-btn">
 							Browse ideas
+							<ArrowRight size={14} />
 						</Link>
 					</div>
 				)}
 
 				{!loading && tab === "ideas" && ideas.length > 0 && sortedIdeas.length === 0 && (
 					<div className="sc-saved-empty sc-saved-empty-compact">
-						<h2>No matching ideas</h2>
-						<p>Try another topic filter or search term.</p>
+						<h2 className="sc-saved-empty-title">No matching ideas</h2>
+						<p className="sc-saved-empty-copy">Try another topic filter or search term.</p>
 					</div>
 				)}
 
@@ -374,20 +378,23 @@ function SavedResearchListContent({ variant = "lecturer" }: Props) {
 												<p className="sc-saved-card-body">{idea.rationale}</p>
 											)}
 											<div className="sc-saved-card-meta">
-												<span className="sc-saved-chip sc-saved-chip-topic">{idea.topic}</span>
-												<span className="sc-saved-chip">
+												<span className="sc-saved-chip">{idea.topic}</span>
+												<span className="sc-saved-meta-item">
 													{getDisciplineLabel(idea.discipline)}
 												</span>
-												<span className="sc-saved-chip">{getTypeLabel(idea.type)}</span>
-												<span className="sc-saved-chip">
+												<span className="sc-saved-meta-item">{getTypeLabel(idea.type)}</span>
+												<span className="sc-saved-meta-item">
 													{getFeasibilityLabel(idea.feasibility)}
 												</span>
-												<span>Saved {formatWhen(idea.savedAt)}</span>
+												<span className="sc-saved-meta-item">
+													Saved {formatWhen(idea.savedAt)}
+												</span>
 											</div>
 										</div>
 										<div className="sc-saved-card-actions">
-											<Link href={`${researchPath}?view=saved`} className="sc-saved-action">
+											<Link href={`${researchPath}?view=saved`} className="sc-saved-ghost-btn">
 												Open
+												<ArrowRight size={14} />
 											</Link>
 											<button
 												type="button"
@@ -404,8 +411,9 @@ function SavedResearchListContent({ variant = "lecturer" }: Props) {
 							})}
 						</ul>
 						<p className="sc-saved-footer-link">
-							<Link href={`${researchPath}?view=saved`} className="sc-saved-action">
+							<Link href={`${researchPath}?view=saved`} className="sc-saved-text-link">
 								Manage ideas in Research Assistant
+								<ArrowRight size={14} />
 							</Link>
 						</p>
 					</section>
@@ -417,8 +425,9 @@ function SavedResearchListContent({ variant = "lecturer" }: Props) {
 							<p className="sc-saved-ideas-copy">
 								Browse your topic generation history in Research Assistant.
 							</p>
-							<Link href={`${researchPath}?view=history`} className="sc-saved-action">
+							<Link href={`${researchPath}?view=history`} className="sc-saved-ghost-btn">
 								View history
+								<ArrowRight size={14} />
 							</Link>
 						</div>
 					</section>

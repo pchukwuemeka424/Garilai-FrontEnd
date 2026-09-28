@@ -158,6 +158,22 @@ export function researchGeneratingPagePath(
 	return `${base}?${params.toString()}`;
 }
 
+/** Live studio for a staged refine/regenerate job (no outline key). */
+export function researchGeneratingRefinePath(
+	variant: "lecturer" | "student" = "lecturer",
+	topic?: string | null,
+	citationStyle?: string | null,
+): string {
+	const base = variant === "student" ? RESEARCH_GENERATING_PATH.student : RESEARCH_GENERATING_PATH.lecturer;
+	const params = new URLSearchParams();
+	params.set("refine", "1");
+	const trimmed = topic?.trim();
+	if (trimmed) params.set("topic", trimmed);
+	const trimmedStyle = citationStyle?.trim();
+	if (trimmedStyle) params.set("style", trimmedStyle);
+	return `${base}?${params.toString()}`;
+}
+
 export function isResearchGeneratingPath(pathname: string | null | undefined): boolean {
 	if (!pathname) return false;
 	return (

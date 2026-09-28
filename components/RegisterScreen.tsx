@@ -8,9 +8,11 @@ import { AuthField } from "@/components/auth/AuthField";
 import { AuthRoleSelector, type AuthAccountRole } from "@/components/auth/AuthRoleSelector";
 import { AuthSelectField } from "@/components/auth/AuthSelectField";
 import { AuthSplitLayout, REGISTER_HERO } from "@/components/auth/AuthSplitLayout";
+import { LegalDocumentModal } from "@/components/legal/LegalDocumentModal";
 import { useAuth } from "@/hooks/useAuth";
 import { getRegisterCountry, REGISTER_COUNTRIES } from "@/lib/countries";
 import { dashboardPathForRole } from "@/lib/dashboard-routes";
+import type { LegalDocument } from "@/lib/legal-documents";
 import {
 	formatStudentProgram,
 	getDepartmentLabel,
@@ -47,6 +49,8 @@ export function RegisterScreen({ defaultRole = "lecturer" }: Props) {
 	const [programLevelId, setProgramLevelId] = useState("");
 	const [password, setPassword] = useState("");
 	const [confirmPassword, setConfirmPassword] = useState("");
+	const [acceptedPolicies, setAcceptedPolicies] = useState(false);
+	const [legalModal, setLegalModal] = useState<LegalDocument["id"] | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [submitting, setSubmitting] = useState(false);
 	const [universities, setUniversities] = useState<OnboardedUniversity[]>([]);
@@ -174,6 +178,11 @@ export function RegisterScreen({ defaultRole = "lecturer" }: Props) {
 			return;
 		}
 
+		if (!acceptedPolicies) {
+			setError("Please agree to the Terms of Service, Privacy Policy, and Acceptable Use Policy.");
+			return;
+		}
+
 		const department = isStudent
 			? formatStudentProgram(departmentId, programLevelId)
 			: getDepartmentLabel(departmentId);
@@ -190,6 +199,7 @@ export function RegisterScreen({ defaultRole = "lecturer" }: Props) {
 				institution,
 				catalogueId: institutionId,
 				country: countryCode,
+				acceptedPolicies: true as const,
 			};
 
 			const registered = isStudent ? await registerStudent(payload) : await register(payload);
@@ -218,7 +228,7 @@ export function RegisterScreen({ defaultRole = "lecturer" }: Props) {
 			wide
 			hero={REGISTER_HERO}
 			title="Create your account"
-			subtitle="Set up your profile in a few steps. We'll tailor your workspace to your role and institution."
+			subtitle="Set up your institutional profile. We'll tailor the workspace to your role and university."
 			footer={
 				<p>
 					Already have an account?{" "}
@@ -399,6 +409,55 @@ export function RegisterScreen({ defaultRole = "lecturer" }: Props) {
 					</div>
 				)}
 
+				<label className="login-consent">
+					<input
+						type="checkbox"
+						checked={acceptedPolicies}
+						onChange={(e) => setAcceptedPolicies(e.target.checked)}
+						disabled={submitting}
+						required
+					/>
+					<span>
+						I agree to the{" "}
+						<button
+							type="button"
+							className="login-link login-link-button"
+							onClick={(e) => {
+								e.preventDefault();
+								e.stopPropagation();
+								setLegalModal("terms");
+							}}
+						>
+							Terms of Service
+						</button>
+						,{" "}
+						<button
+							type="button"
+							className="login-link login-link-button"
+							onClick={(e) => {
+								e.preventDefault();
+								e.stopPropagation();
+								setLegalModal("privacy");
+							}}
+						>
+							Privacy Policy
+						</button>
+						, and{" "}
+						<button
+							type="button"
+							className="login-link login-link-button"
+							onClick={(e) => {
+								e.preventDefault();
+								e.stopPropagation();
+								setLegalModal("aup");
+							}}
+						>
+							Acceptable Use Policy
+						</button>
+						.
+					</span>
+				</label>
+
 				<button
 					type="submit"
 					className="login-btn"
@@ -408,7 +467,8 @@ export function RegisterScreen({ defaultRole = "lecturer" }: Props) {
 						universitiesLoading ||
 						noOnboardedUniversities ||
 						!countryCode ||
-						Boolean(universitiesError)
+						Boolean(universitiesError) ||
+						!acceptedPolicies
 					}
 				>
 					{submitting
@@ -419,10 +479,12 @@ export function RegisterScreen({ defaultRole = "lecturer" }: Props) {
 				</button>
 
 				<p className="login-form-note">
-					By creating an account you agree to use {isStudent ? "student" : "lecturer"} tools within
-					your institution&apos;s governed AI environment.
+					You will use {isStudent ? "student" : "lecturer"} tools within your institution&apos;s
+					governed AI environment.
 				</p>
 			</form>
+
+			<LegalDocumentModal documentId={legalModal} onClose={() => setLegalModal(null)} />
 		</AuthSplitLayout>
 	);
 }

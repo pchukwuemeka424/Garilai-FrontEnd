@@ -34,9 +34,12 @@ import {
 } from "@/lib/research-outline-context";
 import { hasResearchSources } from "@/lib/research-paper-effort-evidence";
 import { consumePendingResearchPaper } from "@/lib/research-paper-pending";
+import { consumePendingResearchRefine } from "@/lib/research-paper-refine";
 import { peekPaperSources } from "@/lib/research-paper-sources";
 import { injectLiveVisualsIntoDraft, loadLiveFigureMarkdown } from "@/lib/research-live-figures";
-import { savedResearchPagePath } from "@/lib/saved-research-routes";
+import { getScopeProfile, parseScopeFromPrompt } from "@/lib/research-scope-profiles";
+import { savedResearchListPath, savedResearchPagePath } from "@/lib/saved-research-routes";
+import type { CitationStyle } from "@/lib/citation-styles";
 
 const POLL_MS = 800;
 
@@ -55,12 +58,25 @@ function paperSourcesForJob(paperKey?: string | null) {
 	return staged;
 }
 
+function resolveCitationStyle(raw: string | null | undefined) {
+	const styleFromQuery = raw?.trim() ?? "";
+	if (!styleFromQuery) return null;
+	return (
+		CITATION_STYLES.find(
+			(s) =>
+				s.id === styleFromQuery ||
+				s.label.toLowerCase() === styleFromQuery.toLowerCase(),
+		)?.id ?? null
+	);
+}
+
 export function ResearchLiveGeneratePage({ variant = "lecturer" }: Props) {
 	const router = useRouter();
 	const searchParams = useSearchParams();
 	const isStudent = variant === "student";
 	const key = searchParams.get("key")?.trim() ?? "";
 	const topicFromQuery = searchParams.get("topic")?.trim() ?? "";
+	const refineFlag = searchParams.get("refine") === "1";
 
 	const [projectName, setProjectName] = useState(topicFromQuery || "Research document");
 	const [scope, setScope] = useState<string | null>(null);
@@ -74,6 +90,7 @@ export function ResearchLiveGeneratePage({ variant = "lecturer" }: Props) {
 	const [stopping, setStopping] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [backHref, setBackHref] = useState(isStudent ? "/student/research" : "/research");
+	const [sessionKind, setSessionKind] = useState<"pending" | "outline" | "refine" | "empty">("pending");
 
 	const startedRef = useRef(false);
 	const stopRequestedRef = useRef(false);
@@ -92,22 +109,96 @@ export function ResearchLiveGeneratePage({ variant = "lecturer" }: Props) {
 	}, [jobId]);
 
 	useEffect(() => {
-		if (!key || startedRef.current) return;
-		startedRef.current = true;
+		if (startedRef.current) return;
 
-		const styleFromQuery = searchParams.get("style")?.trim() ?? "";
-		const parsedStyleFromQuery = styleFromQuery
-			? (CITATION_STYLES.find(
-					(s) =>
-						s.id === styleFromQuery ||
-						s.label.toLowerCase() === styleFromQuery.toLowerCase(),
-				)?.id ?? null)
-			: null;
+		const styleFromQuery = resolveCitationStyle(searchParams.get("style"));
+
+		const startRefineJob = (input: {
+			prompt: string;
+			topic: string;
+			citationStyle: string;
+			scope?: string | null;
+		}) => {
+			startedRef.current = true;
+			setSessionKind("refine");
+			const displayTopic = input.topic.trim() || topicFromQuery || "Research document";
+			const profile = getScopeProfile(input.scope || parseScopeFromPrompt(input.prompt) || "journal");
+			setProjectName(displayTopic);
+			setScope(profile.scope);
+			setBackHref(savedResearchListPath(isStudent ? "student" : "lecturer"));
+			saveChatCitationStyle(input.citationStyle as CitationStyle);
+
+			stopRequestedRef.current = false;
+			setPreparing(true);
+			setError(null);
+			setProgress(20);
+			setDraft("");
+
+			void startResearchPaperJob({
+				prompt: input.prompt,
+				topic: displayTopic || undefined,
+				sources: paperSourcesForJob(null),
+			})
+				.then(async (job) => {
+					if (stopRequestedRef.current) {
+						await cancelResearchJob(job.id);
+						clearTrackedResearchJob(job.id);
+						return;
+					}
+					setTrackedResearchJob({ jobId: job.id, topic: job.topic || displayTopic });
+					setJobId(job.id);
+					setProgress((prev) => Math.max(prev, job.progress ?? 20, 20));
+					if (job.draftContent?.trim()) {
+						draftLenRef.current = job.draftContent.length;
+						setDraft(job.draftContent);
+					}
+					setRunning(true);
+				})
+				.catch((startError) => {
+					if (stopRequestedRef.current) return;
+					setError(
+						startError instanceof Error
+							? startError.message
+							: "Could not start research refinement.",
+					);
+				})
+				.finally(() => setPreparing(false));
+		};
+
+		const refine = consumePendingResearchRefine();
+		if (refine?.prompt?.trim()) {
+			const citationStyle =
+				styleFromQuery ||
+				refine.citationStyle ||
+				loadChatCitationStyle() ||
+				DEFAULT_CITATION_STYLE;
+			startRefineJob({
+				prompt: refine.prompt,
+				topic: refine.topic,
+				citationStyle,
+				scope: refine.scope,
+			});
+			return;
+		}
+
+		if (!key) {
+			startedRef.current = true;
+			setSessionKind("empty");
+			setPreparing(false);
+			if (refineFlag) {
+				setError("Regenerate context was lost. Return to the saved paper and try again.");
+				setBackHref(savedResearchListPath(isStudent ? "student" : "lecturer"));
+			}
+			return;
+		}
+
+		startedRef.current = true;
+		setSessionKind("outline");
 
 		const context = resolveOutlinePageContext(key) ?? peekOutlinePageContext(key);
 		const pending = consumePendingResearchPaper();
 		const citationStyle =
-			parsedStyleFromQuery ||
+			styleFromQuery ||
 			pending?.citationStyle ||
 			context?.citationStyle ||
 			loadChatCitationStyle() ||
@@ -209,7 +300,7 @@ export function ResearchLiveGeneratePage({ variant = "lecturer" }: Props) {
 				setPreparing(false);
 			});
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [key]);
+	}, [key, refineFlag]);
 
 	useEffect(() => {
 		if (!jobId || !running) return;
@@ -288,7 +379,21 @@ export function ResearchLiveGeneratePage({ variant = "lecturer" }: Props) {
 			<div className="rg-studio-empty">
 				<p className="rg-studio-kicker">GARIL AI</p>
 				<h1>Nothing to generate</h1>
-				<p>Open generation from a research brief or outline to continue.</p>
+				<p>
+					{refineFlag
+						? "Open Regenerate from a saved research paper to continue."
+						: "Open generation from a research brief or outline to continue."}
+				</p>
+				{refineFlag ? (
+					<div className="rg-studio-empty-actions">
+						<Link
+							href={savedResearchListPath(isStudent ? "student" : "lecturer")}
+							className="rg-studio-btn rg-studio-btn-primary"
+						>
+							Saved research
+						</Link>
+					</div>
+				) : null}
 			</div>
 		</div>
 	);
@@ -305,7 +410,7 @@ export function ResearchLiveGeneratePage({ variant = "lecturer" }: Props) {
 				<p>{error}</p>
 				<div className="rg-studio-empty-actions">
 					<Link href={backHref} className="rg-studio-btn rg-studio-btn-primary">
-						Return to brief
+						{sessionKind === "refine" ? "Back to saved research" : "Return to brief"}
 					</Link>
 					<Link href={researchPath} className="rg-studio-btn">
 						Research Assistant
@@ -343,7 +448,9 @@ export function ResearchLiveGeneratePage({ variant = "lecturer" }: Props) {
 		/>
 	);
 
-	const body = !key ? emptyState : error && !running && !preparing && !complete ? errorState : liveState;
+	const showEmpty = sessionKind === "empty" && !running && !preparing && !complete && !jobId;
+	const showError = Boolean(error) && !running && !preparing && !complete;
+	const body = showEmpty ? emptyState : showError ? errorState : liveState;
 
 	return isStudent ? <StudentLayout>{body}</StudentLayout> : <AulaLayout showRightPanel={false}>{body}</AulaLayout>;
 }

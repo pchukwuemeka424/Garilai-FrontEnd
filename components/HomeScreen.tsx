@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useId, useState } from "react";
 
 import { BrandLogo } from "@/components/BrandLogo";
 import { SiteFooter } from "@/components/SiteFooter";
@@ -9,6 +10,14 @@ import { APP_NAME, APP_TAGLINE } from "@/lib/brand";
 
 const PILOT_MAILTO = "mailto:hello@trustledai.com?subject=GARIL%20AI%20pilot%20enquiry";
 const DEMO_MAILTO = "mailto:hello@trustledai.com?subject=GARIL%20AI%20demo%20request";
+
+const NAV_LINKS = [
+	{ href: "#overview", label: "Overview" },
+	{ href: "#workflows", label: "Workflows" },
+	{ href: "#roles", label: "Roles" },
+	{ href: "#features", label: "Capabilities" },
+	{ href: "#faq", label: "FAQ" },
+] as const;
 
 const INTRO_POINTS = [
 	"Structured academic workflows",
@@ -51,7 +60,7 @@ const PLATFORM_FEATURES = [
 	{
 		title: "Academic Contribution & Provenance",
 		description:
-			"GARIL AI helps students evidence the work behind their results, so genuine contribution can be recognised and academic integrity is supported by more than a declaration.",
+			"Help students evidence the work behind their results, so genuine contribution can be recognised and academic integrity is supported by more than a declaration.",
 		points: [
 			"Evidence of authentic student contribution",
 			"Supports fair, confident assessment",
@@ -62,7 +71,7 @@ const PLATFORM_FEATURES = [
 	{
 		title: "AI Research Assistant",
 		description:
-			"An academic research assistant that helps students and researchers work from their own evidence and trusted scholarly sources, keeping their ideas and arguments at the centre of the work.",
+			"Work from your own evidence and trusted scholarly sources, keeping ideas and arguments at the centre of the academic output.",
 		points: [
 			"Organise literature and synthesise evidence",
 			"Identify research gaps and strengthen outputs",
@@ -73,7 +82,7 @@ const PLATFORM_FEATURES = [
 	{
 		title: "AI-Assisted Supervision",
 		description:
-			"Supervision support that helps lecturers manage growing research workloads with structured, timely feedback, while every academic decision stays with the lecturer.",
+			"Manage growing research workloads with structured, timely feedback, while every academic decision stays with the lecturer.",
 		points: [
 			"Faster, more consistent feedback for students",
 			"Less time spent on repetitive review",
@@ -84,7 +93,7 @@ const PLATFORM_FEATURES = [
 	{
 		title: "Evidence-Backed Governance",
 		description:
-			"Institutional oversight of AI use across research, teaching and learning, giving leadership the visibility it needs while individual research stays private.",
+			"Give leadership visibility into AI use across research, teaching and learning, while individual research stays private.",
 		points: [
 			"Insight into AI adoption across the institution",
 			"Reporting ready for Management and Senate",
@@ -152,39 +161,6 @@ function FeatureIcon({ name }: { name: string }) {
 					<path d="m21 21-4.3-4.3" />
 				</svg>
 			);
-		case "file":
-			return (
-				<svg {...props}>
-					<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-					<path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" />
-				</svg>
-			);
-		case "pen":
-			return (
-				<svg {...props}>
-					<path d="M12 20h9" />
-					<path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
-				</svg>
-			);
-		case "shield":
-			return (
-				<svg {...props}>
-					<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-				</svg>
-			);
-		case "brain":
-			return (
-				<svg {...props}>
-					<path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.46 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z" />
-					<path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.46 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z" />
-				</svg>
-			);
-		case "sparkles":
-			return (
-				<svg {...props}>
-					<path d="m12 3-1.9 5.8H4.4L10 13.2 8.1 19 12 15.4 15.9 19 14 13.2l5.6-4.4h-6.1L12 3Z" />
-				</svg>
-			);
 		case "provenance":
 			return (
 				<svg {...props}>
@@ -241,24 +217,64 @@ function CheckIcon() {
 	);
 }
 
+function MenuIcon({ open }: { open: boolean }) {
+	return (
+		<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+			{open ? (
+				<>
+					<path d="M6 6l12 12" />
+					<path d="M18 6 6 18" />
+				</>
+			) : (
+				<>
+					<path d="M4 7h16" />
+					<path d="M4 12h16" />
+					<path d="M4 17h16" />
+				</>
+			)}
+		</svg>
+	);
+}
+
 export function HomeScreen() {
 	const { user, loading, logout } = useAuth();
+	const [menuOpen, setMenuOpen] = useState(false);
+	const menuId = useId();
+
+	useEffect(() => {
+		if (!menuOpen) return;
+		const onKey = (event: KeyboardEvent) => {
+			if (event.key === "Escape") setMenuOpen(false);
+		};
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, [menuOpen]);
+
+	const closeMenu = () => setMenuOpen(false);
 
 	return (
 		<div className="home-page">
 			<header className="home-header">
 				<div className="home-header-inner">
-					<Link href="/" className="home-logo" aria-label={APP_NAME}>
+					<Link href="/" className="home-logo" aria-label={APP_NAME} onClick={closeMenu}>
 						<BrandLogo height={56} className="home-logo-img" priority />
 					</Link>
 
-					<nav className="home-header-actions" aria-label="Account">
+					<nav className="home-header-nav" aria-label="Page sections">
+						{NAV_LINKS.map((link) => (
+							<a key={link.href} href={link.href} className="home-header-nav-link">
+								{link.label}
+							</a>
+						))}
+					</nav>
+
+					<div className="home-header-actions">
 						{loading ? (
 							<span className="home-header-muted">Loading…</span>
 						) : user ? (
 							<>
 								<span className="home-header-muted home-header-user">{user.name}</span>
-								<Link href="/dashboard" className="home-header-link home-header-link-strong">
+								<Link href="/dashboard" className="home-btn home-btn-primary home-header-cta">
 									Dashboard
 								</Link>
 								<button type="button" className="home-header-link" onClick={() => logout(false)}>
@@ -275,8 +291,58 @@ export function HomeScreen() {
 								</Link>
 							</>
 						)}
-					</nav>
+
+						<button
+							type="button"
+							className="home-menu-toggle"
+							aria-expanded={menuOpen}
+							aria-controls={menuId}
+							aria-label={menuOpen ? "Close menu" : "Open menu"}
+							onClick={() => setMenuOpen((open) => !open)}
+						>
+							<MenuIcon open={menuOpen} />
+						</button>
+					</div>
 				</div>
+
+				{menuOpen ? (
+					<div className="home-mobile-menu" id={menuId}>
+						<nav className="home-mobile-nav" aria-label="Mobile sections">
+							{NAV_LINKS.map((link) => (
+								<a key={link.href} href={link.href} className="home-mobile-nav-link" onClick={closeMenu}>
+									{link.label}
+								</a>
+							))}
+						</nav>
+						{!loading && !user ? (
+							<div className="home-mobile-actions">
+								<Link href="/login" className="home-btn home-btn-ghost-dark" onClick={closeMenu}>
+									Sign in
+								</Link>
+								<Link href="/register" className="home-btn home-btn-primary" onClick={closeMenu}>
+									Get Started
+								</Link>
+							</div>
+						) : null}
+						{!loading && user ? (
+							<div className="home-mobile-actions">
+								<Link href="/dashboard" className="home-btn home-btn-primary" onClick={closeMenu}>
+									Open dashboard
+								</Link>
+								<button
+									type="button"
+									className="home-btn home-btn-ghost-dark"
+									onClick={() => {
+										closeMenu();
+										logout(false);
+									}}
+								>
+									Sign out
+								</button>
+							</div>
+						) : null}
+					</div>
+				) : null}
 			</header>
 
 			<section className="home-hero" aria-label="Introduction">
@@ -297,14 +363,27 @@ export function HomeScreen() {
 						<div
 							className="home-hero-actions home-hero-animate home-hero-animate-4"
 							role="group"
-							aria-label="Contact"
+							aria-label="Get started"
 						>
-							<a href={PILOT_MAILTO} className="home-btn home-btn-light">
-								Request a pilot
-							</a>
-							<a href={DEMO_MAILTO} className="home-btn home-btn-ghost-light">
-								Book a demo
-							</a>
+							{user ? (
+								<>
+									<Link href="/dashboard" className="home-btn home-btn-light home-btn-lg">
+										Open dashboard
+									</Link>
+									<a href="#overview" className="home-btn home-btn-ghost-light home-btn-lg">
+										Explore platform
+									</a>
+								</>
+							) : (
+								<>
+									<Link href="/register" className="home-btn home-btn-light home-btn-lg">
+										Get Started
+									</Link>
+									<a href={PILOT_MAILTO} className="home-btn home-btn-ghost-light home-btn-lg">
+										Request a pilot
+									</a>
+								</>
+							)}
 						</div>
 					</div>
 				</div>
@@ -314,7 +393,7 @@ export function HomeScreen() {
 				<div className="home-section-inner home-split">
 					<div className="home-split-copy home-reveal-delay">
 						<p className="home-kicker">Overview</p>
-						<h2 className="home-section-title">Governed AI Workspace for Higher Education</h2>
+						<h2 className="home-section-title">Governed AI workspace for higher education</h2>
 						<p className="home-section-lead">
 							{APP_NAME} brings research, teaching and learning into a single academic workspace designed
 							specifically for higher education. Instead of open-ended prompting, users work through structured
@@ -335,65 +414,84 @@ export function HomeScreen() {
 						{/* eslint-disable-next-line @next/next/no-img-element */}
 						<img
 							src="/images/feature-workflows.png?v=20260730"
-							alt="Students and lecturers working in a Nigerian higher education research workspace"
+							alt="Students and lecturers working in a higher education research workspace"
 						/>
 					</figure>
 				</div>
 			</section>
 
 			<section className="home-section home-section-soft" id="different-by-design">
-				<div className="home-section-inner home-prose">
-					<p className="home-kicker">Approach</p>
-					<h2 className="home-section-title">Designed for Universities. Different by Design.</h2>
-					<div className="home-prose-body">
-						<p>Most AI chatbots begin with an empty prompt box.</p>
-						<p>
-							That simple design encourages users to paste exam scripts, unpublished research, participant data
-							and confidential university documents into AI systems the institution does not control.
+				<div className="home-section-inner">
+					<header className="home-section-intro home-section-intro-center">
+						<p className="home-kicker">Approach</p>
+						<h2 className="home-section-title">Designed for universities. Different by design.</h2>
+						<p className="home-section-lead">
+							Most AI tools start with a blank prompt. {APP_NAME} starts with structured academic work —
+							so confidential research stays inside a governed environment.
 						</p>
-						<p>{APP_NAME} takes a different approach.</p>
-						<p>
-							Students, lecturers and researchers work through guided academic workflows rather than blank
-							conversations. Research activities are built around trusted academic sources and purpose-designed
-							research actions, reducing the need to expose confidential institutional information.
-						</p>
-						<p className="home-prose-emphasis">The result is a safer AI experience for higher education.</p>
+					</header>
+					<div className="home-compare">
+						<article className="home-compare-col home-compare-muted">
+							<p className="home-compare-label">Typical AI chatbots</p>
+							<ul>
+								<li>Empty prompt box with no academic structure</li>
+								<li>Easy to paste exams, unpublished research and confidential data</li>
+								<li>Institution has little visibility or control</li>
+							</ul>
+						</article>
+						<article className="home-compare-col home-compare-accent">
+							<p className="home-compare-label">{APP_NAME}</p>
+							<ul>
+								<li>Guided workflows for research, teaching and learning</li>
+								<li>Grounded in trusted scholarly sources</li>
+								<li>Safer AI use with institutional oversight built in</li>
+							</ul>
+						</article>
 					</div>
+					<p className="home-compare-result">The result is a safer AI experience for higher education.</p>
 				</div>
 			</section>
 
 			<section className="home-section" id="workflows">
-				<div className="home-section-inner home-split home-split-reverse">
-					<figure className="home-media">
-						{/* eslint-disable-next-line @next/next/no-img-element */}
-						<img
-							src="/images/feature-portal.png?v=20260730"
-							alt="Academic workflows guiding research from literature review to thesis writing"
-						/>
-					</figure>
-					<div className="home-split-copy">
-						<p className="home-kicker">Workflows</p>
-						<h2 className="home-section-title">Academic Workflows</h2>
-						<p className="home-section-lead">
-							Purpose-built workflows guide users through every stage of academic work.
-						</p>
-						<ul className="home-workflow-list">
-							{WORKFLOWS.map((workflow) => (
-								<li key={workflow}>{workflow}</li>
-							))}
-						</ul>
-					</div>
+				<div className="home-section-inner">
+					<header className="home-section-intro home-section-intro-row">
+						<div>
+							<p className="home-kicker">Workflows</p>
+							<h2 className="home-section-title">Academic workflows</h2>
+							<p className="home-section-lead">
+								Purpose-built workflows guide users through every stage of academic work — from first
+								literature search to final citation audit.
+							</p>
+						</div>
+						<figure className="home-media home-media-wide">
+							{/* eslint-disable-next-line @next/next/no-img-element */}
+							<img
+								src="/images/feature-portal.png?v=20260730"
+								alt="Academic workflows guiding research from literature review to thesis writing"
+							/>
+						</figure>
+					</header>
+					<ol className="home-workflow-grid">
+						{WORKFLOWS.map((workflow, index) => (
+							<li key={workflow}>
+								<span className="home-workflow-num" aria-hidden>
+									{String(index + 1).padStart(2, "0")}
+								</span>
+								<span className="home-workflow-name">{workflow}</span>
+							</li>
+						))}
+					</ol>
 				</div>
 			</section>
 
 			<section className="home-section home-section-soft" id="roles">
 				<div className="home-section-inner">
-					<header className="home-section-intro">
+					<header className="home-section-intro home-section-intro-center">
 						<p className="home-kicker">Roles</p>
-						<h2 className="home-section-title">Built for Every Academic Role</h2>
+						<h2 className="home-section-title">Built for every academic role</h2>
 						<p className="home-section-lead">
 							Whether you&apos;re teaching a class, supervising research or writing a dissertation, {APP_NAME}{" "}
-							provides AI tools designed around the way higher education works.
+							provides tools designed around the way higher education works.
 						</p>
 					</header>
 					<div className="home-roles">
@@ -412,31 +510,35 @@ export function HomeScreen() {
 
 			<section className="home-section" id="features">
 				<div className="home-section-inner">
-					<header className="home-section-intro home-section-intro-row">
-						<div>
-							<p className="home-kicker">Capabilities</p>
-							<h2 className="home-section-title">Four Capabilities, One Governed Environment</h2>
-							<p className="home-section-lead">
-								GARIL AI brings research, teaching, supervision and oversight into a single academic workspace,
-								where AI supports the work while students keep ownership of their ideas, lecturers keep academic
-								judgement, and the University keeps institutional oversight.
-							</p>
-						</div>
-						<figure className="home-media home-media-wide">
-							{/* eslint-disable-next-line @next/next/no-img-element */}
-							<img
-								src="/images/feature-agent.png?v=20260730"
-								alt="Researchers reviewing scholarly literature with AI-supported academic workflows"
-							/>
-						</figure>
+					<header className="home-section-intro home-section-intro-center">
+						<p className="home-kicker">Capabilities</p>
+						<h2 className="home-section-title">Four capabilities, one governed environment</h2>
+						<p className="home-section-lead">
+							Research, teaching, supervision and oversight in one workspace — students keep ownership of
+							their ideas, lecturers keep academic judgement, and the university keeps institutional
+							oversight.
+						</p>
 					</header>
 
+					<figure className="home-media home-media-banner">
+						{/* eslint-disable-next-line @next/next/no-img-element */}
+						<img
+							src="/images/feature-agent.png?v=20260730"
+							alt="Researchers reviewing scholarly literature with AI-supported academic workflows"
+						/>
+					</figure>
+
 					<div className="home-capabilities">
-						{PLATFORM_FEATURES.map((feature) => (
+						{PLATFORM_FEATURES.map((feature, index) => (
 							<article key={feature.title} className="home-capability">
-								<span className="home-capability-icon" aria-hidden>
-									<FeatureIcon name={feature.icon} />
-								</span>
+								<div className="home-capability-head">
+									<span className="home-capability-icon" aria-hidden>
+										<FeatureIcon name={feature.icon} />
+									</span>
+									<span className="home-capability-index" aria-hidden>
+										{String(index + 1).padStart(2, "0")}
+									</span>
+								</div>
 								<div>
 									<h3>{feature.title}</h3>
 									<p>{feature.description}</p>
@@ -461,13 +563,13 @@ export function HomeScreen() {
 				<div className="home-section-inner home-split">
 					<div className="home-split-copy">
 						<p className="home-kicker">Institutions</p>
-						<h2 className="home-section-title">Built with Universities in Mind</h2>
+						<h2 className="home-section-title">Built with universities in mind</h2>
 						<p className="home-section-lead">
-							{APP_NAME} helps institutions move beyond AI policies by providing practical tools that support AI
-							use across research, instruction and learning.
+							{APP_NAME} helps institutions move beyond AI policies with practical tools that support AI use
+							across research, instruction and learning.
 						</p>
 						<p className="home-section-lead home-section-lead-spaced">Institutional administrators can:</p>
-						<ul className="home-checklist">
+						<ul className="home-checklist home-checklist-grid">
 							{INSTITUTION_POINTS.map((point) => (
 								<li key={point}>
 									<span className="home-checklist-icon" aria-hidden>
@@ -489,8 +591,9 @@ export function HomeScreen() {
 			</section>
 
 			<section className="home-band" id="purpose">
-				<div className="home-section-inner home-band-inner">
-					<h2 className="home-band-title">More Than an AI Chatbot</h2>
+				<div className="home-section-inner home-band-inner home-band-purpose">
+					<p className="home-band-kicker">Purpose</p>
+					<h2 className="home-band-title">More than an AI chatbot</h2>
 					<div className="home-band-copy">
 						<p>{APP_NAME} wasn&apos;t built to answer general questions.</p>
 						<p>It was built to support the work that happens every day in universities.</p>
@@ -506,7 +609,10 @@ export function HomeScreen() {
 				<div className="home-section-inner home-faq">
 					<header className="home-section-intro home-faq-intro">
 						<p className="home-kicker">Support</p>
-						<h2 className="home-section-title">Frequently Asked Questions</h2>
+						<h2 className="home-section-title">Frequently asked questions</h2>
+						<p className="home-section-lead">
+							Quick answers about how {APP_NAME} supports research, teaching and institutional governance.
+						</p>
 					</header>
 					<div className="home-faq-list">
 						{FAQS.map((faq) => (
@@ -519,15 +625,20 @@ export function HomeScreen() {
 				</div>
 			</section>
 
-			<section className="home-band" id="pilot" aria-labelledby="home-pilot-heading">
-				<div className="home-section-inner home-band-inner">
-					<h2 className="home-band-title" id="home-pilot-heading">
-						Bring governed AI to your institution
-					</h2>
-					<p className="home-band-lead">Talk to us about a structured pilot for your university.</p>
+			<section className="home-band home-band-cta" id="pilot" aria-labelledby="home-pilot-heading">
+				<div className="home-section-inner home-band-inner home-band-cta-inner">
+					<div>
+						<h2 className="home-band-title" id="home-pilot-heading">
+							Bring governed AI to your institution
+						</h2>
+						<p className="home-band-lead">Talk to us about a structured pilot for your university.</p>
+					</div>
 					<div className="home-band-actions">
-						<a href={PILOT_MAILTO} className="home-btn home-btn-light">
+						<a href={PILOT_MAILTO} className="home-btn home-btn-light home-btn-lg">
 							Request a pilot
+						</a>
+						<a href={DEMO_MAILTO} className="home-btn home-btn-ghost-light home-btn-lg">
+							Book a demo
 						</a>
 					</div>
 				</div>

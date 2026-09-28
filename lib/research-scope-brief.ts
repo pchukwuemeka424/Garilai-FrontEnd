@@ -817,7 +817,13 @@ export function getScopeRailHeadings(scope: string | null | undefined): string[]
 export function getScopeChecklistItems(scope: string | null | undefined): string[] {
 	const profile = getScopeProfile(scope);
 	const items = [...profile.sectionJobs.map((job) => job.replace(/^\*\*|\*\*$/g, "").replace(/\*\*/g, ""))];
-	const citeHint = `${profile.minDistinctCites}+ distinct cited sources · ${profile.wordTarget.min.toLocaleString()}–${profile.wordTarget.max.toLocaleString()} words`;
+	const introBudget =
+		profile.sectionWordTargets["Introduction"] ??
+		profile.sectionWordTargets["Chapter One: Introduction"];
+	const introHint = introBudget
+		? ` · Intro ${introBudget.min.toLocaleString()}–${introBudget.max.toLocaleString()} words`
+		: "";
+	const citeHint = `${profile.minDistinctCites}+ distinct cited sources · ${profile.wordTarget.min.toLocaleString()}–${profile.wordTarget.max.toLocaleString()} words${introHint}`;
 	return [citeHint, ...items];
 }
 

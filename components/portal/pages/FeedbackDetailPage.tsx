@@ -28,6 +28,7 @@ import {
 } from "@/components/portal/features/feedback/student-feedback";
 import { apiFetch } from "@/lib/portal-api";
 import { cn } from "@/lib/portal/cn";
+import { AnnotatedHtmlWithComments } from "@/components/portal/editor/AnnotatedHtmlWithComments";
 import { RemarkHtml } from "@/components/portal/editor/remark-html";
 
 function StatusChip({ status }: { status: "approved" | "needs_revision" }) {
@@ -244,15 +245,10 @@ export default function StudentFeedbackDetailPage() {
                 Where to work — annotated corrections
               </h2>
               <div className="rounded-lg border border-border bg-white px-4 py-4">
-                <div
-                  className="review-highlight-content review-annotated-view prose prose-sm max-w-none text-foreground/80"
-                  dangerouslySetInnerHTML={{
-                    __html: comment.annotatedHtml,
-                  }}
+                <AnnotatedHtmlWithComments
+                  html={comment.annotatedHtml}
+                  legend="Yellow = Weaknesses · Orange = Needs citation · Comments appear in the right margin"
                 />
-                <p className="mt-3 text-[11px] text-foreground/45">
-                  Yellow = Weaknesses · Orange = Needs citation
-                </p>
               </div>
             </section>
           ) : null}

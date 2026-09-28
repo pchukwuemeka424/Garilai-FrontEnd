@@ -18,7 +18,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useGarilSocket } from "@/hooks/useGarilSocket";
 import {
 	downloadResearchPaper,
-	extractPaperTitle,
+	resolvePaperDisplayTitle,
 	loadAllSavedPapers,
 	removeAllSavedPapers,
 	removeSavedPaper,
@@ -174,7 +174,7 @@ export function GarilApp({ layout = "aula" }: { layout?: "aula" | "student" }) {
 	const paperTokenUsage = lastAssistantMessage?.tokenUsage;
 	const activePaperContent = viewingSaved?.content ?? paperContent;
 	const formattedPaperContent = activePaperContent ? formatResearchPaperReferences(activePaperContent) : "";
-	const paperTitle = extractPaperTitle(formattedPaperContent || activePaperContent, paperTopic || "Research paper");
+	const paperTitle = resolvePaperDisplayTitle(formattedPaperContent || activePaperContent, paperTopic || "Research paper");
 	const paperReady = Boolean(formattedPaperContent) && !isBusy && !backgroundJobRunning;
 	const isStudent = layout === "student";
 	const isResearchPaperRoute = isResearchWorkspacePath(pathname);
@@ -309,7 +309,7 @@ export function GarilApp({ layout = "aula" }: { layout?: "aula" | "student" }) {
 		const content = viewingSaved?.content ?? paperContent;
 		if (!content) return;
 		const topic = viewingSaved?.topic ?? paperTopic;
-		const title = extractPaperTitle(content, topic || "research-paper");
+		const title = resolvePaperDisplayTitle(content, topic || "research-paper");
 		void downloadMarkdownAsPdf(formatResearchPaperReferences(content), title, {
 			...paperMeta,
 			fallbackTopic: topic || paperMeta.fallbackTopic,
@@ -326,7 +326,7 @@ export function GarilApp({ layout = "aula" }: { layout?: "aula" | "student" }) {
 		(id: string) => {
 			const paper = savedPapers.find((p) => p.id === id);
 			const title = paper
-				? extractPaperTitle(paper.content, paper.topic).slice(0, 120)
+				? resolvePaperDisplayTitle(paper.content, paper.topic).slice(0, 120)
 				: "Saved research";
 			setPendingDelete({ mode: "one", id, title });
 		},
@@ -932,7 +932,7 @@ export function GarilApp({ layout = "aula" }: { layout?: "aula" | "student" }) {
 								<div className="chat-mode-banner-copy">
 									<span className="chat-mode-banner-label">Library</span>
 									<p className="chat-mode-banner-text">
-										{extractPaperTitle(viewingSaved.content, viewingSaved.topic)}
+										{resolvePaperDisplayTitle(viewingSaved.content, viewingSaved.topic)}
 									</p>
 								</div>
 								<div className="chat-mode-banner-actions">

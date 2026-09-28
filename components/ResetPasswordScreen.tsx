@@ -46,7 +46,7 @@ function ResetPasswordForm() {
 			});
 			const data = (await res.json()) as { message?: string; error?: string };
 			if (!res.ok) throw new Error(data.error ?? "Unable to reset password.");
-			setMessage(data.message ?? "Password updated.");
+			setMessage(data.message ?? "Password updated. You can sign in with your new password.");
 			setTimeout(() => router.push("/login"), 1500);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : String(err));
@@ -58,7 +58,7 @@ function ResetPasswordForm() {
 	return (
 		<AuthSplitLayout
 			title="Reset password"
-			subtitle="Choose a new password for your account."
+			subtitle="Choose a new password for your Garil AI account. You’ll be redirected to sign in when done."
 			footer={
 				<p>
 					<Link href="/forgot-password" className="login-link">
@@ -114,12 +114,12 @@ function ResetPasswordForm() {
 
 					{message && (
 						<div className="login-alert login-alert-success" role="status">
-							{message}
+							{message} Redirecting to sign in…
 						</div>
 					)}
 
 					<button type="submit" className="login-btn" disabled={submitting || Boolean(message)}>
-						{submitting ? "Updating…" : "Update password"}
+						{submitting ? "Updating…" : message ? "Password updated" : "Update password"}
 					</button>
 				</form>
 			)}

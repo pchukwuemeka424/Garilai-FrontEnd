@@ -103,7 +103,7 @@ export const AULA_SUPERVISION_ITEM: AulaNavItem = {
 	id: "supervision",
 	label: "Supervision Assistant",
 	href: "/supervision",
-	description: "Assignments, projects, supervisees, reviews, and analytics.",
+	description: "Assignment and project supervision workspaces.",
 };
 
 const SUPERVISION_ACTIVE_PREFIXES = [
@@ -261,6 +261,20 @@ export function aulaTopbarContext(pathname: string): AulaTopbarContext {
 		};
 	}
 
+	if (
+		pathname === "/supervision/assignments" ||
+		pathname === "/supervision/assignments/"
+	) {
+		return {
+			title: "Manage assignments",
+			tagline: "Create, edit, and delete assignment briefs",
+			cta: {
+				label: "New assignment",
+				href: `/assignments/new?return=${encodeURIComponent("/supervision/assignments")}`,
+			},
+		};
+	}
+
 	if (pathname === "/notifications" || pathname.startsWith("/notifications/")) {
 		return {
 			title: "Notifications",
@@ -287,15 +301,19 @@ export function aulaTopbarContext(pathname: string): AulaTopbarContext {
 	if (activeItem.id === "dashboard") return AULA_TOPBAR_DEFAULT;
 
 	const onAssignmentsList = pathname === "/assignments" || pathname === "/assignments/";
+	const onAssignmentCreate =
+		pathname === "/assignments/new" || pathname === "/assignments/new/";
 	const onSupervision = pathname === "/supervision" || pathname.startsWith("/supervision/");
 
 	return {
 		title: topbarTitleForItem(activeItem),
 		tagline: activeItem.description ?? AULA_TOPBAR_DEFAULT.tagline,
 		cta:
-			onSupervision || (activeItem.id === "assignments" && onAssignmentsList)
+			onSupervision || onAssignmentCreate
 				? undefined
-				: topbarCtaForItem(activeItem),
+				: activeItem.id === "assignments" && onAssignmentsList
+					? { label: "New assignment", href: "/assignments/new" }
+					: topbarCtaForItem(activeItem),
 	};
 }
 

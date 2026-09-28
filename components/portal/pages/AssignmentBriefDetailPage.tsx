@@ -8,6 +8,8 @@ import {
   ArrowRight,
   Calendar,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   ClipboardList,
   Clock3,
   Download,
@@ -33,6 +35,8 @@ import {
 import { apiFetch } from "@/lib/portal-api";
 import { exportSubmissionsToExcel } from "@/lib/portal/submissions-xlsx";
 import { cn } from "@/lib/portal/cn";
+
+const PAGE_SIZE = 10;
 
 type SubmissionRow = {
   _id: string;
@@ -146,6 +150,7 @@ export default function AssignmentBriefDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<FilterKey>("all");
+  const [page, setPage] = useState(1);
   const [briefModalOpen, setBriefModalOpen] = useState(false);
 
   useEffect(() => {
@@ -255,6 +260,20 @@ export default function AssignmentBriefDetailPage() {
       return bTime - aTime;
     });
   }, [submissions, filter, query]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [query, filter]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageStart = filtered.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE;
+  const pageEnd = Math.min(pageStart + PAGE_SIZE, filtered.length);
+  const pagedSubmissions = useMemo(
+    () => filtered.slice(pageStart, pageEnd),
+    [filtered, pageStart, pageEnd],
+  );
+  const showPagination = filtered.length > PAGE_SIZE;
 
   async function onDelete() {
     setDeleting(true);
@@ -534,103 +553,141 @@ export default function AssignmentBriefDetailPage() {
             </Button>
           </div>
         ) : (
-          <div className="portal-students-table-wrap">
-            <table className="portal-students-table">
-              <thead>
-                <tr>
-                  <th>Student</th>
-                  <th>Work</th>
-                  <th>Status</th>
-                  <th>Score</th>
-                  <th>Activity</th>
-                  <th>
-                    <span className="sr-only">Open</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((row) => {
-                  const status = submissionTone(row);
-                  const studentName = row.student?.name || "Student";
-                  const studentId = row.student?.id || row.studentId;
-                  const person = (
-                    <>
-                      <Avatar
-                        name={studentName}
-                        className="size-10 bg-[#ececf8] text-[#0D0B61]"
-                      />
-                      <span>
-                        <span className="portal-students-name">{studentName}</span>
-                        <span className="portal-students-email">
-                          {row.student?.email ||
-                            row.studentMatNo ||
-                            "No email on file"}
+          <>
+            <div className="portal-students-table-wrap">
+              <table className="portal-students-table">
+                <thead>
+                  <tr>
+                    <th>Student</th>
+                    <th>Work</th>
+                    <th>Status</th>
+                    <th>Score</th>
+                    <th>Activity</th>
+                    <th>
+                      <span className="sr-only">Open</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagedSubmissions.map((row) => {
+                    const status = submissionTone(row);
+                    const studentName = row.student?.name || "Student";
+                    const studentId = row.student?.id || row.studentId;
+                    const person = (
+                      <>
+                        <Avatar
+                          name={studentName}
+                          className="size-10 bg-[#ececf8] text-[#0D0B61]"
+                        />
+                        <span>
+                          <span className="portal-students-name">{studentName}</span>
+                          <span className="portal-students-email">
+                            {row.student?.email ||
+                              row.studentMatNo ||
+                              "No email on file"}
+                          </span>
                         </span>
-                      </span>
-                    </>
-                  );
-                  return (
-                    <tr key={row._id}>
-                      <td>
-                        {studentId ? (
-                          <Link
-                            href={`/students/${studentId}`}
-                            className="portal-students-person"
-                          >
-                            {person}
-                          </Link>
-                        ) : (
-                          <span className="portal-students-person">{person}</span>
-                        )}
-                      </td>
-                      <td>
-                        <p className="portal-students-work-title">
-                          {row.title || "Untitled"}
-                        </p>
-                        <p className="portal-students-work-meta">
-                          {row.studentMatNo || "No mat no"}
-                          {row.courseName ? ` · ${row.courseName}` : ""}
-                          {row.courseYear ? ` · ${row.courseYear}` : ""}
-                        </p>
-                      </td>
-                      <td>
-                        <span
-                          className={cn(
-                            "portal-students-status",
-                            `is-${status.tone}`,
-                          )}
-                        >
-                          {status.label}
-                        </span>
-                      </td>
-                      <td>
-                        <p className="portal-students-work-title">
-                          {typeof row.score === "number"
-                            ? `${row.score}/${row.maxScore}`
-                            : "—"}
-                        </p>
-                      </td>
-                      <td className="portal-students-activity">
-                        {formatRelative(row.updatedAt)}
-                      </td>
-                      <td className="portal-students-action">
-                        {row.reviewHref ? (
-                          <Button asChild size="sm">
-                            <Link href={row.reviewHref.replace(/^\/projects(?=\/|$)/, "/supervision/projects")}>
-                              Open
-                              <ArrowRight className="size-3.5" />
+                      </>
+                    );
+                    return (
+                      <tr key={row._id}>
+                        <td>
+                          {studentId ? (
+                            <Link
+                              href={`/students/${studentId}`}
+                              className="portal-students-person"
+                            >
+                              {person}
                             </Link>
-                          </Button>
-                        ) : (
-                          <span className="portal-students-email">No page</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                          ) : (
+                            <span className="portal-students-person">{person}</span>
+                          )}
+                        </td>
+                        <td>
+                          <p className="portal-students-work-title">
+                            {row.title || "Untitled"}
+                          </p>
+                          <p className="portal-students-work-meta">
+                            {row.studentMatNo || "No mat no"}
+                            {row.courseName ? ` · ${row.courseName}` : ""}
+                            {row.courseYear ? ` · ${row.courseYear}` : ""}
+                          </p>
+                        </td>
+                        <td>
+                          <span
+                            className={cn(
+                              "portal-students-status",
+                              `is-${status.tone}`,
+                            )}
+                          >
+                            {status.label}
+                          </span>
+                        </td>
+                        <td>
+                          <p className="portal-students-work-title">
+                            {typeof row.score === "number"
+                              ? `${row.score}/${row.maxScore}`
+                              : "—"}
+                          </p>
+                        </td>
+                        <td className="portal-students-activity">
+                          {formatRelative(row.updatedAt)}
+                        </td>
+                        <td className="portal-students-action">
+                          {row.reviewHref ? (
+                            <Button asChild size="sm">
+                              <Link href={row.reviewHref.replace(/^\/projects(?=\/|$)/, "/supervision/projects")}>
+                                Open
+                                <ArrowRight className="size-3.5" />
+                              </Link>
+                            </Button>
+                          ) : (
+                            <span className="portal-students-email">No page</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {showPagination ? (
+              <nav
+                className="sv-assignments-pagination"
+                aria-label="Submissions pagination"
+              >
+                <p className="sv-assignments-pagination-meta">
+                  {pageStart + 1}–{pageEnd} of {filtered.length}
+                </p>
+                <div className="sv-assignments-pagination-controls">
+                  <button
+                    type="button"
+                    className="sv-assignments-page-btn"
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={safePage <= 1}
+                    aria-label="Previous page"
+                  >
+                    <ChevronLeft className="size-4" />
+                    Prev
+                  </button>
+                  <span className="sv-assignments-page-indicator">
+                    Page {safePage} of {totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    className="sv-assignments-page-btn"
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={safePage >= totalPages}
+                    aria-label="Next page"
+                  >
+                    Next
+                    <ChevronRight className="size-4" />
+                  </button>
+                </div>
+              </nav>
+            ) : null}
+          </>
         )}
       </section>
 
@@ -647,7 +704,7 @@ export default function AssignmentBriefDetailPage() {
             aria-label="Close dialog"
             onClick={() => setBriefModalOpen(false)}
           />
-          <div className="portal-review-modal-panel">
+          <div className="portal-review-modal-panel is-plain">
             <div className="portal-review-modal-head">
               <div className="min-w-0">
                 <h2 id="assignment-brief-modal-title">Assignment brief</h2>
@@ -661,23 +718,15 @@ export default function AssignmentBriefDetailPage() {
                     : ""}
                 </p>
               </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <Button asChild size="sm" variant="outline">
-                  <Link href={editHref}>
-                    <Pencil className="size-3.5" />
-                    Edit brief
-                  </Link>
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  aria-label="Close"
-                  onClick={() => setBriefModalOpen(false)}
-                >
-                  <X className="size-4" />
-                </Button>
-              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                aria-label="Close"
+                onClick={() => setBriefModalOpen(false)}
+              >
+                <X className="size-4" />
+              </Button>
             </div>
             <div className="portal-review-modal-body">
               {!hasBriefBody ? (

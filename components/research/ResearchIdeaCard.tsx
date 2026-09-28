@@ -8,6 +8,7 @@ import { IconEdit } from "@/components/ui/ButtonIcon";
 import { useAuth } from "@/hooks/useAuth";
 import { saveChatCitationStyle } from "@/lib/chat-research-citations";
 import type { CitationStyle } from "@/lib/citation-styles";
+import { hasAcceptedResearchAiNotice, RESEARCH_AI_NOTICE_REQUIRED_ERROR } from "@/lib/research-ai-notice";
 import { stageOutlinePageContext } from "@/lib/research-outline-context";
 import { stagePaperSources } from "@/lib/research-paper-sources";
 import { researchOutlinePagePath } from "@/lib/research-outline-routes";
@@ -57,6 +58,7 @@ export function ResearchIdeaCard({
 	const hasTokens = studentHasResearchTokens(user?.tokenQuota, user?.role);
 	const [copied, setCopied] = useState(false);
 	const [showCitationStyleModal, setShowCitationStyleModal] = useState(false);
+	const [aiNoticeError, setAiNoticeError] = useState(false);
 	const [outline] = useState<string | null>(() => loadSavedOutline(idea, discipline, topic, scope));
 
 	const ideaText = formatIdeaForChat(idea, topic);
@@ -125,6 +127,11 @@ export function ResearchIdeaCard({
 			event.preventDefault();
 			event.stopPropagation();
 			if (!hasTokens) return;
+			if (!hasAcceptedResearchAiNotice()) {
+				setAiNoticeError(true);
+				return;
+			}
+			setAiNoticeError(false);
 			setShowCitationStyleModal(true);
 		},
 		[hasTokens],
@@ -287,6 +294,11 @@ export function ResearchIdeaCard({
 								{getGenerateResearchLabel(scope)}
 							</button>
 						</div>
+						{aiNoticeError ? (
+							<p className="research-ai-notice-error research-ai-notice-error-inline" role="alert">
+								{RESEARCH_AI_NOTICE_REQUIRED_ERROR} Open Research Assistant to accept the notice.
+							</p>
+						) : null}
 						<div className="research-idea-actions-primary">
 							<button
 								type="button"

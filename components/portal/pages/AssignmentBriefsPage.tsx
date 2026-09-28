@@ -1,23 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  AlertTriangle,
   ArrowRight,
   CalendarDays,
-  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   ClipboardList,
-  FileText,
   LayoutGrid,
-  Layers,
-  List,
   Plus,
+  Rows3,
   Search,
   Users,
-  type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/portal/ui/button";
+import { Skeleton } from "@/components/portal/ui/skeleton";
 import { apiFetch } from "@/lib/portal-api";
 import { cn } from "@/lib/portal/cn";
 
@@ -35,8 +33,12 @@ type BriefRow = {
   submissionCount?: number;
 };
 
-type FilterKey = "all" | "published" | "draft" | "upcoming" | "overdue";
-type ViewMode = "list" | "grid";
+type ViewMode = "grid" | "list";
+type StatusFilter = "all" | "published" | "draft";
+type Tone = "ok" | "topic" | "risk" | "mid";
+
+const VIEW_STORAGE_KEY = "sv-assignments-view";
+const PAGE_SIZE = 10;
 
 function daysUntil(value?: string | null) {
   if (!value) return null;
@@ -47,14 +49,6 @@ function daysUntil(value?: string | null) {
   const end = new Date(due);
   end.setHours(0, 0, 0, 0);
   return Math.round((end.getTime() - start.getTime()) / 86_400_000);
-}
-
-function dueTone(days: number | null) {
-  if (days == null) return "muted" as const;
-  if (days < 0) return "risk" as const;
-  if (days <= 3) return "soon" as const;
-  if (days <= 7) return "soon" as const;
-  return "ok" as const;
 }
 
 function dueLabel(days: number | null) {
@@ -72,103 +66,43 @@ function formatDueDate(value?: string | null) {
   return d.toLocaleDateString(undefined, { dateStyle: "medium" });
 }
 
-const DUE_TEXT: Record<ReturnType<typeof dueTone>, string> = {
-  muted: "text-[#64748b]",
-  risk: "text-[#be123c]",
-  soon: "text-[#c2410c]",
-  ok: "text-[#0f172a]",
-};
-
-const DUE_CHIP: Record<ReturnType<typeof dueTone>, string> = {
-  muted: "bg-[#475569] text-white",
-  risk: "bg-[#e11d48] text-white",
-  soon: "bg-[#ea580c] text-white",
-  ok: "bg-[#059669] text-white",
-};
-
-const TAB_STYLES: Record<
-  FilterKey,
-  {
-    icon: LucideIcon;
-    idle: string;
-    active: string;
-    countIdle: string;
-    countActive: string;
-  }
-> = {
-  all: {
-    icon: Layers,
-    idle: "bg-[#0D0B61] text-white opacity-80 hover:opacity-100",
-    active: "bg-[#0D0B61] text-white",
-    countIdle: "bg-white/20 text-white",
-    countActive: "bg-white text-[#0D0B61]",
-  },
-  published: {
-    icon: CheckCircle2,
-    idle: "bg-[#059669] text-white opacity-80 hover:opacity-100",
-    active: "bg-[#059669] text-white",
-    countIdle: "bg-white/20 text-white",
-    countActive: "bg-white text-[#047857]",
-  },
-  draft: {
-    icon: FileText,
-    idle: "bg-[#475569] text-white opacity-80 hover:opacity-100",
-    active: "bg-[#475569] text-white",
-    countIdle: "bg-white/20 text-white",
-    countActive: "bg-white text-[#334155]",
-  },
-  upcoming: {
-    icon: CalendarDays,
-    idle: "bg-[#ea580c] text-white opacity-80 hover:opacity-100",
-    active: "bg-[#ea580c] text-white",
-    countIdle: "bg-white/20 text-white",
-    countActive: "bg-white text-[#c2410c]",
-  },
-  overdue: {
-    icon: AlertTriangle,
-    idle: "bg-[#e11d48] text-white opacity-80 hover:opacity-100",
-    active: "bg-[#e11d48] text-white",
-    countIdle: "bg-white/20 text-white",
-    countActive: "bg-white text-[#be123c]",
-  },
-};
-
-function CreateAssignmentButton({
-  size = "default",
-  className,
-}: {
-  size?: "default" | "sm";
-  className?: string;
-}) {
-  return (
-    <Button asChild size={size} variant="success" className={className}>
-      <Link href="/assignments/new">
-        <Plus className="size-4" strokeWidth={2.25} />
-        Create Assignment
-      </Link>
-    </Button>
-  );
+function formatRelative(value?: string) {
+  if (!value) return "—";
+  const ms = Date.now() - new Date(value).getTime();
+  if (Number.isNaN(ms)) return "—";
+  const mins = Math.floor(ms / 60_000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "Yesterday";
+  if (days < 30) return `${days}d ago`;
+  return new Date(value).toLocaleDateString();
 }
 
-function AssignmentsSkeleton() {
-  return (
-    <div className="space-y-6" aria-busy="true" aria-label="Loading assignments">
-      <div className="flex items-start justify-between gap-4">
-        <div className="space-y-2">
-          <div className="h-3 w-24 rounded bg-[#e8ecf3]" />
-          <div className="h-8 w-48 rounded-lg bg-[#e8ecf3]" />
-          <div className="h-4 w-80 max-w-full rounded bg-[#eef1f6]" />
-        </div>
-        <div className="h-10 w-44 rounded-full bg-[#e8ecf3]" />
-      </div>
-      <div className="h-12 rounded-2xl bg-[#f1f5f9]" />
-      <div className="space-y-3">
-        {[1, 2, 3].map((item) => (
-          <div key={item} className="h-28 rounded-2xl border border-[#e8ecf3] bg-white" />
-        ))}
-      </div>
-    </div>
-  );
+function dueTone(days: number | null, status: BriefRow["status"]): Tone {
+  if (status === "draft") return "mid";
+  if (days == null) return "ok";
+  if (days < 0) return "risk";
+  if (days <= 7) return "topic";
+  return "ok";
+}
+
+function briefTone(brief: BriefRow): Tone {
+  return dueTone(daysUntil(brief.dueAt), brief.status);
+}
+
+function courseLine(brief: BriefRow) {
+  return [brief.courseName || "No course set", brief.courseYear]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function marksLabel(brief: BriefRow) {
+  const marks = typeof brief.maxScore === "number" ? brief.maxScore : 100;
+  const criteria = Array.isArray(brief.rubric) ? brief.rubric.length : 0;
+  return criteria > 0 ? `${marks} marks · ${criteria} criteria` : `${marks} marks`;
 }
 
 export default function SupervisorAssignmentsPage() {
@@ -176,8 +110,23 @@ export default function SupervisorAssignmentsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<FilterKey>("all");
-  const [viewMode, setViewMode] = useState<ViewMode>("list");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [page, setPage] = useState(1);
+  const [view, setView] = useState<ViewMode>("list");
+  const skipViewWrite = useRef(true);
+
+  useEffect(() => {
+    const stored = window.localStorage.getItem(VIEW_STORAGE_KEY);
+    if (stored === "list" || stored === "grid") setView(stored);
+  }, []);
+
+  useEffect(() => {
+    if (skipViewWrite.current) {
+      skipViewWrite.current = false;
+      return;
+    }
+    window.localStorage.setItem(VIEW_STORAGE_KEY, view);
+  }, [view]);
 
   useEffect(() => {
     let cancelled = false;
@@ -188,7 +137,9 @@ export default function SupervisorAssignmentsPage() {
         const list = (await apiFetch(
           "/api/v1/assignment-briefs",
         )) as BriefRow[];
-        if (!cancelled) setBriefs(Array.isArray(list) ? list : []);
+        if (!cancelled) {
+          setBriefs(Array.isArray(list) ? list : []);
+        }
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Failed to load");
@@ -206,44 +157,24 @@ export default function SupervisorAssignmentsPage() {
   const stats = useMemo(() => {
     const published = briefs.filter((b) => b.status === "published").length;
     const draft = briefs.filter((b) => b.status === "draft").length;
-    const upcoming = briefs.filter((b) => {
-      if (b.status === "draft") return false;
-      const days = daysUntil(b.dueAt);
-      return days != null && days >= 0;
-    }).length;
-    const overdue = briefs.filter((b) => {
-      if (b.status === "draft") return false;
-      const days = daysUntil(b.dueAt);
-      return days != null && days < 0;
-    }).length;
-    return {
-      total: briefs.length,
-      published,
-      draft,
-      upcoming,
-      overdue,
-    };
+    return { all: briefs.length, published, draft };
   }, [briefs]);
+
+  const filters = useMemo(
+    () =>
+      [
+        { id: "all" as const, label: "All", count: stats.all },
+        { id: "published" as const, label: "Published", count: stats.published },
+        { id: "draft" as const, label: "Drafts", count: stats.draft },
+      ] as const,
+    [stats],
+  );
 
   const filtered = useMemo(() => {
     let list = [...briefs];
 
-    if (filter === "published") {
-      list = list.filter((b) => b.status === "published");
-    } else if (filter === "draft") {
-      list = list.filter((b) => b.status === "draft");
-    } else if (filter === "upcoming") {
-      list = list.filter((b) => {
-        if (b.status === "draft") return false;
-        const days = daysUntil(b.dueAt);
-        return days != null && days >= 0;
-      });
-    } else if (filter === "overdue") {
-      list = list.filter((b) => {
-        if (b.status === "draft") return false;
-        const days = daysUntil(b.dueAt);
-        return days != null && days < 0;
-      });
+    if (statusFilter !== "all") {
+      list = list.filter((b) => b.status === statusFilter);
     }
 
     const q = query.trim().toLowerCase();
@@ -257,6 +188,9 @@ export default function SupervisorAssignmentsPage() {
     }
 
     return list.sort((a, b) => {
+      if (a.status !== b.status) {
+        return a.status === "draft" ? -1 : 1;
+      }
       const aDays = daysUntil(a.dueAt);
       const bDays = daysUntil(b.dueAt);
       if (aDays == null && bDays == null) {
@@ -266,171 +200,206 @@ export default function SupervisorAssignmentsPage() {
       if (bDays == null) return -1;
       return aDays - bDays;
     });
-  }, [briefs, filter, query]);
+  }, [briefs, query, statusFilter]);
 
-  const filters: { id: FilterKey; label: string; count: number }[] = [
-    { id: "all", label: "All", count: stats.total },
-    { id: "published", label: "Published", count: stats.published },
-    { id: "draft", label: "Draft", count: stats.draft },
-    { id: "upcoming", label: "Upcoming", count: stats.upcoming },
-    { id: "overdue", label: "Overdue", count: stats.overdue },
-  ];
+  useEffect(() => {
+    setPage(1);
+  }, [query, statusFilter]);
 
-  if (loading) return <AssignmentsSkeleton />;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageStart = filtered.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE;
+  const pageEnd = Math.min(pageStart + PAGE_SIZE, filtered.length);
+  const pagedBriefs = useMemo(
+    () => filtered.slice(pageStart, pageEnd),
+    [filtered, pageStart, pageEnd],
+  );
+  const showPagination = filtered.length > PAGE_SIZE;
+
+  if (loading) {
+    return (
+      <div className="sv-projects sv-assignments" aria-busy="true">
+        <Skeleton className="h-[22rem] rounded-2xl" />
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#0D0B61]">
-            Supervision
-          </p>
-          <h1 className="mt-1 text-[1.75rem] font-bold tracking-tight text-[#0f172a]">
-            Assignments
-          </h1>
-          <p className="mt-1.5 max-w-xl text-[0.9rem] leading-relaxed text-[#64748b]">
-            Write briefs, publish them to students, and open each assignment to
-            score submissions.
-          </p>
-        </div>
-        <CreateAssignmentButton className="shrink-0 self-start" />
-      </header>
-
+    <div className="sv-projects sv-assignments">
       {error ? (
-        <p
-          className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
-          role="alert"
-        >
+        <p className="sv-projects-error" role="alert">
           {error}
         </p>
       ) : null}
 
-      <section className="overflow-hidden rounded-2xl border border-[#e8ecf3] bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
-        <div className="flex flex-col gap-3 border-b border-[#eef1f6] bg-[#f8fafc] px-4 py-3 md:flex-row md:items-center md:justify-between">
+      <div className="sv-assignments-header">
+        <div className="sv-assignments-header-copy">
+          <h1>Assignments</h1>
+          <p>
+            All assignment briefs you have created. Open one to review
+            submissions, or create a new brief.
+          </p>
+        </div>
+        <Button asChild size="sm">
+          <Link href="/assignments/new">
+            <Plus className="size-4" />
+            New assignment
+          </Link>
+        </Button>
+      </div>
+
+      <section className="sv-projects-board">
+        <div className="sv-projects-toolbar">
           <div
-            className="flex flex-wrap gap-1.5"
+            className="sv-projects-filters"
             role="tablist"
             aria-label="Filter assignments"
           >
-            {filters.map((item) => {
-              const style = TAB_STYLES[item.id];
-              const Icon = style.icon;
-              const selected = filter === item.id;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={selected}
-                  onClick={() => setFilter(item.id)}
-                  className={cn(
-                    "inline-flex h-9 appearance-none items-center gap-1.5 rounded-full border-0 bg-clip-padding px-3.5 text-xs font-semibold shadow-none outline-none transition focus-visible:ring-2 focus-visible:ring-white/70",
-                    selected ? style.active : style.idle,
-                  )}
-                >
-                  <Icon className="size-3.5" strokeWidth={2.25} />
-                  {item.label}
-                  <span
-                    className={cn(
-                      "min-w-4 rounded-full px-1.5 py-px text-[10px] font-bold tabular-nums",
-                      selected ? style.countActive : style.countIdle,
-                    )}
-                  >
-                    {item.count}
-                  </span>
-                </button>
-              );
-            })}
+            {filters.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                role="tab"
+                aria-selected={statusFilter === item.id}
+                onClick={() => setStatusFilter(item.id)}
+                className={cn(
+                  "sv-projects-filter",
+                  statusFilter === item.id && "is-active",
+                )}
+              >
+                {item.label}
+                <span>{item.count}</span>
+              </button>
+            ))}
           </div>
-          <div className="flex items-center gap-2">
-            <label className="flex h-9 min-w-[12rem] flex-1 items-center gap-2 rounded-full border border-[#e2e8f0] bg-white px-3 text-[#94a3b8] md:max-w-xs">
-              <Search className="size-3.5 shrink-0" aria-hidden />
+
+          <div className="sv-projects-tools">
+            <label className="sv-projects-search">
+              <Search className="size-4" aria-hidden />
               <input
                 type="search"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search title or course"
                 aria-label="Search assignments"
-                className="w-full border-0 bg-transparent text-xs text-[#0f172a] outline-none placeholder:text-[#94a3b8]"
               />
             </label>
-            <div className="inline-flex h-9 items-center gap-0.5 rounded-full bg-[#ececf8] p-0.5">
+            <div className="sv-projects-view" role="group" aria-label="Layout">
               <button
                 type="button"
-                onClick={() => setViewMode("list")}
-                className={cn(
-                  "grid size-8 place-items-center rounded-full transition",
-                  viewMode === "list"
-                    ? "bg-[#0D0B61] text-white"
-                    : "bg-transparent text-[#64748b] hover:bg-[#0D0B61]/10 hover:text-[#0D0B61]",
-                )}
-                aria-label="List view"
-                aria-pressed={viewMode === "list"}
+                className={cn(view === "grid" && "is-active")}
+                onClick={() => setView("grid")}
+                aria-pressed={view === "grid"}
+                aria-label="Card view"
               >
-                <List className="size-3.5" strokeWidth={2.25} />
+                <LayoutGrid className="size-4" />
               </button>
               <button
                 type="button"
-                onClick={() => setViewMode("grid")}
-                className={cn(
-                  "grid size-8 place-items-center rounded-full transition",
-                  viewMode === "grid"
-                    ? "bg-[#2563eb] text-white"
-                    : "bg-transparent text-[#64748b] hover:bg-[#2563eb]/10 hover:text-[#2563eb]",
-                )}
-                aria-label="Grid view"
-                aria-pressed={viewMode === "grid"}
+                className={cn(view === "list" && "is-active")}
+                onClick={() => setView("list")}
+                aria-pressed={view === "list"}
+                aria-label="List view"
               >
-                <LayoutGrid className="size-3.5" strokeWidth={2.25} />
+                <Rows3 className="size-4" />
               </button>
             </div>
           </div>
         </div>
 
-        {stats.total === 0 ? (
-          <div className="px-6 py-16 text-center">
-            <span className="mx-auto grid size-14 place-items-center rounded-2xl bg-[#ececf8] text-[#0D0B61]">
+        {briefs.length === 0 ? (
+          <div className="sv-projects-empty">
+            <span className="sv-projects-empty-icon" aria-hidden>
               <ClipboardList className="size-6" strokeWidth={1.75} />
             </span>
-            <h2 className="mt-4 text-base font-bold text-[#0f172a]">
-              No assignment briefs yet
-            </h2>
-            <p className="mx-auto mt-1 max-w-md text-sm text-[#64748b]">
-              Create a brief with instructions and grading criteria. Publish it
-              so students can select it.
+            <h2>No assignment briefs yet</h2>
+            <p>
+              Create a brief with instructions, deadline, and grading criteria.
+              Students will see it once you publish.
             </p>
-            <CreateAssignmentButton className="mt-5" />
+            <Button asChild>
+              <Link href="/assignments/new">
+                <Plus className="size-4" />
+                New assignment
+              </Link>
+            </Button>
           </div>
         ) : filtered.length === 0 ? (
-          <div className="px-6 py-12 text-center">
-            <h2 className="text-base font-bold text-[#0f172a]">No matches</h2>
-            <p className="mt-1 text-sm text-[#64748b]">
-              Try another filter or search term.
-            </p>
+          <div className="sv-projects-empty">
+            <span className="sv-projects-empty-icon" aria-hidden>
+              <Search className="size-6" strokeWidth={1.75} />
+            </span>
+            <h2>No matching assignments</h2>
+            <p>Try another search or status filter.</p>
             <Button
               type="button"
-              variant="slate"
-              className="mt-4"
+              variant="outline"
               onClick={() => {
-                setFilter("all");
                 setQuery("");
+                setStatusFilter("all");
               }}
             >
               Clear filters
             </Button>
           </div>
-        ) : viewMode === "list" ? (
-          <ul className="divide-y divide-[#eef1f6]">
-            {filtered.map((brief) => (
-              <AssignmentListRow key={brief._id} brief={brief} />
-            ))}
-          </ul>
         ) : (
-          <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
-            {filtered.map((brief) => (
-              <AssignmentGridCard key={brief._id} brief={brief} />
-            ))}
-          </div>
+          <>
+            {view === "grid" ? (
+              <div className="sv-projects-grid">
+                {pagedBriefs.map((brief) => (
+                  <AssignmentGridCard key={brief._id} brief={brief} />
+                ))}
+              </div>
+            ) : (
+              <div className="sv-assignments-list">
+                <div className="sv-assignments-list-head" aria-hidden>
+                  <span>Assignment</span>
+                  <span>Due</span>
+                  <span>Submissions</span>
+                  <span />
+                </div>
+                {pagedBriefs.map((brief) => (
+                  <AssignmentListRow key={brief._id} brief={brief} />
+                ))}
+              </div>
+            )}
+
+            {showPagination ? (
+              <nav
+                className="sv-assignments-pagination"
+                aria-label="Assignments pagination"
+              >
+                <p className="sv-assignments-pagination-meta">
+                  {pageStart + 1}–{pageEnd} of {filtered.length}
+                </p>
+                <div className="sv-assignments-pagination-controls">
+                  <button
+                    type="button"
+                    className="sv-assignments-page-btn"
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={safePage <= 1}
+                    aria-label="Previous page"
+                  >
+                    <ChevronLeft className="size-4" />
+                    Prev
+                  </button>
+                  <span className="sv-assignments-page-indicator">
+                    Page {safePage} of {totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    className="sv-assignments-page-btn"
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={safePage >= totalPages}
+                    aria-label="Next page"
+                  >
+                    Next
+                    <ChevronRight className="size-4" />
+                  </button>
+                </div>
+              </nav>
+            ) : null}
+          </>
         )}
       </section>
     </div>
@@ -439,160 +408,95 @@ export default function SupervisorAssignmentsPage() {
 
 function AssignmentListRow({ brief }: { brief: BriefRow }) {
   const days = daysUntil(brief.dueAt);
-  const tone = dueTone(days);
+  const tone = briefTone(brief);
   const published = brief.status === "published";
   const submissions = brief.submissionCount ?? 0;
   const dueDate = formatDueDate(brief.dueAt);
-  const marks = typeof brief.maxScore === "number" ? brief.maxScore : 100;
-  const courseLine = [brief.courseName || "No course set", brief.courseYear]
-    .filter(Boolean)
-    .join(" · ");
-  const criteria = Array.isArray(brief.rubric) ? brief.rubric.length : 0;
+  const href = `/assignments/${brief._id}`;
 
   return (
-    <li className="px-4 py-3.5 transition hover:bg-[#f8fafc] sm:px-5">
-      <div className="grid gap-3 md:grid-cols-[minmax(0,1.7fr)_minmax(9rem,1fr)_minmax(7.5rem,0.8fr)_auto] md:items-center">
-        <div className="flex min-w-0 items-start gap-3">
-          <span
-            className={cn(
-              "mt-0.5 grid size-11 shrink-0 place-items-center rounded-xl",
-              published
-                ? "bg-[#ecfdf5] text-[#047857]"
-                : "bg-[#ececf8] text-[#0D0B61]",
-            )}
-          >
-            {published ? (
-              <ClipboardList className="size-5" strokeWidth={1.75} />
-            ) : (
-              <FileText className="size-5" strokeWidth={1.75} />
-            )}
-          </span>
-          <div className="min-w-0">
-            <Link
-              href={`/assignments/${brief._id}`}
-              className="block truncate font-bold text-[#0f172a] hover:text-[#0D0B61]"
-            >
-              {brief.title}
-            </Link>
-            <p className="mt-0.5 truncate text-sm text-[#64748b]">
-              {courseLine} · {marks} marks
-              {criteria > 0 ? ` · ${criteria} criteria` : ""}
-            </p>
-            <span
-              className={cn(
-                "mt-2 inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-semibold text-white",
-                published ? "bg-[#059669]" : "bg-[#475569]",
-              )}
-            >
-              {published ? "Published" : "Draft"}
-            </span>
-          </div>
-        </div>
+    <article className={cn("sv-assignments-row", `is-${tone}`)}>
+      <Link href={href} className="sv-projects-row-main">
+        <span
+          className={cn("sv-projects-type", published ? "is-teal" : "is-slate")}
+        >
+          {published ? "Published" : "Draft"}
+        </span>
+        <h2>{brief.title}</h2>
+        <p>
+          {courseLine(brief)} · {marksLabel(brief)}
+        </p>
+      </Link>
 
-        <div className="text-sm">
-          <p className={cn("inline-flex items-center gap-1.5 font-semibold", DUE_TEXT[tone])}>
-            <CalendarDays className="size-3.5 shrink-0 text-[#94a3b8]" />
-            {dueDate || "No due date"}
-          </p>
-          <p className="mt-0.5 text-xs font-semibold">
-            <span
-              className={cn(
-                "inline-flex rounded-full px-2 py-0.5",
-                DUE_CHIP[tone],
-              )}
-            >
-              {dueLabel(days)}
-            </span>
-          </p>
-        </div>
-
-        <div className="text-sm">
-          <p className="inline-flex items-center gap-1.5 font-semibold text-[#0f172a]">
-            <Users className="size-3.5 shrink-0 text-[#94a3b8]" />
-            {submissions} {submissions === 1 ? "submission" : "submissions"}
-          </p>
-        </div>
-
-        <div className="flex justify-end">
-          <Button asChild size="sm" variant="info" className="w-full md:w-auto">
-            <Link href={`/assignments/${brief._id}`}>
-              Open
-              <ArrowRight className="size-3.5" />
-            </Link>
-          </Button>
-        </div>
+      <div className="sv-assignments-due">
+        <span>{dueDate || "No due date"}</span>
+        <span className={cn("sv-projects-status", `is-${tone}`)}>
+          {published ? dueLabel(days) : "Not published"}
+        </span>
       </div>
-    </li>
+
+      <p className="sv-assignments-subs">
+        <Users className="size-3.5" strokeWidth={1.75} />
+        {submissions} {submissions === 1 ? "submission" : "submissions"}
+      </p>
+
+      <Link href={href} className="sv-projects-open">
+        Open
+        <ArrowRight className="size-3.5" />
+      </Link>
+    </article>
   );
 }
 
 function AssignmentGridCard({ brief }: { brief: BriefRow }) {
   const days = daysUntil(brief.dueAt);
-  const tone = dueTone(days);
+  const tone = briefTone(brief);
   const published = brief.status === "published";
   const submissions = brief.submissionCount ?? 0;
   const dueDate = formatDueDate(brief.dueAt);
-  const marks = typeof brief.maxScore === "number" ? brief.maxScore : 100;
-  const courseLine = [brief.courseName || "No course set", brief.courseYear]
-    .filter(Boolean)
-    .join(" · ");
+  const href = `/assignments/${brief._id}`;
 
   return (
-    <article className="flex flex-col rounded-2xl border border-[#e8ecf3] bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition hover:border-[#c7cbd9] hover:shadow-md">
-      <div className="flex items-start justify-between gap-2">
-        <span
-          className={cn(
-            "grid size-11 place-items-center rounded-xl",
-            published
-              ? "bg-[#ecfdf5] text-[#047857]"
-              : "bg-[#ececf8] text-[#0D0B61]",
-          )}
-        >
-          {published ? (
-            <ClipboardList className="size-5" strokeWidth={1.75} />
-          ) : (
-            <FileText className="size-5" strokeWidth={1.75} />
-          )}
-        </span>
-        <span
-          className={cn(
-            "rounded-full px-2.5 py-0.5 text-[10px] font-semibold text-white",
-            published ? "bg-[#059669]" : "bg-[#475569]",
-          )}
-        >
-          {published ? "Published" : "Draft"}
-        </span>
-      </div>
-      <Link
-        href={`/assignments/${brief._id}`}
-        className="mt-3 line-clamp-2 font-bold text-[#0f172a] hover:text-[#0D0B61]"
-      >
-        {brief.title}
+    <article className={cn("sv-projects-card", `is-${tone}`)}>
+      <Link href={href} className="sv-projects-card-body">
+        <div className="sv-projects-card-top">
+          <span
+            className={cn("sv-projects-type", published ? "is-teal" : "is-slate")}
+          >
+            {brief.courseYear || "Assignment"}
+          </span>
+          <span
+            className={cn("sv-projects-status", published ? "is-ok" : "is-mid")}
+          >
+            {published ? "Published" : "Draft"}
+          </span>
+        </div>
+        <h2 className="sv-projects-card-title">{brief.title}</h2>
+        <p className="sv-projects-card-topic">
+          {courseLine(brief)} · {marksLabel(brief)}
+        </p>
       </Link>
-      <p className="mt-1 line-clamp-2 text-sm text-[#64748b]">
-        {courseLine} · {marks} marks
-      </p>
-      <p
-        className={cn(
-          "mt-3 inline-flex items-center gap-1.5 text-xs font-semibold",
-          DUE_TEXT[tone],
-        )}
-      >
-        <CalendarDays className="size-3.5 text-[#94a3b8]" />
-        {dueDate ? `${dueLabel(days)} · ${dueDate}` : dueLabel(days)}
-      </p>
-      <p className="mt-1.5 inline-flex items-center gap-1.5 text-xs font-semibold text-[#0f172a]">
-        <Users className="size-3.5 text-[#94a3b8]" />
-        {submissions} {submissions === 1 ? "submission" : "submissions"}
-      </p>
-      <div className="mt-4">
-        <Button asChild size="sm" variant="info" className="w-full">
-          <Link href={`/assignments/${brief._id}`}>
-            Open
-            <ArrowRight className="size-3.5" />
-          </Link>
-        </Button>
+
+      <div className="sv-assignments-card-meta">
+        <p className="sv-assignments-due">
+          <CalendarDays className="size-3.5" strokeWidth={1.75} />
+          <span>
+            {dueDate ? `${dueLabel(days)} · ${dueDate}` : dueLabel(days)}
+          </span>
+        </p>
+        <p className="sv-assignments-subs">
+          <Users className="size-3.5" strokeWidth={1.75} />
+          {submissions} {submissions === 1 ? "submission" : "submissions"}
+        </p>
       </div>
+
+      <footer className="sv-projects-card-foot">
+        <span>Updated {formatRelative(brief.updatedAt)}</span>
+        <Link href={href} className="sv-projects-open">
+          Open
+          <ArrowRight className="size-3.5" />
+        </Link>
+      </footer>
     </article>
   );
 }

@@ -32,7 +32,11 @@ export function ForgotPasswordScreen() {
 				error?: string;
 			};
 			if (!res.ok) throw new Error(data.error ?? "Unable to send reset email.");
-			setMessage(data.message ?? "Check your email for reset instructions.");
+			setMessage(
+				data.message ??
+					"Password reset instructions have been sent to your email. Check your inbox and spam folder.",
+			);
+			// Only shown when Resend is not configured (local/dev fallback).
 			if (data.devResetUrl) setDevResetUrl(data.devResetUrl);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : String(err));
@@ -44,7 +48,7 @@ export function ForgotPasswordScreen() {
 	return (
 		<AuthSplitLayout
 			title="Forgot password"
-			subtitle="Enter your account email and we’ll send a reset link."
+			subtitle="Enter your account email and we’ll send a secure link to reset your password."
 			footer={
 				<p>
 					Remembered it?{" "}
@@ -62,7 +66,12 @@ export function ForgotPasswordScreen() {
 						type="email"
 						placeholder="name@university.edu"
 						value={email}
-						onChange={(e) => setEmail(e.target.value)}
+						onChange={(e) => {
+							setEmail(e.target.value);
+							if (error) setError(null);
+							if (message) setMessage(null);
+							if (devResetUrl) setDevResetUrl(null);
+						}}
 						autoComplete="email"
 						required
 					/>
@@ -76,10 +85,13 @@ export function ForgotPasswordScreen() {
 
 				{message && (
 					<div className="login-alert login-alert-success" role="status">
-						{message}
+						<p>{message}</p>
+						<p className="login-form-note">
+							The reset link expires in 1 hour.
+						</p>
 						{devResetUrl ? (
 							<p className="login-dev-reset">
-								Local development: email is not configured.{" "}
+								Local development: email delivery is not configured.{" "}
 								<a href={devResetUrl} className="login-link">
 									Open reset link
 								</a>
@@ -88,8 +100,8 @@ export function ForgotPasswordScreen() {
 					</div>
 				)}
 
-				<button type="submit" className="login-btn" disabled={submitting}>
-					{submitting ? "Sending…" : "Send reset link"}
+				<button type="submit" className="login-btn" disabled={submitting || Boolean(message)}>
+					{submitting ? "Sending…" : message ? "Email sent" : "Send reset link"}
 				</button>
 			</form>
 		</AuthSplitLayout>

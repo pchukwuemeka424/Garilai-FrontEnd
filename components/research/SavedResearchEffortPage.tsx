@@ -11,7 +11,7 @@ import { StudentLayout } from "@/components/StudentLayout";
 import { IconChevronLeft, IconDownload } from "@/components/ui/ButtonIcon";
 import { useAuth } from "@/hooks/useAuth";
 import {
-	extractPaperTitle,
+	resolvePaperDisplayTitle,
 	getSavedResearchPaperById,
 	updateSavedResearchPaper,
 	type SavedResearchPaper,
@@ -109,7 +109,7 @@ function SavedResearchEffortContent({ variant = "lecturer" }: Props) {
 				const resolvedSources = hasResearchSources(stored)
 					? stored
 					: staged ?? wizard?.selectedSources ?? stored;
-				const paperTitle = extractPaperTitle(loaded.content, loaded.topic || "Research paper");
+				const paperTitle = resolvePaperDisplayTitle(loaded.content, loaded.topic || "Research paper");
 				const loadedEvidence = await loadPaperEffortEvidence(
 					resolvedSources,
 					loaded.topic,
@@ -149,7 +149,7 @@ function SavedResearchEffortContent({ variant = "lecturer" }: Props) {
 	}, [id, isStudent, user?.id]);
 
 	const displayTitle = paper
-		? extractPaperTitle(paper.content, paper.topic || "Research paper")
+		? resolvePaperDisplayTitle(paper.content, paper.topic || "Research paper")
 		: "Effort report";
 
 	const handleSelectProject = useCallback(

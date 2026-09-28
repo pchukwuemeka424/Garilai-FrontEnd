@@ -1,7 +1,7 @@
 "use client";
 
 import type { SavedResearchPaper } from "@/lib/chat-research-storage";
-import { extractPaperTitle } from "@/lib/research-paper-title";
+import { resolvePaperDisplayTitle } from "@/lib/research-paper-title";
 
 type Props = {
 	savedPapers: SavedResearchPaper[];
@@ -82,7 +82,7 @@ export function Sidebar({
 						</li>
 					)}
 					{savedPapers.map((paper) => {
-						const title = extractPaperTitle(paper.content, paper.topic);
+						const title = resolvePaperDisplayTitle(paper.content, paper.topic);
 						const selected = activeSavedId === paper.id;
 						return (
 							<li key={paper.id} className={`chat-rail-item${selected ? " is-selected" : ""}`}>

@@ -1213,3 +1213,40 @@ export async function fetchAdminPortalSupervisors(
 	return data.supervisors;
 }
 
+export type AdminLegalDocumentRecord = {
+	id: "terms" | "privacy" | "aup";
+	title: string;
+	updatedLabel: string;
+	intro: string;
+	sections: { title: string; paragraphs: string[] }[];
+	version?: string;
+	updatedAt?: string;
+};
+
+export async function fetchAdminLegalDocuments(): Promise<{
+	documents: AdminLegalDocumentRecord[];
+	accountPolicyVersion: string;
+}> {
+	return adminJson<{ documents: AdminLegalDocumentRecord[]; accountPolicyVersion: string }>(
+		"/api/admin/legal",
+	);
+}
+
+export async function updateAdminLegalDocument(
+	id: "terms" | "privacy" | "aup",
+	input: {
+		title: string;
+		intro: string;
+		sections: { title: string; paragraphs: string[] }[];
+	},
+): Promise<{ document: AdminLegalDocumentRecord; accountPolicyVersion: string }> {
+	return adminJson<{ document: AdminLegalDocumentRecord; accountPolicyVersion: string }>(
+		`/api/admin/legal/${encodeURIComponent(id)}`,
+		{
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(input),
+		},
+	);
+}
+

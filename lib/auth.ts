@@ -24,6 +24,8 @@ export type AuthUser = {
 	createdAt: string;
 	tokenQuota?: StudentTokenQuota;
 	features?: UniversityFeatures;
+	policyVersion?: string | null;
+	needsPolicyAcceptance?: boolean;
 };
 
 export type RegisterInput = {
@@ -34,6 +36,8 @@ export type RegisterInput = {
 	institution?: string;
 	catalogueId?: string;
 	country?: string;
+	/** Required: user must accept Terms, Privacy, and Acceptable Use Policy. */
+	acceptedPolicies: true;
 };
 
 export type StudentRegisterInput = RegisterInput;

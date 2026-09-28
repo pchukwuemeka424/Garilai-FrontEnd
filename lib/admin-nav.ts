@@ -311,6 +311,15 @@ export const SUPER_ADMIN_NAV_GROUPS: AdminNavGroup[] = [
 				instructions:
 					"Oversee assignment briefs and student submissions across universities. Publish, archive, or update status while keeping submission text private.",
 			},
+			{
+				id: "super-legal",
+				label: "Legal pages",
+				href: "/super-admin/legal",
+				iconId: "policy",
+				description: "Terms, Privacy, and AUP",
+				instructions:
+					"Edit the public Terms of Service, Privacy Policy, and Acceptable Use Policy. Publishing an update bumps the account policy version so users re-accept at next sign-in.",
+			},
 		],
 	},
 ];

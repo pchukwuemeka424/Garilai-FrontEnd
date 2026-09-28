@@ -104,7 +104,7 @@ export function buildRefineResearchPaperPrompt(input: {
 		"Citation rules (mandatory):",
 		...formatAcademicIntegrityRules(profile).map((line) => `- ${line}`),
 		"",
-		"Preserve useful tables, charts, and research-chart / research-image blocks when still valid; ensure each is numbered, captioned, placed near first mention, and referenced in prose — fix or remove unlabelled/orphan visuals.",
+		"Preserve useful tables, charts, and research-chart / research-image / research-figure blocks when still valid; ensure each is numbered, captioned, placed near first mention, and referenced in prose — fix or remove unlabelled/orphan visuals. Do not strip Markdown tables or figure fences from the draft.",
 		"Return ONLY the full revised document — no meta-commentary.",
 		"",
 		"**Current draft to refine**",

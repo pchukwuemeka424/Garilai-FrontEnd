@@ -24,6 +24,7 @@ import {
 import { ProjectChapterPanel } from "@/components/portal/features/chapters/project-chapter-panel";
 import { countRemarkComments } from "@/components/portal/features/chapters/chapter-timeline";
 import { RemarkHtml } from "@/components/portal/editor/remark-html";
+import { AnnotatedHtmlWithComments } from "@/components/portal/editor/AnnotatedHtmlWithComments";
 import {
   isSinglePageProjectType,
   projectAdvisorLabel,
@@ -939,12 +940,12 @@ export default function StudentChapterEditorPage() {
                     <div className="stu-ped-annotated">
                       <p>Where to work — highlighted passages</p>
                       <p>
-                        Yellow = Weaknesses · Orange = Needs citation. Use these
-                        marks while you revise in the editor.
+                        Yellow = Weaknesses · Orange = Needs citation. Comments
+                        appear in the right margin.
                       </p>
-                      <div
-                        className="review-highlight-content stu-ped-annotated-body"
-                        dangerouslySetInnerHTML={{ __html: feedbackAnnotated }}
+                      <AnnotatedHtmlWithComments
+                        html={feedbackAnnotated}
+                        bodyClassName="stu-ped-annotated-body"
                       />
                     </div>
                   ) : null}

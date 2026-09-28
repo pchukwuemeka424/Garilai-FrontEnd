@@ -205,6 +205,7 @@ export function buildResearchPaperPrompt(input: {
 			? `${outlineText.slice(0, 14_000).trimEnd()}\n[Outline truncated to fit context.]`
 			: outlineText;
 
+	const hasUserTopic = Boolean(input.topic.trim() || input.idea.title.trim());
 	const libraryBlock =
 		libraryText
 			? profile.scope === "assignment"
@@ -218,8 +219,12 @@ export function buildResearchPaperPrompt(input: {
 						]
 					: []
 				: [
-						"NOTEBOOK-FIRST (hard): The user selected a research notebook library and/or uploaded evidence. Use the FULL folder contents below as primary source material for this deliverable: notes, lab log, documents, datasets, surveys, figures, and references.",
-						"Align the study title, claims, variables, methods, findings/results, and contributions with the selected notebook material. Do not contradict notebook evidence or invent a different study.",
+						hasUserTopic
+							? "TOPIC+NOTEBOOK (hard): Keep the user’s stated topic/title as the study focus. Use the FULL folder contents below as primary evidence and source material for generating that topic: notes, lab log, documents, datasets, surveys, figures, and references."
+							: "NOTEBOOK-FIRST (hard): The user selected a research notebook library and/or uploaded evidence. Use the FULL folder contents below as primary source material for this deliverable: notes, lab log, documents, datasets, surveys, figures, and references.",
+						hasUserTopic
+							? "Ground claims, variables, methods, findings/results, and contributions in the selected notebook material. Do not contradict notebook evidence, invent unsupported results, or replace the user topic with a different study."
+							: "Align the study title, claims, variables, methods, findings/results, and contributions with the selected notebook material. Do not contradict notebook evidence or invent a different study.",
 						"Do not skip notes or files in the library. Ground Introduction, Methodology, Results/Findings (or equivalent chapters), Discussion, and Conclusion in this material whenever it is relevant.",
 						"Use datasets, survey/questionnaire material, response files, lab notes, and notebook pages when present. Use only values present in the selected library for numeric tables and reported findings.",
 						"Treat figures/images as metadata-only context here: titles, captions, filenames, and linked lab references. Do not infer unseen image content or claim raw image analysis.",
@@ -250,7 +255,9 @@ export function buildResearchPaperPrompt(input: {
 				? "Use the approved outline only to organise literature themes and brief coverage; the user-provided assignment information remains primary — explain and satisfy that full brief with its own structure, not a different question."
 				: "Use the approved outline only to organise literature themes; the assignment topic remains the assignment to write."
 			: libraryBlock.length
-				? `Use the approved outline to organise the ${profile.label}; the selected research notebook library remains the primary evidence base for study-specific sections.`
+				? hasUserTopic
+					? `Use the approved outline to organise the ${profile.label}; keep the user’s topic as the study focus and the selected research notebook library as the primary evidence base for study-specific sections.`
+					: `Use the approved outline to organise the ${profile.label}; the selected research notebook library remains the primary evidence base for study-specific sections.`
 				: scopedBriefBlock.length
 					? `Use the approved outline to organise the ${profile.label}; the intake fields (${agentCopy.outlinePrimary}) remain primary.`
 					: "Follow the outline's research question, objectives, methodology, literature themes, expected contributions, and timeline where they fit this deliverable type.",

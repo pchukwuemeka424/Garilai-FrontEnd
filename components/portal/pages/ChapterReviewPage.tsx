@@ -36,6 +36,7 @@ import {
   toEditorHtml,
 } from "@/components/portal/editor/document-editor";
 import { ReviewAnnotator } from "@/components/portal/editor/review-annotator";
+import type { ReviewAnnotationSavePayload } from "@/components/portal/editor/review-annotator";
 import { stripRemarkHtml } from "@/lib/portal/remark-html";
 import {
   AIReportPanel,
@@ -47,6 +48,7 @@ import {
   mergeHighlightQuotes,
   pickFallbackHighlightQuotes,
   quotesFromFactCheckClaims,
+  REVIEW_HIGHLIGHT_LABELS,
   type AreaScores,
   type ReviewTextHighlights,
 } from "@/lib/portal/apply-highlights";
@@ -639,6 +641,54 @@ export default function ChapterReviewPage() {
     setRemarkModalOpen(true);
   }
 
+  async function handleSaveAnnotation(payload: ReviewAnnotationSavePayload) {
+    setAnnotatedHtml(payload.html);
+
+    if (payload.removed) {
+      const ok = await persistReview({
+        remark,
+        annotatedHtml: payload.html,
+      });
+      if (!ok) {
+        throw new Error("Could not remove comment");
+      }
+      setMessage("Comment removed.");
+      return;
+    }
+
+    const label = REVIEW_HIGHLIGHT_LABELS[payload.kind];
+    const quote = payload.quote.trim();
+    const note = payload.comment.trim();
+
+    let nextRemark = remark;
+    if (note || quote) {
+      const escape = (s: string) =>
+        s
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      const quoteHtml = quote
+        ? `<em>“${escape(quote)}”</em>`
+        : "<em>(selected passage)</em>";
+      const commentHtml = note ? ` — ${escape(note)}` : "";
+      const block = `<p><strong>[${escape(label)}]</strong> ${quoteHtml}${commentHtml}</p>`;
+      nextRemark = stripRemarkHtml(remark)
+        ? `${toEditorHtml(remark)}${block}`
+        : block;
+      setRemark(nextRemark);
+    }
+
+    const ok = await persistReview({
+      remark: nextRemark,
+      annotatedHtml: payload.html,
+    });
+    if (!ok) {
+      throw new Error("Could not save annotation");
+    }
+    setMessage(note ? "Annotation and comment saved." : "Annotation saved.");
+  }
+
   if (loading) return <LoadingPage label="Opening chapter review…" />;
 
   if (!data) {
@@ -828,6 +878,7 @@ export default function ChapterReviewPage() {
               highlightToken={highlightToken}
               highlightQuotes={highlightQuotes}
               areaScores={areaScores}
+              onSaveAnnotation={handleSaveAnnotation}
               footerMeta={{
                 wordCount: words,
                 lastSaved: chapter.updatedAt || version?.submittedAt || null,

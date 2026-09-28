@@ -15,17 +15,24 @@ import {
 	IconDownload,
 	IconEdit,
 	IconFileText,
+	IconRefresh,
 	IconTrash,
 } from "@/components/ui/ButtonIcon";
 import { useAuth } from "@/hooks/useAuth";
 import {
+	loadChatCitationStyle,
+	parseCitationStyleFromText,
+} from "@/lib/chat-research-citations";
+import {
 	downloadResearchPaper,
-	extractPaperTitle,
+	resolvePaperDisplayTitle,
 	getSavedResearchPaperById,
 	removeSavedPaper,
 	updateSavedResearchPaper,
 	type SavedResearchPaper,
 } from "@/lib/chat-research-storage";
+import { DEFAULT_CITATION_STYLE } from "@/lib/citation-styles";
+import { researchGeneratingRefinePath } from "@/lib/research-generate-routes";
 import {
 	getScopeDocumentLabel,
 	getScopeProjectEyebrow,
@@ -36,7 +43,13 @@ import {
 	formatResearchPaperReferences,
 	validateAndFormatResearchPaperReferences,
 } from "@/lib/research-paper-references";
+import {
+	buildRefineResearchPaperPrompt,
+	stagePendingResearchRefine,
+} from "@/lib/research-paper-refine";
 import { promoteBoldSectionsForDisplay, stripTitleAboveAbstract } from "@/lib/research-paper-sections";
+import { stagePaperSources } from "@/lib/research-paper-sources";
+import { getScopeProfile, parseScopeFromPrompt } from "@/lib/research-scope-profiles";
 import { savedResearchEffortPath, savedResearchListPath } from "@/lib/saved-research-routes";
 
 type Props = {
@@ -71,6 +84,23 @@ function countInTextCites(text: string): number {
 	return new Set([...paren, ...narr]).size;
 }
 
+/** Count discrete GFM pipe tables in markdown. */
+function countMarkdownTables(text: string): number {
+	const lines = text.split("\n");
+	let count = 0;
+	let inTable = false;
+	for (const line of lines) {
+		const isRow = /^\|.+\|/.test(line.trim());
+		if (isRow && !inTable) {
+			count += 1;
+			inTable = true;
+		} else if (!isRow) {
+			inTable = false;
+		}
+	}
+	return count;
+}
+
 function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 	const searchParams = useSearchParams();
 	const router = useRouter();
@@ -90,6 +120,7 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 	const [error, setError] = useState<string | null>(null);
 	const [pendingDelete, setPendingDelete] = useState(false);
 	const [deleting, setDeleting] = useState(false);
+	const [pendingRegenerate, setPendingRegenerate] = useState(false);
 	const [viewMode, setViewMode] = useState<"preview" | "edit">("preview");
 
 	const researchPath = isStudent ? "/student/research" : "/research";
@@ -157,7 +188,7 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 		[content],
 	);
 
-	const displayTitle = extractPaperTitle(formattedContent || content, topic || "Research paper");
+	const displayTitle = resolvePaperDisplayTitle(formattedContent || content, topic || "Research paper");
 	const documentLabel = getScopeDocumentLabel("journal");
 	const eyebrow = getScopeProjectEyebrow("journal").toUpperCase();
 
@@ -171,8 +202,8 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 		const charts = (displayDraft.match(/```research-chart\b/gi) ?? []).length;
 		const figures = (displayDraft.match(/```research-figure\b/gi) ?? []).length;
 		const diagrams = (displayDraft.match(/```research-image\b/gi) ?? []).length;
-		const tables = (displayDraft.match(/^\|.+\|$/gm) ?? []).length > 1 ? 1 : 0;
-		return charts + figures + diagrams + (tables ? 1 : 0);
+		const tables = countMarkdownTables(displayDraft);
+		return charts + figures + diagrams + tables;
 	}, [displayDraft]);
 
 	const paperMeta = useMemo(
@@ -263,6 +294,61 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 		}
 		router.push(researchPath);
 	}, [id, paper, researchPath, router]);
+
+	const handleRegenerate = useCallback(() => {
+		if (dirty) {
+			setError("Save your edits before regenerating.");
+			return;
+		}
+		setError(null);
+		setPendingRegenerate(true);
+	}, [dirty]);
+
+	const confirmRegenerate = useCallback(() => {
+		const raw = viewMode === "edit" ? htmlToOutlineText(editorHtml) || content : content;
+		if (!raw.trim()) {
+			setPendingRegenerate(false);
+			setError("Nothing to regenerate.");
+			return;
+		}
+		const citationStyle =
+			parseCitationStyleFromText(raw) || loadChatCitationStyle() || DEFAULT_CITATION_STYLE;
+		const scope =
+			parseScopeFromPrompt(raw) || getScopeProfile("journal").scope;
+		const topicLabel = (displayTitle || topic || "Research paper").trim();
+		const prompt = buildRefineResearchPaperPrompt({
+			topic: topicLabel,
+			content: raw,
+			citationStyle,
+			scope,
+		});
+		stagePendingResearchRefine({
+			prompt,
+			topic: topicLabel,
+			citationStyle,
+			scope,
+		});
+		if (paper?.sources) {
+			stagePaperSources(paper.sources);
+		}
+		setPendingRegenerate(false);
+		router.push(
+			researchGeneratingRefinePath(
+				isStudent ? "student" : "lecturer",
+				topicLabel,
+				citationStyle,
+			),
+		);
+	}, [
+		content,
+		displayTitle,
+		editorHtml,
+		isStudent,
+		paper?.sources,
+		router,
+		topic,
+		viewMode,
+	]);
 
 	if (loading) {
 		return (
@@ -395,6 +481,21 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 					<button
 						type="button"
 						className="rg-studio-bar-btn"
+						onClick={handleRegenerate}
+						disabled={viewMode === "edit" && dirty}
+						title={
+							dirty
+								? "Save edits before regenerating"
+								: "Regenerate a refined draft of this manuscript"
+						}
+					>
+						<IconRefresh size={14} />
+						Regenerate
+					</button>
+
+					<button
+						type="button"
+						className="rg-studio-bar-btn"
 						onClick={handleDownload}
 						title="Download manuscript as PDF"
 					>
@@ -511,7 +612,7 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 							<p className="rg-studio-page-sub">
 								{viewMode === "edit"
 									? "Editing manuscript — format and revise text, headings, and citations"
-									: "Manuscript is being written live — images, graphs, and tables included"}
+									: "Rendered manuscript — tables, charts, and figures included"}
 							</p>
 						</header>
 
@@ -534,12 +635,25 @@ function SavedResearchPaperContent({ variant = "lecturer" }: Props) {
 							</div>
 						) : (
 							<div className="rg-studio-prose">
-								<ResearchPaperMarkdown content={displayDraft} allowImages />
+								<ResearchPaperMarkdown
+									content={displayDraft}
+									allowImages
+									stripLeadingTitle={false}
+								/>
 							</div>
 						)}
 					</article>
 				</section>
 			</div>
+
+			<ConfirmDialog
+				open={pendingRegenerate}
+				title="Regenerate manuscript?"
+				description={`GARIL will refine “${displayTitle.slice(0, 120)}” into a new draft in the live studio. Tables, charts, and figures will be preserved when still valid.`}
+				confirmLabel="Regenerate"
+				onConfirm={confirmRegenerate}
+				onCancel={() => setPendingRegenerate(false)}
+			/>
 
 			<ConfirmDialog
 				open={pendingDelete}

@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Garil AI — SOC 2 Readiness Audit</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 16mm 14mm 16mm 14mm;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+      font-size: 10pt;
+      line-height: 1.45;
+      color: #1a1a1a;
+      margin: 0;
+      padding: 0;
+    }
+    h1 {
+      font-size: 18pt;
+      margin: 0 0 4px;
+      color: #0f2744;
+      letter-spacing: -0.02em;
+    }
+    h2 {
+      font-size: 12.5pt;
+      margin: 20px 0 8px;
+      color: #0f2744;
+      border-bottom: 1.5px solid #0f2744;
+      padding-bottom: 4px;
+      page-break-after: avoid;
+    }
+    h3 {
+      font-size: 11pt;
+      margin: 14px 0 6px;
+      color: #243b55;
+      page-break-after: avoid;
+    }
+    p, li { margin: 0 0 7px; }
+    ul, ol { margin: 0 0 10px; padding-left: 1.25em; }
+    .banner {
+      background: #0f2744;
+      color: #fff;
+      padding: 14px 16px;
+      margin: 0 0 14px;
+      border-radius: 4px;
+    }
+    .banner h1 { color: #fff; font-size: 17pt; }
+    .banner .sub { color: #c9d7e8; font-size: 9pt; margin-top: 4px; }
+    .meta {
+      color: #445566;
+      font-size: 9pt;
+      margin-bottom: 12px;
+    }
+    .callout {
+      background: #f3f6fa;
+      border-left: 4px solid #0f2744;
+      padding: 10px 12px;
+      margin: 10px 0 14px;
+      font-size: 9.5pt;
+      page-break-inside: avoid;
+    }
+    .callout.danger {
+      background: #fdf2f2;
+      border-left-color: #a32020;
+    }
+    .callout.danger strong { color: #a32020; }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin: 0 0 16px;
+    }
+    .stat {
+      border: 1px solid #c5ced8;
+      padding: 10px 12px;
+      border-radius: 3px;
+      background: #f8fafc;
+      page-break-inside: avoid;
+    }
+    .stat .value {
+      font-size: 16pt;
+      font-weight: 700;
+      color: #0f2744;
+      line-height: 1.1;
+    }
+    .stat .value.danger { color: #a32020; }
+    .stat .value.warning { color: #9a6700; }
+    .stat .value.ok { color: #1a7a3c; }
+    .stat .label {
+      font-size: 8.5pt;
+      color: #556677;
+      margin-top: 2px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 8px 0 14px;
+      font-size: 8.5pt;
+    }
+    th, td {
+      border: 1px solid #c5ced8;
+      padding: 5px 7px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #e8eef5;
+      color: #0f2744;
+      font-weight: 650;
+    }
+    tr { page-break-inside: avoid; }
+    .sev-critical {
+      color: #a32020;
+      font-weight: 700;
+    }
+    .sev-high {
+      color: #9a6700;
+      font-weight: 650;
+    }
+    .sev-medium { color: #5a4a00; }
+    .sev-ok {
+      color: #1a7a3c;
+      font-weight: 650;
+    }
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin: 8px 0 14px;
+    }
+    .panel {
+      border: 1px solid #c5ced8;
+      border-radius: 3px;
+      padding: 10px 12px;
+      page-break-inside: avoid;
+    }
+    .panel h3 { margin-top: 0; }
+    .score-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 6px;
+      font-size: 9pt;
+    }
+    .score-bar .name { width: 150px; flex-shrink: 0; }
+    .score-bar .track {
+      flex: 1;
+      height: 10px;
+      background: #e8eef5;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .score-bar .fill {
+      height: 100%;
+      background: #0f2744;
+    }
+    .score-bar .fill.low { background: #a32020; }
+    .score-bar .fill.mid { background: #9a6700; }
+    .score-bar .pct {
+      width: 36px;
+      text-align: right;
+      font-weight: 650;
+      color: #0f2744;
+    }
+    .footer-note {
+      margin-top: 18px;
+      padding-top: 10px;
+      border-top: 1px solid #c5ced8;
+      font-size: 8pt;
+      color: #667788;
+    }
+    code {
+      font-family: "SF Mono", Menlo, Consolas, monospace;
+      font-size: 8.5pt;
+      background: #eef2f6;
+      padding: 1px 4px;
+      border-radius: 2px;
+    }
+    .roadmap {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+      margin: 8px 0 14px;
+    }
+    .roadmap .panel h3 {
+      font-size: 10pt;
+      border-bottom: 1px solid #c5ced8;
+      padding-bottom: 4px;
+      margin-bottom: 8px;
+    }
+    .roadmap ol { padding-left: 1.1em; margin: 0; }
+    .roadmap li { margin-bottom: 5px; font-size: 9pt; }
+  </style>
+</head>
+<body>
+
+  <div class="banner">
+    <h1>Garil AI — SOC 2 Readiness Audit</h1>
+    <div class="sub">
+      Technical / code-evidence assessment against Trust Services Criteria
+      (Security, Availability, Confidentiality, Processing Integrity, Privacy)
+    </div>
+  </div>
+
+  <p class="meta">
+    <strong>Product:</strong> GARIL AI &nbsp;·&nbsp;
+    <strong>Document date:</strong> 28 September 2026 &nbsp;·&nbsp;
+    <strong>Method:</strong> Static review of auth, APIs, data handling, deploy, governance UI &nbsp;·&nbsp;
+    <strong>Classification:</strong> Internal — readiness only (not a formal Type I/II attestation)
+  </p>
+
+  <div class="callout danger">
+    <strong>Blocking for any SOC 2 walkthrough.</strong>
+    Unauthenticated <code>/api/users</code> CRUD allows privilege escalation to
+    super-admin. Default admin password <code>admin123</code> is auto-bootstrapped
+    and can be reset on boot. Fix these before treating logical access (CC6) as testable.
+  </div>
+
+  <div class="stats">
+    <div class="stat">
+      <div class="value danger">~28%</div>
+      <div class="label">Overall readiness</div>
+    </div>
+    <div class="stat">
+      <div class="value danger">2</div>
+      <div class="label">Critical blockers</div>
+    </div>
+    <div class="stat">
+      <div class="value warning">14</div>
+      <div class="label">High findings</div>
+    </div>
+    <div class="stat">
+      <div class="value ok">8</div>
+      <div class="label">Control strengths</div>
+    </div>
+  </div>
+
+  <h2>1. Executive summary</h2>
+  <p>
+    This review assesses Garil AI’s codebase against SOC 2 Trust Services Criteria
+    using concrete file evidence. It is <strong>not</strong> a formal SOC 2 Type I or
+    Type II report. Formal attestation requires an independent CPA firm and
+    organizational evidence (policies, vendor DPAs, HR/access, incident response
+    runbooks) beyond application code.
+  </p>
+  <p>
+    Governance product surfaces (append-only audit log, retention UI, policy gates,
+    university-scoped RBAC) are a useful foundation. The platform is <strong>not
+    SOC 2 ready</strong> until critical logical-access failures and operational
+    control gaps are closed.
+  </p>
+
+  <h2>2. Trust Services Criteria scores</h2>
+  <p class="meta">Estimated control maturity from code evidence only (0–100).</p>
+
+  <div class="score-bar">
+    <span class="name">Security (CC)</span>
+    <div class="track"><div class="fill low" style="width:22%"></div></div>
+    <span class="pct">22</span>
+  </div>
+  <div class="score-bar">
+    <span class="name">Availability (A)</span>
+    <div class="track"><div class="fill mid" style="width:35%"></div></div>
+    <span class="pct">35</span>
+  </div>
+  <div class="score-bar">
+    <span class="name">Confidentiality (C)</span>
+    <div class="track"><div class="fill mid" style="width:30%"></div></div>
+    <span class="pct">30</span>
+  </div>
+  <div class="score-bar">
+    <span class="name">Processing Integrity (PI)</span>
+    <div class="track"><div class="fill mid" style="width:28%"></div></div>
+    <span class="pct">28</span>
+  </div>
+  <div class="score-bar">
+    <span class="name">Privacy (P)</span>
+    <div class="track"><div class="fill mid" style="width:32%"></div></div>
+    <span class="pct">32</span>
+  </div>
+
+  <h2>3. Critical &amp; high findings</h2>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:72px">Severity</th>
+        <th style="width:36px">ID</th>
+        <th>Finding</th>
+        <th style="width:72px">TSC</th>
+        <th style="width:180px">Evidence</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="sev-critical">Critical</td>
+        <td>F1</td>
+        <td>Unauthenticated <code>/api/users</code> CRUD enables role escalation to admin</td>
+        <td>CC6.1</td>
+        <td><code>server.ts</code> ~1885–1922</td>
+      </tr>
+      <tr>
+        <td class="sev-critical">Critical</td>
+        <td>F2</td>
+        <td>Default super-admin <code>admin@aula.com</code> / <code>admin123</code>; boot may reset password</td>
+        <td>CC6.1</td>
+        <td><code>default-admin.ts</code>; <code>bootstrap-admin.service.ts</code></td>
+      </tr>
+      <tr>
+        <td class="sev-high">High</td>
+        <td>F3</td>
+        <td>JWT in localStorage; no server revoke on logout / reset / suspend</td>
+        <td>CC6.1</td>
+        <td><code>lib/auth.ts</code>; <code>auth-token.ts</code> (7d TTL)</td>
+      </tr>
+      <tr>
+        <td class="sev-high">High</td>
+        <td>F4</td>
+        <td>No rate limiting on auth, AI, or password-reset endpoints</td>
+        <td>CC6.1 / A1</td>
+        <td>No <code>@fastify/rate-limit</code>; nginx has no <code>limit_req</code></td>
+      </tr>
+      <tr>
+        <td class="sev-high">High</td>
+        <td>F5</td>
+        <td>CORS defaults to reflect any Origin when <code>CORS_ORIGIN</code> unset</td>
+        <td>CC6.1</td>
+        <td><code>server.ts</code> CORS register</td>
+      </tr>
+      <tr>
+        <td class="sev-high">High</td>
+        <td>F6</td>
+        <td>Fastify logger disabled; no Sentry/APM; auth events not audited</td>
+        <td>CC7</td>
+        <td><code>logger: false</code>; <code>loginUser</code> has no <code>recordAuditEvent</code></td>
+      </tr>
+      <tr>
+        <td class="sev-high">High</td>
+        <td>F7</td>
+        <td>No CI / dependency scanning before Coolify auto-deploy</td>
+        <td>CC8</td>
+        <td>No <code>.github/</code>; PROJECT_MANUAL notes absence</td>
+      </tr>
+      <tr>
+        <td class="sev-high">High</td>
+        <td>F8</td>
+        <td>Student/research content sent to OpenRouter; no coded DPA/retention flags</td>
+        <td>C1 / P</td>
+        <td><code>llm.service.ts</code>; <code>portal-ai.service.ts</code></td>
+      </tr>
+      <tr>
+        <td class="sev-high">High</td>
+        <td>F9</td>
+        <td>Retention/deletion UI without purge job or cascade erase</td>
+        <td>P4 / PI</td>
+        <td><code>admin-retention.service.ts</code>; <code>deleteUser</code> account-only</td>
+      </tr>
+      <tr>
+        <td class="sev-high">High</td>
+        <td>F10</td>
+        <td>Legal Terms / Privacy / AUP are explicit placeholders</td>
+        <td>P1</td>
+        <td><code>legal-documents.service.ts</code> <code>DEFAULT_*</code></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>4. Criteria detail</h2>
+
+  <div class="two-col">
+    <div class="panel">
+      <h3>Security (CC) — weakest area</h3>
+      <ul>
+        <li><span class="sev-critical">Gap</span> — Open user CRUD / dashboard stats</li>
+        <li><span class="sev-critical">Gap</span> — Default admin + password re-sync on boot</li>
+        <li><span class="sev-high">Gap</span> — No MFA, lockout, email verification</li>
+        <li><span class="sev-high">Gap</span> — Feature RBAC mostly UI; coarse admin API auth</li>
+        <li><span class="sev-high">Gap</span> — No Helmet / CSP / HSTS in app</li>
+        <li><span class="sev-ok">OK</span> — scrypt + salted passwords; timing-safe verify</li>
+        <li><span class="sev-ok">OK</span> — Portal status/role reload from DB</li>
+        <li><span class="sev-ok">OK</span> — University-scoped admin mutations</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3>Privacy &amp; Confidentiality</h3>
+      <ul>
+        <li><span class="sev-critical">Gap</span> — Placeholder legal documents</li>
+        <li><span class="sev-critical">Gap</span> — No cascade erase / retention executor</li>
+        <li><span class="sev-high">Gap</span> — AI/cookie consent client-only (localStorage)</li>
+        <li><span class="sev-high">Gap</span> — Policy re-accept gate bypassable via API</li>
+        <li><span class="sev-high">Gap</span> — No portal access audit for student work</li>
+        <li><span class="sev-ok">OK</span> — Registration policy acceptance required</li>
+        <li><span class="sev-ok">OK</span> — Versioned legal publish + accountPolicyVersion</li>
+        <li><span class="sev-ok">OK</span> — Admin title redaction (HMAC labels)</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div class="panel">
+      <h3>Availability &amp; operations</h3>
+      <ul>
+        <li><span class="sev-ok">OK</span> — <code>/api/health</code> + Docker/PM2/systemd restarts</li>
+        <li><span class="sev-ok">OK</span> — Mongo connect retries in production</li>
+        <li><span class="sev-high">Gap</span> — Health ignores Mongo; always <code>ok: true</code></li>
+        <li><span class="sev-high">Gap</span> — Research jobs in-memory; lost on restart</li>
+        <li><span class="sev-high">Gap</span> — JSON backup incomplete; no restore path</li>
+        <li><span class="sev-high">Gap</span> — Compose Mongo without auth / exposed port</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3>Change mgmt, logging, monitoring</h3>
+      <ul>
+        <li><span class="sev-ok">OK</span> — Append-only AuditLog + immutableHash</li>
+        <li><span class="sev-ok">OK</span> — Governance alerts/incidents admin UI</li>
+        <li><span class="sev-critical">Gap</span> — <code>logger: false</code> — no structured request logs</li>
+        <li><span class="sev-critical">Gap</span> — No CI gates; Coolify auto-deploy from main</li>
+        <li><span class="sev-high">Gap</span> — Alert notify stubs (console.log / optional webhook)</li>
+        <li><span class="sev-high">Gap</span> — No Dependabot / npm audit / CodeQL</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>5. Remediation roadmap</h2>
+  <div class="roadmap">
+    <div class="panel">
+      <h3>Week 1 — Stop the bleed</h3>
+      <ol>
+        <li>Auth-gate or remove <code>/api/users</code> and open dashboard routes</li>
+        <li>Disable default admin in prod (<code>DEFAULT_ADMIN_ENABLED=false</code>); rotate secrets</li>
+        <li>Set explicit <code>CORS_ORIGIN</code>; enable Fastify logger</li>
+        <li>Add rate limits on login / forgot-password / AI</li>
+      </ol>
+    </div>
+    <div class="panel">
+      <h3>Weeks 2–4 — Control foundation</h3>
+      <ol start="5">
+        <li>httpOnly cookie sessions or token version + revoke</li>
+        <li>CI: lint, typecheck, dependency audit before deploy</li>
+        <li>Sentry (or equiv) + auth audit events</li>
+        <li>Publish real Terms/Privacy/AUP; server-enforce policy version</li>
+        <li>Helmet/security headers; sanitize portal HTML</li>
+      </ol>
+    </div>
+    <div class="panel">
+      <h3>Weeks 5–10 — SOC 2 readiness</h3>
+      <ol start="10">
+        <li>Cascade erase + retention job; user export/delete</li>
+        <li>Subprocessor inventory + OpenRouter DPA / retention settings</li>
+        <li>Scheduled backups + tested restore; Mongo-aware health</li>
+        <li>MFA for admins; password policy; email verify</li>
+        <li>IR runbook, on-call alerts, vendor risk register (org)</li>
+      </ol>
+    </div>
+  </div>
+
+  <h2>6. Formal SOC 2 still needs (outside code)</h2>
+  <p>
+    Even after engineering gaps are closed, Type I/II requires organizational
+    evidence an auditor will sample:
+  </p>
+  <table>
+    <thead>
+      <tr>
+        <th>Area</th>
+        <th>Expected evidence</th>
+        <th>In-repo today</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Security policies</td>
+        <td>Approved info-sec, access, change, IR policies</td>
+        <td>Governance UI only — no policy docs as SoA</td>
+      </tr>
+      <tr>
+        <td>Vendor management</td>
+        <td>DPAs for OpenRouter, Resend, Mongo/S3 host, Coolify</td>
+        <td>API keys in env; no DPA artifacts</td>
+      </tr>
+      <tr>
+        <td>HR / access</td>
+        <td>Onboarding/offboarding checklists; background checks if claimed</td>
+        <td>Not present</td>
+      </tr>
+      <tr>
+        <td>Change control</td>
+        <td>PR review, CI pass, deploy approvals, rollback</td>
+        <td>Coolify auto-deploy; no GitHub Actions</td>
+      </tr>
+      <tr>
+        <td>Monitoring / IR</td>
+        <td>On-call, ticketed incidents, postmortems</td>
+        <td>In-app incidents; notify mostly stubs</td>
+      </tr>
+      <tr>
+        <td>Availability</td>
+        <td>RTO/RPO, backup tests, uptime SLO</td>
+        <td>Partial healthchecks; incomplete backups</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>7. Bottom line</h2>
+  <div class="callout">
+    Governance product surfaces (audit log, retention UI, policy gates, university RBAC)
+    are a useful foundation, but the platform is <strong>not SOC 2 ready</strong>.
+    Prioritize <strong>F1–F2</strong> immediately — they are exploitable logical access
+    failures — then build observability, CI, privacy enforcement, and organizational
+    evidence for an auditor engagement.
+  </div>
+
+  <h2>8. Key evidence paths</h2>
+  <p style="font-size:8.5pt; color:#445566;">
+    <code>backend/src/server.ts</code> ·
+    <code>backend/src/services/auth.service.ts</code> ·
+    <code>backend/src/lib/require-admin.ts</code> ·
+    <code>backend/src/lib/portal-auth.ts</code> ·
+    <code>backend/src/constants/default-admin.ts</code> ·
+    <code>lib/auth.ts</code> ·
+    <code>backend/src/services/legal-documents.service.ts</code> ·
+    <code>backend/src/services/admin-retention.service.ts</code> ·
+    <code>backend/src/services/admin-audit.service.ts</code> ·
+    <code>backend/src/services/llm.service.ts</code> ·
+    <code>docker-compose.yml</code> ·
+    <code>deploy/README.md</code>
+  </p>
+
+  <div class="footer-note">
+    Garil AI — SOC 2 Readiness Audit · 28 September 2026 · Internal technical assessment.
+    This document does not constitute a SOC 2 Type I or Type II report and is not legal advice.
+  </div>
+
+</body>
+</html>

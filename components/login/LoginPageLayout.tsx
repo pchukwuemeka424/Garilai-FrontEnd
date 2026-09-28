@@ -10,7 +10,7 @@ export function LoginPageLayout({ children }: Props) {
 	return (
 		<AuthSplitLayout
 			title="Welcome back"
-			subtitle="Sign in to continue your research across sessions."
+			subtitle="Sign in to continue research, teaching and academic projects in your institutional workspace."
 			footer={
 				<p>
 					<Link href="/register?role=student" className="login-link">

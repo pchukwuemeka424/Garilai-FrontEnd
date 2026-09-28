@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Garil AI — University Pilot Budget Pack</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 18mm 16mm 18mm 16mm;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+      font-size: 10.5pt;
+      line-height: 1.45;
+      color: #1a1a1a;
+      margin: 0;
+      padding: 0;
+    }
+    h1 {
+      font-size: 20pt;
+      margin: 0 0 6px;
+      color: #0f2744;
+      letter-spacing: -0.02em;
+    }
+    h2 {
+      font-size: 13pt;
+      margin: 22px 0 8px;
+      color: #0f2744;
+      border-bottom: 1.5px solid #0f2744;
+      padding-bottom: 4px;
+      page-break-after: avoid;
+    }
+    h3 {
+      font-size: 11pt;
+      margin: 14px 0 6px;
+      color: #243b55;
+      page-break-after: avoid;
+    }
+    p, li { margin: 0 0 8px; }
+    ul, ol { margin: 0 0 10px; padding-left: 1.25em; }
+    .meta {
+      color: #445566;
+      font-size: 9.5pt;
+      margin-bottom: 14px;
+    }
+    .meta strong { color: #1a1a1a; }
+    .banner {
+      background: #0f2744;
+      color: #fff;
+      padding: 14px 16px;
+      margin: 0 0 16px;
+      border-radius: 4px;
+    }
+    .banner h1 { color: #fff; font-size: 18pt; }
+    .banner .sub { color: #c9d7e8; font-size: 9.5pt; margin-top: 4px; }
+    .callout {
+      background: #f3f6fa;
+      border-left: 4px solid #0f2744;
+      padding: 10px 12px;
+      margin: 12px 0 16px;
+      font-size: 10pt;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 8px 0 14px;
+      font-size: 9.5pt;
+      page-break-inside: avoid;
+    }
+    th, td {
+      border: 1px solid #c5ced8;
+      padding: 6px 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #e8eef5;
+      color: #0f2744;
+      font-weight: 650;
+    }
+    td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    tr.highlight td {
+      background: #eef6ff;
+      font-weight: 650;
+    }
+    .footer-note {
+      margin-top: 24px;
+      padding-top: 10px;
+      border-top: 1px solid #c5ced8;
+      font-size: 8.5pt;
+      color: #556677;
+    }
+    code, pre {
+      font-family: "SF Mono", Menlo, Consolas, monospace;
+      font-size: 9pt;
+    }
+    pre {
+      background: #f5f7fa;
+      border: 1px solid #d5dde6;
+      padding: 10px 12px;
+      white-space: pre-wrap;
+      page-break-inside: avoid;
+    }
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .kpi {
+      background: #f3f6fa;
+      padding: 10px 12px;
+      border-radius: 4px;
+    }
+    .kpi .label { font-size: 8.5pt; color: #556677; text-transform: uppercase; letter-spacing: 0.04em; }
+    .kpi .value { font-size: 14pt; font-weight: 700; color: #0f2744; margin-top: 2px; }
+  </style>
+</head>
+<body>
+  <div class="banner">
+    <h1>Garil AI — University Pilot Budget Pack</h1>
+    <div class="sub">GARIL AI · Governed AI for Research, Instruction and Learning · 12-month horizon · USD · September 2026</div>
+  </div>
+
+  <div class="two-col">
+    <div class="kpi"><div class="label">Annual VPS</div><div class="value">$887.88</div></div>
+    <div class="kpi"><div class="label">AI per user</div><div class="value">$4.40</div></div>
+    <div class="kpi"><div class="label">Recommended pilot</div><div class="value">100 users</div></div>
+    <div class="kpi"><div class="label">Year-1 total @ 100</div><div class="value">$1,327.88</div></div>
+  </div>
+
+  <h2>1. Locked commercial inputs</h2>
+  <table>
+    <thead><tr><th>Input</th><th class="num">Value</th></tr></thead>
+    <tbody>
+      <tr><td>Monthly VPS</td><td class="num"><strong>$73.99</strong></td></tr>
+      <tr><td>Annual VPS</td><td class="num"><strong>$73.99 × 12 = $887.88</strong></td></tr>
+      <tr><td>AI cost per user (year seat / allocation)</td><td class="num"><strong>$4.40</strong></td></tr>
+      <tr><td>Recommended first pilot</td><td class="num"><strong>100 users</strong></td></tr>
+    </tbody>
+  </table>
+
+  <h3>VPS specification</h3>
+  <table>
+    <thead><tr><th>Spec</th><th>Value</th></tr></thead>
+    <tbody>
+      <tr><td>vCPU</td><td>8 cores</td></tr>
+      <tr><td>RAM</td><td>32 GB</td></tr>
+      <tr><td>Disk</td><td>400 GB NVMe</td></tr>
+      <tr><td>Bandwidth</td><td>32 TB / month</td></tr>
+      <tr><td>Monthly price</td><td>$73.99</td></tr>
+      <tr><td>Annual price</td><td>$887.88</td></tr>
+    </tbody>
+  </table>
+
+  <h2>2. Executive summary</h2>
+  <p>Garil AI for a university pilot runs on <strong>one VPS</strong> (application + MongoDB + optional object storage) plus <strong>OpenRouter</strong> for model inference (default main model: GPT-5.1; fast path: gpt-4o-mini).</p>
+  <table>
+    <thead><tr><th>Item</th><th class="num">Figure</th></tr></thead>
+    <tbody>
+      <tr><td>Monthly hosting</td><td class="num"><strong>$73.99</strong></td></tr>
+      <tr><td>Annual hosting</td><td class="num"><strong>$887.88</strong></td></tr>
+      <tr><td>AI per user</td><td class="num"><strong>$4.40</strong></td></tr>
+      <tr><td>Recommended cohort</td><td class="num"><strong>100 users</strong></td></tr>
+      <tr class="highlight"><td>Year-1 total @ 100 users</td><td class="num">$1,327.88</td></tr>
+      <tr class="highlight"><td>All-in cost per user @ 100</td><td class="num">$13.28 / year</td></tr>
+    </tbody>
+  </table>
+  <p>This VPS is sized comfortably for a <strong>50–500 user</strong> pilot.</p>
+
+  <h2>3. What runs on the VPS</h2>
+  <table>
+    <thead><tr><th>Service</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td>Next.js frontend</td><td>Web UI</td></tr>
+      <tr><td>Fastify API</td><td>Auth, research, portal, admin, WebSocket</td></tr>
+      <tr><td>MongoDB</td><td>Primary database</td></tr>
+      <tr><td>MinIO (optional)</td><td>Large uploads / assets (up to ~2 GB per file when enabled)</td></tr>
+    </tbody>
+  </table>
+  <p><strong>Not required for pilot:</strong> Redis, Postgres, separate database VPS, or Vercel.</p>
+
+  <h2>4. Cost model</h2>
+  <pre>Annual infra    = 73.99 × 12
+Annual AI       = users × 4.40
+Year-1 total    = 887.88 + (users × 4.40)
+Per-user all-in = Year-1 total ÷ users</pre>
+  <h3>Assumptions</h3>
+  <ol>
+    <li><strong>$4.40</strong> is the estimated AI/token cost <strong>per active user for one year seat</strong> (full use of a ~1M-token-style allowance on GPT-5.1 blended rates).</li>
+    <li>Platform token defaults remain <strong>400,000</strong> (students) and <strong>1,000,000</strong> (lecturers/researchers) unless the university overrides them.</li>
+    <li>The in-app admin estimate of <strong>$2 per 1M tokens</strong> is <strong>not</strong> used here; this pack uses the locked <strong>$4.40 per user</strong> figure.</li>
+    <li>Domain, Resend email, Tavily, and Hugging Face are <strong>optional add-ons</strong> and are excluded from the base totals.</li>
+  </ol>
+
+  <h2>5. Year-1 budget by pilot size</h2>
+  <table>
+    <thead>
+      <tr>
+        <th class="num">Users</th>
+        <th class="num">VPS (12 mo)</th>
+        <th class="num">AI (× $4.40)</th>
+        <th class="num">Year-1 total</th>
+        <th class="num">Per user all-in</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="num">50</td>
+        <td class="num">$887.88</td>
+        <td class="num">$220.00</td>
+        <td class="num"><strong>$1,107.88</strong></td>
+        <td class="num"><strong>$22.16</strong></td>
+      </tr>
+      <tr class="highlight">
+        <td class="num">100</td>
+        <td class="num">$887.88</td>
+        <td class="num">$440.00</td>
+        <td class="num">$1,327.88</td>
+        <td class="num">$13.28</td>
+      </tr>
+      <tr>
+        <td class="num">200</td>
+        <td class="num">$887.88</td>
+        <td class="num">$880.00</td>
+        <td class="num"><strong>$1,767.88</strong></td>
+        <td class="num"><strong>$8.84</strong></td>
+      </tr>
+      <tr>
+        <td class="num">500</td>
+        <td class="num">$887.88</td>
+        <td class="num">$2,200.00</td>
+        <td class="num"><strong>$3,087.88</strong></td>
+        <td class="num"><strong>$6.18</strong></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Cash-flow view</h3>
+  <table>
+    <thead><tr><th>Line</th><th>Cadence</th><th class="num">Amount</th></tr></thead>
+    <tbody>
+      <tr><td>VPS</td><td>Monthly</td><td class="num">$73.99</td></tr>
+      <tr><td>VPS</td><td>Annual</td><td class="num">$887.88</td></tr>
+      <tr><td>AI budget</td><td>Per cohort / year</td><td class="num">users × $4.40 (OpenRouter pay-as-you-go)</td></tr>
+    </tbody>
+  </table>
+
+  <h3>With 10% contingency</h3>
+  <table>
+    <thead>
+      <tr>
+        <th class="num">Users</th>
+        <th class="num">Base total</th>
+        <th class="num">Contingency (10%)</th>
+        <th class="num">Contingency total</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td class="num">50</td><td class="num">$1,107.88</td><td class="num">$110.79</td><td class="num"><strong>$1,218.67</strong></td></tr>
+      <tr class="highlight"><td class="num">100</td><td class="num">$1,327.88</td><td class="num">$132.79</td><td class="num">$1,460.67</td></tr>
+      <tr><td class="num">200</td><td class="num">$1,767.88</td><td class="num">$176.79</td><td class="num"><strong>$1,944.67</strong></td></tr>
+      <tr><td class="num">500</td><td class="num">$3,087.88</td><td class="num">$308.79</td><td class="num"><strong>$3,396.67</strong></td></tr>
+    </tbody>
+  </table>
+
+  <h2>6. Recommended pilot design — 100 users</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Role</th>
+        <th class="num">Count</th>
+        <th class="num">Default tokens</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>Students</td><td class="num">80</td><td class="num">400,000</td><td>Primary research / learning users</td></tr>
+      <tr><td>Lecturers / researchers</td><td class="num">15</td><td class="num">1,000,000</td><td>Supervision &amp; research</td></tr>
+      <tr><td>Admins</td><td class="num">5</td><td class="num">n/a</td><td>Ops / token management</td></tr>
+      <tr class="highlight"><td>Total</td><td class="num">100</td><td class="num">—</td><td>AI budget $440.00 (100 × $4.40)</td></tr>
+    </tbody>
+  </table>
+  <p>For budgeting simplicity, AI is charged at a <strong>flat $4.40 per user</strong>, not split by role.</p>
+  <h3>Success metrics (Year 1)</h3>
+  <ul>
+    <li>Activation rate of invited users</li>
+    <li>Average tokens used vs allowance</li>
+    <li>Research papers / supervision reviews completed</li>
+    <li>Support tickets and critical incidents</li>
+    <li>Actual spend vs budget (≤ <strong>$1,327.88</strong> base, or ≤ <strong>$1,460.67</strong> with contingency)</li>
+  </ul>
+
+  <h2>7. Included vs not included</h2>
+  <table>
+    <thead><tr><th>Included in this budget</th><th>Not included</th></tr></thead>
+    <tbody>
+      <tr><td>VPS ($887.88 / year)</td><td>Domain (~$0–20 / year)</td></tr>
+      <tr><td>App + Mongo on same server</td><td>Resend email (~$0–20 / mo if heavy)</td></tr>
+      <tr><td>AI seats at $4.40 / user</td><td>Tavily / Hugging Face (optional)</td></tr>
+      <tr><td>32 TB bandwidth</td><td>Staff time / training</td></tr>
+      <tr><td>400 GB disk for pilot data</td><td>Second VPS / managed MongoDB Atlas</td></tr>
+    </tbody>
+  </table>
+
+  <h2>8. Capacity and risk on this VPS</h2>
+  <table>
+    <thead><tr><th>Resource</th><th>Pilot assessment</th></tr></thead>
+    <tbody>
+      <tr><td>CPU / RAM (8 / 32 GB)</td><td>Comfortable for 50–500 lightly concurrent academic users</td></tr>
+      <tr><td>Disk (400 GB NVMe)</td><td>Adequate for pilot; monitor Mongo + MinIO + backups</td></tr>
+      <tr><td>Bandwidth (32 TB)</td><td>Far above typical web/API traffic</td></tr>
+      <tr><td>Primary cost risk</td><td>AI usage if quotas are raised or users exceed plan</td></tr>
+      <tr><td>Controls</td><td>Cap allowances, monitor admin token dashboard, careful resets</td></tr>
+    </tbody>
+  </table>
+
+  <h2>9. Go-live checklist</h2>
+  <ol>
+    <li>Provision the VPS; install Coolify (or Docker Compose).</li>
+    <li>Deploy frontend + backend + MongoDB (+ MinIO if large uploads are required).</li>
+    <li>Configure <code>OPENROUTER_API_KEY</code>, <code>AUTH_SECRET</code>, <code>MONGODB_URI</code>, <code>APP_URL</code>.</li>
+    <li>Set university token defaults (student / lecturer).</li>
+    <li>Invite the pilot cohort; brief admins on the token panel.</li>
+    <li>Track spend monthly: fixed VPS + OpenRouter usage vs AI budget.</li>
+    <li>Review at month 3 and month 12 against Year-1 total <strong>$1,327.88</strong> (100-user plan).</li>
+  </ol>
+
+  <h2>10. Stakeholder one-pager</h2>
+  <div class="callout">
+    <strong>Garil AI University Pilot — Year 1</strong><br />
+    Hosting: 8 vCPU / 32 GB RAM / 400 GB NVMe / 32 TB bandwidth @ <strong>$73.99/mo</strong> (<strong>$887.88/year</strong>).<br />
+    AI: <strong>$4.40 per user</strong>.<br />
+    Recommended cohort: <strong>100 users</strong> → AI <strong>$440.00</strong> → <strong>Year-1 total $1,327.88</strong> (<strong>$13.28 per user</strong>).<br />
+    Optional 10% contingency → <strong>$1,460.67</strong>.
+  </div>
+
+  <h2>11. Worked example — 100 users</h2>
+  <table>
+    <thead><tr><th>Line</th><th>Calculation</th><th class="num">Amount (USD)</th></tr></thead>
+    <tbody>
+      <tr><td>Annual VPS</td><td>73.99 × 12</td><td class="num">887.88</td></tr>
+      <tr><td>Annual AI</td><td>100 × 4.40</td><td class="num">440.00</td></tr>
+      <tr class="highlight"><td>Year-1 total</td><td>887.88 + 440.00</td><td class="num">1,327.88</td></tr>
+      <tr><td>Per-user all-in</td><td>1,327.88 ÷ 100</td><td class="num">13.28</td></tr>
+      <tr><td>With 10% contingency</td><td>1,327.88 × 1.10</td><td class="num">1,460.67</td></tr>
+    </tbody>
+  </table>
+
+  <div class="footer-note">
+    Prepared for university pilot planning. Figures are locked commercial assumptions for this document; actual OpenRouter invoices will vary with real token consumption.
+  </div>
+</body>
+</html>

@@ -1,3 +1,6 @@
+import Link from "next/link";
+
+import { CookieSettingsButton } from "@/components/CookieConsentBanner";
 import {
 	APP_COMPANY,
 	APP_COMPANY_URL,
@@ -29,6 +32,28 @@ export function SiteFooter({ className, variant = "page" }: Props) {
 					<a href={APP_COMPANY_URL} target="_blank" rel="noopener noreferrer" className="site-footer-link">
 						trustledai.com
 					</a>
+					<span className="site-footer-sep" aria-hidden>
+						·
+					</span>
+					<Link href="/terms" className="site-footer-link">
+						Terms
+					</Link>
+					<span className="site-footer-sep" aria-hidden>
+						·
+					</span>
+					<Link href="/privacy" className="site-footer-link">
+						Privacy
+					</Link>
+					<span className="site-footer-sep" aria-hidden>
+						·
+					</span>
+					<Link href="/aup" className="site-footer-link">
+						AUP
+					</Link>
+					<span className="site-footer-sep" aria-hidden>
+						·
+					</span>
+					<CookieSettingsButton />
 				</p>
 			</div>
 		</footer>

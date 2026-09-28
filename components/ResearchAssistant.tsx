@@ -6,6 +6,7 @@ import ReactMarkdown from "react-markdown";
 
 import { DisciplineSelect } from "@/components/aula/DisciplineSelect";
 import { NavIcon } from "@/components/aula/NavIcon";
+import { ResearchAiUseNoticeModal } from "@/components/research/ResearchAiUseNotice";
 import { ResearchCitationStyleModal } from "@/components/research/ResearchCitationStyleModal";
 import { ResearchIdeaCard } from "@/components/research/ResearchIdeaCard";
 import { StudentResearchHistory } from "@/components/research/StudentResearchHistory";
@@ -98,6 +99,7 @@ import {
 	researchWizardInputKey,
 	saveResearchWizardDraft,
 } from "@/lib/research-wizard-draft";
+import { hasAcceptedResearchAiNotice } from "@/lib/research-ai-notice";
 
 type WizardStep = 1 | 2 | 3;
 
@@ -189,6 +191,7 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 	const [sourcesLoading, setSourcesLoading] = useState(false);
 	const [sourcesError, setSourcesError] = useState<string | null>(null);
 	const [draftReady, setDraftReady] = useState(false);
+	const [aiNoticeOpen, setAiNoticeOpen] = useState(() => !hasAcceptedResearchAiNotice());
 	const prevBusyRef = useRef(false);
 	const generateAbortRef = useRef<AbortController | null>(null);
 	/** Last inputs used for a successful idea generation — avoid wipe on Back → Next. */
@@ -559,6 +562,10 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 
 	const handleRegenerate = () => {
 		if (!topic.trim()) return;
+		if (!hasAcceptedResearchAiNotice()) {
+			setAiNoticeOpen(true);
+			return;
+		}
 		lastGenerateKeyRef.current = null;
 		handleGenerate();
 	};
@@ -654,6 +661,10 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 		if (step === 2) {
 			setTopicTouched(true);
 			if (!topic.trim()) return;
+			if (!hasAcceptedResearchAiNotice()) {
+				setAiNoticeOpen(true);
+				return;
+			}
 			const inputKey = researchWizardInputKey({
 				discipline,
 				topic,
@@ -678,6 +689,10 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 		setTopicTouched(true);
 		setDisciplineTouched(true);
 		setScopeTouched(true);
+		if (!hasAcceptedResearchAiNotice()) {
+			setAiNoticeOpen(true);
+			return;
+		}
 		const trimmedTopic = topic.trim();
 		if (!trimmedTopic || !discipline || !scope || !hasTokens) return;
 		setShowCitationStyleModal(true);
@@ -1508,6 +1523,15 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 					</div>
 				</div>
 			</div>
+
+			<ResearchAiUseNoticeModal
+				open={aiNoticeOpen}
+				onAccept={() => setAiNoticeOpen(false)}
+				onDecline={() => {
+					setAiNoticeOpen(false);
+					router.replace(isStudent ? "/student/dashboard" : "/dashboard");
+				}}
+			/>
 
 			<ResearchCitationStyleModal
 				open={showCitationStyleModal}

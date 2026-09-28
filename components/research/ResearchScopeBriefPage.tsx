@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AulaLayout } from "@/components/AulaLayout";
 import { GarilApp } from "@/components/GarilApp";
 import { toEditorHtml } from "@/components/portal/editor/document-editor";
+import { ResearchAiUseNoticeModal } from "@/components/research/ResearchAiUseNotice";
 import { ResearchCitationStyleModal } from "@/components/research/ResearchCitationStyleModal";
 import { ResearchNotebookAssetsPreview } from "@/components/research/ResearchNotebookAssetsPreview";
 import { ResearchNotebookLibraryPicker } from "@/components/research/ResearchNotebookLibraryPicker";
@@ -47,6 +48,7 @@ import { stageOutlinePageContext } from "@/lib/research-outline-context";
 import { researchOutlinePagePath } from "@/lib/research-outline-routes";
 import { loadSavedOutline, saveResearchOutline } from "@/lib/research-outline-storage";
 import { stagePendingResearchPaper } from "@/lib/research-paper-pending";
+import { hasAcceptedResearchAiNotice } from "@/lib/research-ai-notice";
 import { stagePaperSources } from "@/lib/research-paper-sources";
 import {
 	formatScopeBrief,
@@ -124,15 +126,6 @@ function plainTextFromSourceContext(ctx: string): string {
 	return trimmed.replace(/^[\s\S]*?\n\n/, "").trim() || trimmed;
 }
 
-function normalizePrefillHtml(html: string): string {
-	return html
-		.replace(/\s+style="[^"]*"/gi, "")
-		.replace(/\s+class="[^"]*"/gi, "")
-		.replace(/>\s+</g, "><")
-		.replace(/<p><\/p>/g, "")
-		.trim();
-}
-
 function titleFromFileName(fileName: string): string {
 	return fileName.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim().slice(0, 500);
 }
@@ -155,10 +148,15 @@ export function ResearchScopeBriefPage({
 
 	/** Refine / regenerate still mounts the workspace via `?generate=1`. Fresh generates use `/research/generating`. */
 	const [workspaceMode, setWorkspaceMode] = useState(() => searchParams.get("generate") === "1");
+	const [aiNoticeOpen, setAiNoticeOpen] = useState(false);
 
 	useEffect(() => {
 		if (searchParams.get("generate") === "1") setWorkspaceMode(true);
 	}, [searchParams]);
+
+	useEffect(() => {
+		setAiNoticeOpen(!hasAcceptedResearchAiNotice());
+	}, []);
 
 	const discipline = useMemo(() => {
 		const fromQuery = searchParams.get("discipline")?.trim() ?? "";
@@ -187,8 +185,6 @@ export function ResearchScopeBriefPage({
 	const [loadingNotebookTitle, setLoadingNotebookTitle] = useState("");
 	const [notebookDatasets, setNotebookDatasets] = useState<NotebookBriefDatasetPreview[]>([]);
 	const [notebookImages, setNotebookImages] = useState<NotebookBriefImagePreview[]>([]);
-	const [editorRemountKey, setEditorRemountKey] = useState(0);
-	const autoPrefillHtmlRef = useRef("");
 	const notebookPrefillSeqRef = useRef(0);
 	const [fieldValues, setFieldValues] = useState<Record<string, string>>(() => {
 		const initial: Record<string, string> = {};
@@ -269,29 +265,25 @@ export function ResearchScopeBriefPage({
 	const buildIdea = (): { idea: ResearchIdea; trimmedTopic: string; brief: string } | null => {
 		if (!discipline || !canGenerate) return null;
 		const briefFromRich = useRichBrief ? briefPlain : "";
-		const editorHtml = useRichBrief ? briefHtml : topic;
-		const uneditedNotebookPrefill =
-			selectedProjectIds.length > 0 &&
-			Boolean(autoPrefillHtmlRef.current) &&
-			normalizePrefillHtml(editorHtml) === normalizePrefillHtml(autoPrefillHtmlRef.current);
+		const typedTopic = (
+			useRichBrief
+				? briefFromRich.split(/\n/).map((line) => line.trim()).find(Boolean) ||
+					(briefUpload ? titleFromFileName(briefUpload.fileName) : "") ||
+					""
+				: plainFromRich(topic).split(/\n/).map((line) => line.trim()).find(Boolean) || ""
+		).slice(0, 500);
+		const hasTypedTopic = Boolean(typedTopic.trim());
 		const notebookDirective =
 			selectedProjectIds.length > 0
-				? `Use the selected research notebook library as primary source material${
-						firstNotebookTitle ? ` (“${firstNotebookTitle}”)` : ""
-					}. Ground the study title, claims, methods, and findings in notebook notes, datasets, files, figures, and lab work. Do not invent a different topic or ignore the selected notebook.`
+				? hasTypedTopic
+					? `The user topic/title is the study focus. Use the selected research notebook library${
+							firstNotebookTitle ? ` (“${firstNotebookTitle}”)` : ""
+						} as primary evidence and source material (notes, datasets, files, figures, surveys, lab work) to generate that topic. Do not replace the user topic with a different study, and do not ignore the notebook.`
+					: `Use the selected research notebook library as primary source material${
+							firstNotebookTitle ? ` (“${firstNotebookTitle}”)` : ""
+						}. Ground claims, methods, and findings in notebook notes, datasets, files, figures, and lab work.`
 				: "";
-		const trimmedTopic = (
-			useRichBrief
-				? (uneditedNotebookPrefill
-						? firstNotebookTitle ||
-							briefFromRich.split(/\n/).map((line) => line.trim()).find(Boolean) ||
-							""
-						: briefFromRich.split(/\n/).map((line) => line.trim()).find(Boolean) ||
-							(briefUpload ? titleFromFileName(briefUpload.fileName) : "") ||
-							"")
-				: plainFromRich(topic).split(/\n/).map((line) => line.trim()).find(Boolean) || ""
-		)
-			.slice(0, 500) || firstNotebookTitle || copy.fallbackTopic;
+		const trimmedTopic = typedTopic || firstNotebookTitle || copy.fallbackTopic;
 		const plainFieldValues: Record<string, string> = {};
 		for (const field of copy.fields) {
 			const raw = fieldValues[field.id] ?? "";
@@ -401,6 +393,11 @@ export function ResearchScopeBriefPage({
 		if (!canGenerate) return false;
 		if (!hasTokens) {
 			setSubmitError("Research token limit reached.");
+			return false;
+		}
+		if (!hasAcceptedResearchAiNotice()) {
+			setAiNoticeOpen(true);
+			setSubmitError(null);
 			return false;
 		}
 		return true;
@@ -518,19 +515,7 @@ export function ResearchScopeBriefPage({
 		}
 	};
 
-	const applyNotesHtml = (html: string) => {
-		const next = html.trim() ? html : "";
-		if (useRichBrief) {
-			setBriefHtml(next);
-		} else {
-			setTopic(next);
-		}
-		autoPrefillHtmlRef.current = next;
-		// Remount TipTap so parent-driven prefill always wins over skipContentSync races.
-		setEditorRemountKey((key) => key + 1);
-	};
-
-	const prefillFromSelectedNotebooks = async (ids: string[]) => {
+	const loadNotebookAssets = async (ids: string[]) => {
 		if (!ids.length) {
 			setNotebookDatasets([]);
 			setNotebookImages([]);
@@ -552,21 +537,12 @@ export function ResearchScopeBriefPage({
 			setNotebookDatasets(prefill.datasets);
 			setNotebookImages(prefill.images);
 			if (prefill.title?.trim()) setLoadingNotebookTitle(prefill.title.trim());
-
-			const notes =
-				prefill.notesHtml.trim() ||
-				toEditorHtml(
-					ids.map((id) => notebookTitlesRef.current[id]?.trim()).find(Boolean) ||
-						prefill.title ||
-						"Selected research notebook",
-				);
-			applyNotesHtml(notes);
 		} catch (error) {
 			if (seq !== notebookPrefillSeqRef.current) return;
 			setNotebookDatasets([]);
 			setNotebookImages([]);
 			setSubmitError(
-				error instanceof Error ? error.message : "Could not load notebook content into the editor.",
+				error instanceof Error ? error.message : "Could not load notebook assets.",
 			);
 		} finally {
 			if (seq === notebookPrefillSeqRef.current) {
@@ -582,7 +558,7 @@ export function ResearchScopeBriefPage({
 			setNotebookImages([]);
 			return;
 		}
-		void prefillFromSelectedNotebooks(ids);
+		void loadNotebookAssets(ids);
 	};
 
 	const libraryPicker = allowNotebookLibrary ? (
@@ -730,7 +706,6 @@ export function ResearchScopeBriefPage({
 					>
 						{useRichBrief ? (
 							<ScopeBriefRichEditor
-								key={`brief-${editorRemountKey}`}
 								value={briefHtml}
 								onChange={setBriefHtml}
 								placeholder={topicPlaceholder}
@@ -846,7 +821,6 @@ export function ResearchScopeBriefPage({
 						</div>
 						<div className="assign-input-wrap assign-input-wrap-rich">
 							<ScopeBriefRichEditor
-								key={`topic-${editorRemountKey}`}
 								value={topic}
 								onChange={setTopic}
 								placeholder={topicPlaceholder}
@@ -947,6 +921,15 @@ export function ResearchScopeBriefPage({
 				</div>
 			</footer>
 			)}
+
+			<ResearchAiUseNoticeModal
+				open={aiNoticeOpen}
+				onAccept={() => setAiNoticeOpen(false)}
+				onDecline={() => {
+					setAiNoticeOpen(false);
+					router.replace(isStudent ? "/student/dashboard" : "/dashboard");
+				}}
+			/>
 
 			<ResearchNotebookLoadingModal
 				open={loadingNotebookPrefill}

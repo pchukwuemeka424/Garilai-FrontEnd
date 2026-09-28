@@ -75,6 +75,21 @@ export function extractPaperTitle(content: string, fallbackTopic: string): strin
 	return topic.slice(0, 220) || "Research paper";
 }
 
+/**
+ * Prefer the user's stored topic as the display/PDF title so UI and export match.
+ * Falls back to markdown extraction only when the topic is empty or generic.
+ */
+export function resolvePaperDisplayTitle(content: string, topic: string): string {
+	const preferred = cleanTitle(topic);
+	if (preferred) {
+		const key = preferred.toLowerCase().replace(/:$/, "").trim();
+		if (!GENERIC_TITLES.has(key) && !SECTION_LABELS.has(key)) {
+			return preferred.slice(0, 220);
+		}
+	}
+	return extractPaperTitle(content, topic);
+}
+
 export function titleQuality(title: string): number {
 	const text = cleanTitle(title);
 	const key = text.toLowerCase();

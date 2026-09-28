@@ -17,19 +17,10 @@ export type AuthHeroContent = {
 };
 
 const LOGIN_HERO: AuthHeroContent = {
-	eyebrow: "Research excellence",
+	eyebrow: "Institutional workspace",
 	title: "Governed AI Workspace for Higher Education",
-	lead: `${APP_NAME} helps students and lecturers write research papers, build literature reviews, verify citations, and deliver publication-ready work — from undergraduate projects to postgraduate theses.`,
+	lead: `${APP_NAME} brings research, teaching and learning into a single academic workspace designed specifically for universities — with institutional visibility built in.`,
 	features: [
-		{
-			icon: (
-				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-					<circle cx="11" cy="11" r="8" />
-					<path d="m21 21-4.3-4.3" strokeLinecap="round" />
-				</svg>
-			),
-			text: "Search arXiv, Semantic Scholar, and Crossref in one place",
-		},
 		{
 			icon: (
 				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
@@ -37,7 +28,16 @@ const LOGIN_HERO: AuthHeroContent = {
 					<path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" strokeLinecap="round" strokeLinejoin="round" />
 				</svg>
 			),
-			text: "AI-synthesized literature reviews with grounded citations",
+			text: "Structured academic workflows for research and writing",
+		},
+		{
+			icon: (
+				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+					<circle cx="11" cy="11" r="8" />
+					<path d="m21 21-4.3-4.3" strokeLinecap="round" />
+				</svg>
+			),
+			text: "Search trusted research databases from one workspace",
 		},
 		{
 			icon: (
@@ -46,15 +46,15 @@ const LOGIN_HERO: AuthHeroContent = {
 					<path d="m9 12 2 2 4-4" strokeLinecap="round" strokeLinejoin="round" />
 				</svg>
 			),
-			text: "Citation verification you can trust",
+			text: "Evidence-backed research with citation verification",
 		},
 	],
 };
 
 export const REGISTER_HERO: AuthHeroContent = {
-	eyebrow: "Get started free",
+	eyebrow: "Join your institution",
 	title: "Governed AI Workspace for Higher Education",
-	lead: `Create your ${APP_NAME} account to access tools shaped for universities, polytechnics, and colleges of education — whether you are writing a first-year project or supervising postgraduate research.`,
+	lead: `Create your ${APP_NAME} account to work in a governed academic environment for universities, polytechnics, and colleges of education.`,
 	features: [
 		{
 			icon: (
@@ -71,7 +71,7 @@ export const REGISTER_HERO: AuthHeroContent = {
 					<path d="M3 21h18M5 21V7l8-4v18M13 21V3l6 3v15" strokeLinecap="round" strokeLinejoin="round" />
 				</svg>
 			),
-			text: "Lecturer accounts for lecture planning and research oversight",
+			text: "Lecturer accounts for supervision and research oversight",
 		},
 		{
 			icon: (

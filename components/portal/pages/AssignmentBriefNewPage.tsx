@@ -1,34 +1,49 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, ClipboardList } from "lucide-react";
+import { Suspense } from "react";
+import { useSearchParams } from "next/navigation";
+import { ArrowLeft } from "lucide-react";
 import { AssignmentBriefForm } from "@/components/portal/features/assignment/assignment-brief-form";
 
-export default function NewAssignmentBriefPage() {
+function NewAssignmentBriefInner() {
+  const searchParams = useSearchParams();
+  const returnParam = searchParams.get("return");
+  const returnHref =
+    returnParam && returnParam.startsWith("/") && !returnParam.startsWith("//")
+      ? returnParam
+      : "/supervision/assignments";
+
   return (
-    <div className="portal-brief-page">
-      <header className="portal-brief-toolbar">
-        <div className="portal-brief-toolbar-copy">
-          <Link href="/assignments" className="portal-brief-back">
-            <ArrowLeft className="size-4" />
-            Back to assignments
-          </Link>
-          <div className="portal-brief-title-row">
-            <span className="portal-brief-icon" aria-hidden>
-              <ClipboardList className="size-5" strokeWidth={1.75} />
-            </span>
-            <div>
-              <p className="portal-brief-kicker">Lecturer · New brief</p>
-              <h1 className="portal-brief-title">Create assignment</h1>
-            </div>
+    <div className="sv-brief">
+      <Link href={returnHref} className="sv-brief-back">
+        <ArrowLeft className="size-4" />
+        Assignments
+      </Link>
+
+      <header className="sv-brief-hero">
+        <div className="sv-brief-hero-copy">
+          <div className="sv-brief-meta">
+            <span className="sv-brief-badge">Supervision</span>
+            <span className="sv-brief-meta-count">Drafts stay private until you publish</span>
           </div>
-          <p className="portal-brief-lead">
-            Write the brief students will follow — instructions, required
-            sections, word count, deadline, and how you will mark the work.
+          <h1>Create assignment</h1>
+          <p>
+            Write the brief students will follow — title, instructions, and
+            deadline.
           </p>
         </div>
       </header>
-      <AssignmentBriefForm layout="wide" />
+
+      <AssignmentBriefForm layout="wide" returnHref={returnHref} />
     </div>
+  );
+}
+
+export default function NewAssignmentBriefPage() {
+  return (
+    <Suspense fallback={<div className="sv-brief" aria-busy="true" />}>
+      <NewAssignmentBriefInner />
+    </Suspense>
   );
 }

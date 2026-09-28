@@ -2,7 +2,7 @@
 
 import { marked, type Token, type Tokens } from "marked";
 
-import { extractPaperTitle } from "@/lib/research-paper-title";
+import { extractPaperTitle, resolvePaperDisplayTitle } from "@/lib/research-paper-title";
 import {
 	canonicalizeSectionTitle,
 	formatKeywordTerms,
@@ -424,11 +424,16 @@ function buildBlocks(markdown: string, meta: ResearchPaperMeta): PdfBlock[] {
 	const author = meta.author?.trim() ?? "";
 	const department = meta.department?.trim() ?? "";
 	const affiliation = meta.affiliation?.trim() ?? "";
-	const extractedTitle = extractPaperTitle(markdown, meta.fallbackTopic?.trim() ?? "");
+	const preferredTopic = meta.fallbackTopic?.trim() ?? "";
+	// Markdown-extracted title is used only to dedupe the AI opening H1/bold from the body.
+	const extractedTitle = extractPaperTitle(markdown, preferredTopic);
+	const displayTitle = resolvePaperDisplayTitle(markdown, preferredTopic);
 	const skipKeys = buildSkipKeys(meta, extractedTitle);
+	const displayKey = normalizePdfText(displayTitle).toLowerCase();
+	if (displayKey) skipKeys.add(displayKey);
 
-	if (extractedTitle && !isGenericTitle(extractedTitle)) {
-		blocks.push({ kind: "title", text: extractedTitle });
+	if (displayTitle && !isGenericTitle(displayTitle)) {
+		blocks.push({ kind: "title", text: displayTitle });
 	}
 	if (author) blocks.push({ kind: "byline", text: author });
 	if (department) blocks.push({ kind: "affiliation", text: department });
@@ -439,6 +444,7 @@ function buildBlocks(markdown: string, meta: ResearchPaperMeta): PdfBlock[] {
 
 	const pushBody = (text: string) => {
 		if (shouldSkipMetadataLine(text, skipKeys, extractedTitle)) return;
+		if (shouldSkipMetadataLine(text, skipKeys, displayTitle)) return;
 		const cleaned = stripLeadingTitleLabel(text);
 		if (!cleaned) return;
 		if (inReferences) {
@@ -455,7 +461,13 @@ function buildBlocks(markdown: string, meta: ResearchPaperMeta): PdfBlock[] {
 	for (const token of marked.lexer(markdown.trim())) {
 		if (token.type === "heading") {
 			const text = flattenTokens((token as Tokens.Heading).tokens);
-			if (!text || shouldSkipMetadataLine(text, skipKeys, extractedTitle)) continue;
+			if (
+				!text ||
+				shouldSkipMetadataLine(text, skipKeys, extractedTitle) ||
+				shouldSkipMetadataLine(text, skipKeys, displayTitle)
+			) {
+				continue;
+			}
 
 			const section = sectionHeadingLabel(text);
 			if (section) {
@@ -490,7 +502,13 @@ function buildBlocks(markdown: string, meta: ResearchPaperMeta): PdfBlock[] {
 				}
 			}
 			const text = flattenTokens(p.tokens, { keepLinkUrls: inReferences });
-			if (!text || shouldSkipMetadataLine(text, skipKeys, extractedTitle)) continue;
+			if (
+				!text ||
+				shouldSkipMetadataLine(text, skipKeys, extractedTitle) ||
+				shouldSkipMetadataLine(text, skipKeys, displayTitle)
+			) {
+				continue;
+			}
 
 			if (isBoldOnlyParagraph(p)) {
 				const section = sectionHeadingLabel(text);

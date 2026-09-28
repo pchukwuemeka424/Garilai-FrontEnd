@@ -46,8 +46,8 @@ function restoreResearchVisualFences(content: string, fences: string[]): string 
 	return next.replace(/\n{3,}/g, "\n\n").trim();
 }
 
-/** Truncate markdown table data rows to at most maxRows (default 10). */
-export function limitTableRowsInMarkdown(content: string, maxRows = 10): string {
+/** Truncate markdown table data rows to at most maxRows (default 30). */
+export function limitTableRowsInMarkdown(content: string, maxRows = 30): string {
 	if (!content || !content.includes("|")) return content;
 
 	const lines = content.split("\n");
@@ -99,7 +99,7 @@ export function limitTableRowsInMarkdown(content: string, maxRows = 10): string 
 	return output.join("\n");
 }
 
-/** Normalize headings: strip hash prefixes, use bold section titles; remove divider lines; reduce table rows to <= 10. */
+/** Normalize headings: strip hash prefixes, use bold section titles; remove divider lines; reduce table rows to <= 30. */
 export function normalizeResearchPaperMarkdown(content: string): string {
 	const { text, fences } = extractResearchVisualFences(content);
 	const normalized = standardizeResearchSectionHeadings(
@@ -111,7 +111,7 @@ export function normalizeResearchPaperMarkdown(content: string): string {
 				.replace(/^[\s]*(-{2,}|_{2,}|\*{2,})[\s]*$/gm, "")
 				.replace(/\n{3,}/g, "\n\n")
 				.trim(),
-			10,
+			30,
 		),
 	);
 	return restoreResearchVisualFences(normalized, fences);

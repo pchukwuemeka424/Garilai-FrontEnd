@@ -8,15 +8,12 @@ import {
 } from "@/lib/research-api";
 import { getStoredToken, getStoredUserId } from "@/lib/auth";
 import type { ResearchSourceSelection } from "@/lib/research-assets-api";
-import {
-	downloadMarkdownAsPdf,
-	researchPaperFilename,
-	type ResearchPaperMeta,
-} from "@/lib/research-paper-pdf";
-import { extractPaperTitle, titleQuality } from "@/lib/research-paper-title";
+import type { ResearchPaperMeta } from "@/lib/research-paper-pdf";
+import { resolvePaperDisplayTitle, titleQuality } from "@/lib/research-paper-title";
 import type { TokenUsage } from "@/lib/token-usage";
 
-export { extractPaperTitle } from "@/lib/research-paper-title";
+export { extractPaperTitle, resolvePaperDisplayTitle } from "@/lib/research-paper-title";
+export type { ResearchPaperMeta } from "@/lib/research-paper-pdf";
 
 const SAVED_PAPERS_KEY_PREFIX = "aula.chat.research.saved";
 const LEGACY_SAVED_PAPERS_KEY = "aula.chat.research.saved";
@@ -61,7 +58,7 @@ export type RemoveSavedPaperResult = {
 };
 
 function normalizeSavedPaper(paper: SavedResearchPaper): SavedResearchPaper {
-	const title = extractPaperTitle(paper.content, paper.topic);
+	const title = resolvePaperDisplayTitle(paper.content, paper.topic);
 	return { ...paper, title };
 }
 
@@ -135,7 +132,7 @@ export function saveResearchPaperLocal(
 	if (!trimmedTopic || !trimmedContent) return loadSavedPapers();
 
 	const now = new Date().toISOString();
-	const title = extractPaperTitle(trimmedContent, trimmedTopic);
+	const title = resolvePaperDisplayTitle(trimmedContent, trimmedTopic);
 	const existing = loadSavedPapers();
 	const topicKey = trimmedTopic.toLowerCase();
 	const match = existing.find((p) => p.topic.trim().toLowerCase() === topicKey);
@@ -335,7 +332,7 @@ export async function updateSavedResearchPaper(
 	const updated: SavedResearchPaper = {
 		...existing,
 		topic: nextTopic,
-		title: extractPaperTitle(nextContent, nextTopic),
+		title: resolvePaperDisplayTitle(nextContent, nextTopic),
 		content: nextContent,
 		aiBaselineContent: baseline,
 		humanEdited: nextContent.trim() !== baseline.trim(),
@@ -353,6 +350,7 @@ export async function downloadResearchPaper(
 	paper: SavedResearchPaper,
 	meta?: ResearchPaperMeta,
 ): Promise<void> {
+	const { downloadMarkdownAsPdf, researchPaperFilename } = await import("@/lib/research-paper-pdf");
 	await downloadMarkdownAsPdf(
 		paper.content,
 		researchPaperFilename(paper.title, "research-paper"),

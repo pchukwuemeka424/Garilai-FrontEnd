@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 
 import { AulaLayout } from "@/components/AulaLayout";
+import { useFeatureAiNoticeGate } from "@/components/legal/useFeatureAiNoticeGate";
 import { NotebookWorkspace } from "@/components/research-notebook/NotebookWorkspace";
 import { StudentLayout } from "@/components/StudentLayout";
 import {
@@ -35,6 +36,7 @@ import {
 } from "@/lib/research-assets-api";
 import { emptyNotebookData, OPEN_CREATE_NOTEBOOK_EVENT } from "@/lib/research-notebook";
 import type { ResearchQuestionnaire } from "@/lib/research-questionnaire";
+import { NOTEBOOK_AI_NOTICE } from "@/lib/feature-ai-notice";
 
 type Variant = "lecturer" | "student";
 
@@ -68,6 +70,8 @@ export function NotebookListPage({ variant }: { variant: Variant }) {
 	const [deleteError, setDeleteError] = useState("");
 	const nameRef = useRef<HTMLInputElement>(null);
 	const root = basePath(variant);
+	const dashboardHref = variant === "student" ? "/student/dashboard" : "/dashboard";
+	const { aiNoticeModal } = useFeatureAiNoticeGate(NOTEBOOK_AI_NOTICE, dashboardHref);
 
 	const filteredProjects = useMemo(() => {
 		const q = searchQuery.trim().toLowerCase();
@@ -597,7 +601,17 @@ export function NotebookListPage({ variant }: { variant: Variant }) {
 		</div>
 	);
 
-	return variant === "student" ? <StudentLayout>{inner}</StudentLayout> : <AulaLayout showRightPanel={false}>{inner}</AulaLayout>;
+	return variant === "student" ? (
+		<StudentLayout>
+			{inner}
+			{aiNoticeModal}
+		</StudentLayout>
+	) : (
+		<AulaLayout showRightPanel={false}>
+			{inner}
+			{aiNoticeModal}
+		</AulaLayout>
+	);
 }
 
 export function NotebookDetailPage({ variant, projectId }: { variant: Variant; projectId: string }) {
@@ -608,6 +622,8 @@ export function NotebookDetailPage({ variant, projectId }: { variant: Variant; p
 	const [error, setError] = useState("");
 	const [loading, setLoading] = useState(true);
 	const root = basePath(variant);
+	const dashboardHref = variant === "student" ? "/student/dashboard" : "/dashboard";
+	const { aiNoticeModal } = useFeatureAiNoticeGate(NOTEBOOK_AI_NOTICE, dashboardHref);
 
 	const applyWorkspace = useCallback((ws: Awaited<ReturnType<typeof fetchWorkspace>>) => {
 		setProject({
@@ -702,10 +718,14 @@ export function NotebookDetailPage({ variant, projectId }: { variant: Variant; p
 	);
 
 	return variant === "student" ? (
-		<StudentLayout>{inner}</StudentLayout>
+		<StudentLayout>
+			{inner}
+			{aiNoticeModal}
+		</StudentLayout>
 	) : (
 		<AulaLayout showRightPanel={false} fullHeight>
 			{inner}
+			{aiNoticeModal}
 		</AulaLayout>
 	);
 }

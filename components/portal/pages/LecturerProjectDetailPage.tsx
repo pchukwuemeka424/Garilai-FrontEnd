@@ -13,13 +13,14 @@ import {
   FolderKanban,
   Loader2,
   Mail,
+  Percent,
   UserRound,
   type LucideIcon,
 } from "lucide-react";
 import { Avatar } from "@/components/portal/ui/avatar";
 import { Button } from "@/components/portal/ui/button";
 import { Progress } from "@/components/portal/ui/progress";
-import { LoadingPage } from "@/components/portal/feedback/loading-page";
+import { Skeleton } from "@/components/portal/ui/skeleton";
 import { apiFetch } from "@/lib/portal-api";
 import { projectTypeLabel } from "@/lib/portal/project-types";
 import { cn } from "@/lib/portal/cn";
@@ -70,6 +71,11 @@ function formatRelative(value?: string) {
   return new Date(value).toLocaleDateString();
 }
 
+function formatStage(stage?: string) {
+  if (!stage) return null;
+  return stage.replace(/_/g, " ");
+}
+
 function topicTone(status?: string) {
   if (status === "approved") {
     return { label: "Topic approved", tone: "ok" as const };
@@ -80,12 +86,12 @@ function topicTone(status?: string) {
   if (status === "draft") {
     return { label: "Topic draft", tone: "mid" as const };
   }
-  return null;
+  return { label: "No topic", tone: "mid" as const };
 }
 
 function pageTone(status?: string): {
   label: string;
-  tone: "ok" | "review";
+  tone: "ok" | "review" | "mid";
   Icon: LucideIcon;
 } {
   if (status === "approved") {
@@ -94,13 +100,53 @@ function pageTone(status?: string): {
   if (status === "needs_revision") {
     return { label: "Needs rewrite", tone: "review", Icon: AlertCircle };
   }
-  return { label: "Pending review", tone: "review", Icon: Clock3 };
+  if (
+    status === "pending_review" ||
+    status === "submitted" ||
+    status === "in_review"
+  ) {
+    return { label: "Pending review", tone: "review", Icon: Clock3 };
+  }
+  return { label: "Draft", tone: "mid", Icon: FileText };
+}
+
+function typeTone(type: string) {
+  switch (type) {
+    case "dissertation":
+      return "navy";
+    case "thesis":
+      return "violet";
+    case "research":
+      return "blue";
+    case "publication":
+      return "rose";
+    case "capstone":
+      return "amber";
+    case "assignment":
+      return "slate";
+    default:
+      return "teal";
+  }
 }
 
 function progressTone(value: number) {
   if (value < 20) return "bg-[#dc2626]";
   if (value < 50) return "bg-[#d97706]";
   return "bg-[#059669]";
+}
+
+function friendlyProjectError(message: string | null) {
+  if (!message) return null;
+  const lower = message.toLowerCase();
+  if (
+    lower.includes("cast to objectid") ||
+    lower.includes("objectid failed") ||
+    lower === "project not found" ||
+    lower.includes("not found")
+  ) {
+    return "This project is not assigned to you, or it may have been removed.";
+  }
+  return message;
 }
 
 export default function SupervisorProjectDetailPage() {
@@ -152,7 +198,10 @@ export default function SupervisorProjectDetailPage() {
       (p) => p.reviewStatus === "needs_revision",
     ).length;
     const pending = pages.filter(
-      (p) => p.reviewStatus === "pending_review",
+      (p) =>
+        p.reviewStatus === "pending_review" ||
+        p.reviewStatus === "submitted" ||
+        p.reviewStatus === "in_review",
     ).length;
     return { approved, needsRewrite, pending, total: pages.length };
   }, [pages]);
@@ -177,26 +226,44 @@ export default function SupervisorProjectDetailPage() {
     }
   }
 
-  if (loading) return <LoadingPage label="Loading project…" />;
+  if (loading) {
+    return (
+      <div className="sv-project" aria-busy="true">
+        <Skeleton className="h-4 w-28 rounded-md" />
+        <Skeleton className="h-[10rem] rounded-2xl" />
+        <div className="sv-project-kpis">
+          {[1, 2, 3, 4].map((item) => (
+            <Skeleton key={item} className="h-[6.5rem] rounded-2xl" />
+          ))}
+        </div>
+        <Skeleton className="h-[5.5rem] rounded-2xl" />
+        <div className="sv-project-grid">
+          <Skeleton className="h-[16rem] rounded-2xl" />
+          <Skeleton className="h-[16rem] rounded-2xl" />
+        </div>
+        <Skeleton className="h-[18rem] rounded-2xl" />
+      </div>
+    );
+  }
 
   if (!project) {
     return (
-      <div className="portal-students">
-        <Link href="/supervision/projects" className="portal-students-back">
+      <div className="sv-project">
+        <Link href="/supervision/projects" className="sv-project-back">
           <ArrowLeft className="size-4" />
           Projects
         </Link>
-        <section className="portal-students-panel">
-          <div className="portal-students-empty">
-            <span className="portal-students-empty-icon" aria-hidden>
+        <section className="sv-project-panel">
+          <div className="sv-projects-empty">
+            <span className="sv-projects-empty-icon" aria-hidden>
               <FolderKanban className="size-6" strokeWidth={1.75} />
             </span>
             <h2>Project not found</h2>
             <p>
-              {error ||
+              {friendlyProjectError(error) ||
                 "This project is not assigned to you, or it may have been removed."}
             </p>
-            <Button asChild className="mt-2">
+            <Button asChild>
               <Link href="/supervision/projects">Back to projects</Link>
             </Button>
           </div>
@@ -205,14 +272,27 @@ export default function SupervisorProjectDetailPage() {
     );
   }
 
-  const progress = project.progressPercent ?? 0;
   const student = project.student;
   const topicPending = project.topicStatus === "submitted";
   const topic = topicTone(project.topicStatus);
+  const stage = formatStage(project.stage);
+  const progress = project.progressPercent ?? 0;
   const firstPage = pages[0];
   const firstPageHref = firstPage
     ? `/supervision/projects/${project._id}/pages/${firstPage._id}`
     : null;
+  const nextAction =
+    pages.find(
+      (p) =>
+        p.reviewStatus === "pending_review" ||
+        p.reviewStatus === "submitted" ||
+        p.reviewStatus === "in_review" ||
+        p.reviewStatus === "needs_revision",
+    ) || firstPage;
+  const nextActionHref = nextAction
+    ? `/supervision/projects/${project._id}/pages/${nextAction._id}`
+    : null;
+
   const pagesHint =
     pageStats.pending > 0
       ? `${pageStats.pending} pending review`
@@ -222,45 +302,98 @@ export default function SupervisorProjectDetailPage() {
           ? `${pageStats.approved} approved`
           : "No reviews yet";
 
+  const kpis = [
+    {
+      label: "Pages",
+      value: pageStats.total,
+      caption: "Writing sections in this folder",
+      icon: "pages" as const,
+      Icon: FileText,
+    },
+    {
+      label: "Approved",
+      value: pageStats.approved,
+      caption: "Pages cleared for the next stage",
+      icon: "check" as const,
+      Icon: CheckCircle2,
+    },
+    {
+      label: "In review",
+      value: pageStats.pending + pageStats.needsRewrite,
+      caption:
+        pageStats.needsRewrite > 0
+          ? `${pageStats.needsRewrite} need rewrite`
+          : "Awaiting supervisor action",
+      icon: "clock" as const,
+      Icon: Clock3,
+    },
+    {
+      label: "Progress",
+      value: `${progress}%`,
+      caption: stage ? `Stage · ${stage}` : "Folder completion",
+      icon: "progress" as const,
+      Icon: Percent,
+    },
+  ];
+
   return (
-    <div className="portal-students">
-      <Link href="/supervision/projects" className="portal-students-back">
+    <div className="sv-project">
+      <Link href="/supervision/projects" className="sv-project-back">
         <ArrowLeft className="size-4" />
-        Projects
+        Back to projects
       </Link>
 
-      <header className="portal-students-hero">
-        <div className="portal-student-identity">
-          <Avatar
-            name={student?.name || project.title}
-            className="size-14 bg-[#0D0B61] text-base text-white"
-          />
-          <div className="min-w-0">
-            <p className="portal-students-kicker">Supervision</p>
-            <h1 className="portal-students-title">{project.title}</h1>
-            <p className="portal-students-lead">
-              {student?.name || "No student"}
-              {student?.email ? ` · ${student.email}` : ""}
-              {" · "}
+      <header className={cn("sv-project-hero", `is-${topic.tone}`)}>
+        <div className="sv-project-hero-main">
+          <div className="sv-project-meta">
+            <span className="sv-projects-badge">
+              <span className="sv-projects-live" aria-hidden />
+              Supervision folder
+            </span>
+            <span
+              className={cn(
+                "sv-projects-type",
+                `is-${typeTone(project.projectType)}`,
+              )}
+            >
               {projectTypeLabel(project.projectType)}
-              {project.topic ? ` · ${project.topic}` : ""}
-              {project.stage ? ` · ${project.stage}` : ""}
-            </p>
-            <div className="portal-student-project-pills">
-              {topic ? (
-                <span className={cn("portal-students-status", `is-${topic.tone}`)}>
-                  {topic.label}
-                </span>
-              ) : null}
-              {project.status ? (
-                <span className="portal-students-status is-mid">
-                  {project.status}
-                </span>
-              ) : null}
-            </div>
+            </span>
+            <span className={cn("sv-projects-status", `is-${topic.tone}`)}>
+              {topic.label}
+            </span>
+            {project.status ? (
+              <span className="sv-projects-status is-mid">{project.status}</span>
+            ) : null}
           </div>
+
+          <h1>{project.title}</h1>
+          <p className="sv-project-lead">
+            {project.topic || "No topic submitted yet"}
+            {stage ? ` · ${stage}` : ""}
+            {" · Updated "}
+            {formatRelative(project.updatedAt)}
+          </p>
+
+          {student ? (
+            <Link
+              href={`/students/${student.id}`}
+              className="sv-project-student-chip"
+            >
+              <Avatar
+                name={student.name}
+                className="size-9 bg-[#ececf8] text-[#0D0B61]"
+              />
+              <span className="min-w-0">
+                <span className="sv-projects-student-name">{student.name}</span>
+                <span className="sv-projects-student-email">
+                  {student.email || "No email on file"}
+                </span>
+              </span>
+            </Link>
+          ) : null}
         </div>
-        <div className="portal-students-hero-actions">
+
+        <div className="sv-projects-hero-actions">
           {student?.email ? (
             <Button asChild variant="outline">
               <a href={`mailto:${student.email}`}>
@@ -269,15 +402,16 @@ export default function SupervisorProjectDetailPage() {
               </a>
             </Button>
           ) : null}
-          {student ? (
-            <Button asChild variant="outline">
-              <Link href={`/students/${student.id}`}>
-                <UserRound className="size-4" />
-                Student
+          {nextActionHref ? (
+            <Button asChild>
+              <Link href={nextActionHref}>
+                {pageStats.pending > 0 || pageStats.needsRewrite > 0
+                  ? "Continue review"
+                  : "Open first page"}
+                <ArrowRight className="size-4" />
               </Link>
             </Button>
-          ) : null}
-          {firstPageHref ? (
+          ) : firstPageHref ? (
             <Button asChild>
               <Link href={firstPageHref}>
                 Open first page
@@ -289,189 +423,236 @@ export default function SupervisorProjectDetailPage() {
       </header>
 
       {error ? (
-        <p className="portal-students-error" role="alert">
+        <p className="sv-projects-error" role="alert">
           {error}
         </p>
       ) : null}
       {approveError ? (
-        <p className="portal-students-error" role="alert">
+        <p className="sv-projects-error" role="alert">
           {approveError}
         </p>
       ) : null}
 
-      <section
-        className="portal-students-kpis is-profile"
-        aria-label="Project snapshot"
-      >
-        <article className="portal-students-kpi">
-          <span className="portal-students-kpi-icon portal-students-kpi-icon--navy">
-            <FileText className="size-4" strokeWidth={1.75} />
+      {topicPending ? (
+        <div className="sv-projects-attention" role="status">
+          <Clock3 className="size-4 shrink-0" strokeWidth={1.75} />
+          <span>
+            Topic is waiting for your approval before writing continues.
           </span>
-          <div>
-            <p className="portal-students-kpi-value">{pageStats.total}</p>
-            <p className="portal-students-kpi-label">Pages</p>
-          </div>
-        </article>
-        <article className="portal-students-kpi">
-          <span className="portal-students-kpi-icon portal-students-kpi-icon--green">
-            <CheckCircle2 className="size-4" strokeWidth={1.75} />
-          </span>
-          <div>
-            <p className="portal-students-kpi-value">{pageStats.approved}</p>
-            <p className="portal-students-kpi-label">Approved</p>
-          </div>
-        </article>
-        <article className="portal-students-kpi">
-          <span className="portal-students-kpi-icon portal-students-kpi-icon--amber">
-            <Clock3 className="size-4" strokeWidth={1.75} />
-          </span>
-          <div>
-            <p className="portal-students-kpi-value">{pageStats.pending}</p>
-            <p className="portal-students-kpi-label">Pending</p>
-          </div>
-        </article>
-        <article className="portal-students-kpi">
-          <span className="portal-students-kpi-icon portal-students-kpi-icon--violet">
-            <FolderKanban className="size-4" strokeWidth={1.75} />
-          </span>
-          <div>
-            <p className="portal-students-kpi-value">{progress}%</p>
-            <p className="portal-students-kpi-label">Progress</p>
-          </div>
-        </article>
+          <button
+            type="button"
+            className="sv-projects-attention-cta"
+            disabled={approving}
+            onClick={() => void approveTopic()}
+          >
+            {approving ? "Approving…" : "Approve topic"}
+            {!approving ? <ArrowRight className="size-3.5" /> : null}
+          </button>
+        </div>
+      ) : null}
+
+      <section className="sv-project-kpis" aria-label="Project snapshot">
+        {kpis.map((item) => (
+          <article
+            key={item.label}
+            className={cn("sv-project-kpi", `is-${item.icon}`)}
+          >
+            <div className="sv-projects-kpi-top">
+              <span>{item.label}</span>
+              <span className="sv-projects-kpi-icon" aria-hidden>
+                <item.Icon className="size-4" strokeWidth={1.75} />
+              </span>
+            </div>
+            <p className="sv-projects-kpi-value">{item.value}</p>
+            <p className="sv-projects-kpi-caption">{item.caption}</p>
+          </article>
+        ))}
       </section>
 
-      <div className="portal-student-progress">
-        <div className="portal-student-progress-meta">
-          <span>Approval progress</span>
-          <span>{progress}%</span>
+      <section className="sv-project-progress-card" aria-label="Progress">
+        <div className="sv-project-progress-meta">
+          <div>
+            <p className="sv-project-section-kicker">Completion</p>
+            <h2>Folder progress</h2>
+          </div>
+          <span className="sv-project-progress-value">{progress}%</span>
         </div>
         <Progress
           value={progress}
-          className="h-1.5 bg-[#e8ecf3]"
+          className="h-2 bg-[#e8ecf3]"
           indicatorClassName={progressTone(progress)}
         />
-      </div>
-
-      <section className="portal-students-panel">
-        <div className="portal-student-project-head">
-          <div className="min-w-0">
-            <p className="portal-students-kicker">Topic</p>
-            <h2 className="portal-student-project-title">Research topic</h2>
-            <p className="portal-student-project-meta">
-              Status: {project.topicStatus || "draft"}
-              {" · Updated "}
-              {formatRelative(project.updatedAt)}
-            </p>
-          </div>
-          {topicPending ? (
-            <Button disabled={approving} onClick={() => void approveTopic()}>
-              {approving ? (
-                <>
-                  <Loader2 className="size-4 animate-spin" />
-                  Approving…
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="size-4" />
-                  Approve topic
-                </>
-              )}
-            </Button>
-          ) : null}
-        </div>
-
-        {project.topic || project.abstract ? (
-          <div className="portal-student-brief">
-            {project.topic ? (
-              <p>
-                <strong>Topic</strong>
-                {project.topic}
-              </p>
-            ) : null}
-            {project.abstract ? (
-              <p className="portal-student-brief-copy">{project.abstract}</p>
-            ) : null}
-          </div>
-        ) : (
-          <div className="portal-students-empty">
-            <h2>No topic submitted yet</h2>
-            <p>The student has not submitted a topic or abstract.</p>
-          </div>
-        )}
+        <p className="sv-project-progress-hint">
+          {pageStats.approved} of {pageStats.total || 0} pages approved
+          {stage ? ` · Current stage: ${stage}` : ""}
+        </p>
       </section>
 
-      <section className="portal-students-panel">
-        <div className="portal-student-project-head">
+      <div className="sv-project-grid">
+        <section className="sv-project-panel">
+          <div className="sv-project-panel-head">
+            <div className="min-w-0">
+              <p className="sv-project-section-kicker">Brief</p>
+              <h2>Research topic</h2>
+              <p className="sv-project-section-meta">
+                Status: {project.topicStatus || "draft"}
+                {" · Updated "}
+                {formatRelative(project.updatedAt)}
+              </p>
+            </div>
+            {topicPending ? (
+              <Button disabled={approving} onClick={() => void approveTopic()}>
+                {approving ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    Approving…
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="size-4" />
+                    Approve topic
+                  </>
+                )}
+              </Button>
+            ) : null}
+          </div>
+
+          {project.topic || project.abstract ? (
+            <div className="sv-project-brief">
+              {project.topic ? (
+                <div className="sv-project-brief-block">
+                  <span>Topic</span>
+                  <p>{project.topic}</p>
+                </div>
+              ) : null}
+              {project.abstract ? (
+                <div className="sv-project-brief-block">
+                  <span>Abstract</span>
+                  <p>{project.abstract}</p>
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="sv-projects-empty is-compact">
+              <h2>No topic submitted yet</h2>
+              <p>The student has not submitted a topic or abstract.</p>
+            </div>
+          )}
+        </section>
+
+        <aside className="sv-project-panel sv-project-aside">
+          <div className="sv-project-panel-head">
+            <div className="min-w-0">
+              <p className="sv-project-section-kicker">Supervisee</p>
+              <h2>Student</h2>
+            </div>
+          </div>
+
+          {student ? (
+            <div className="sv-project-aside-body">
+              <div className="sv-project-aside-person">
+                <Avatar
+                  name={student.name}
+                  className="size-12 bg-[#0D0B61] text-base text-white"
+                />
+                <div className="min-w-0">
+                  <p className="sv-project-aside-name">{student.name}</p>
+                  <p className="sv-project-aside-email">
+                    {student.email || "No email on file"}
+                  </p>
+                </div>
+              </div>
+              <div className="sv-project-aside-actions">
+                {student.email ? (
+                  <Button asChild variant="outline" className="w-full">
+                    <a href={`mailto:${student.email}`}>
+                      <Mail className="size-4" />
+                      Email student
+                    </a>
+                  </Button>
+                ) : null}
+                <Button asChild variant="secondary" className="w-full">
+                  <Link href={`/students/${student.id}`}>
+                    <UserRound className="size-4" />
+                    View student profile
+                  </Link>
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="sv-projects-empty is-compact">
+              <h2>No student linked</h2>
+              <p>This folder is not connected to a student profile.</p>
+            </div>
+          )}
+        </aside>
+      </div>
+
+      <section className="sv-project-panel">
+        <div className="sv-project-panel-head">
           <div className="min-w-0">
-            <p className="portal-students-kicker">Pages</p>
-            <h2 className="portal-student-project-title">Writing pages</h2>
-            <p className="portal-student-project-meta">
+            <p className="sv-project-section-kicker">Manuscript</p>
+            <h2>Writing pages</h2>
+            <p className="sv-project-section-meta">
               Open a page to review writing, leave remarks, or approve.
             </p>
           </div>
-          <p className="portal-students-activity">{pagesHint}</p>
+          <p className="sv-projects-activity">{pagesHint}</p>
         </div>
 
         {pages.length === 0 ? (
-          <div className="portal-students-empty">
-            <span className="portal-students-empty-icon" aria-hidden>
+          <div className="sv-projects-empty">
+            <span className="sv-projects-empty-icon" aria-hidden>
               <FileText className="size-6" strokeWidth={1.75} />
             </span>
             <h2>No pages yet</h2>
             <p>This project has no writing pages to review.</p>
           </div>
         ) : (
-          <div className="portal-students-table-wrap">
-            <table className="portal-students-table is-pages">
-              <thead>
-                <tr>
-                  <th className="portal-student-col-num">#</th>
-                  <th>Page</th>
-                  <th>Status</th>
-                  <th>
-                    <span className="sr-only">Open</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {pages.map((page, index) => {
-                  const href = `/supervision/projects/${project._id}/pages/${page._id}`;
-                  const status = pageTone(page.reviewStatus);
-                  return (
-                    <tr key={page._id}>
-                      <td className="portal-student-col-num">{index + 1}</td>
-                      <td>
-                        <p className="portal-students-work-title">{page.title}</p>
-                      </td>
-                      <td>
-                        <span
-                          className={cn(
-                            "portal-students-status",
-                            `is-${status.tone}`,
-                          )}
-                        >
-                          <status.Icon
-                            className="size-3"
-                            strokeWidth={2.25}
-                            aria-hidden
-                          />
-                          {status.label}
-                        </span>
-                      </td>
-                      <td className="portal-students-action">
-                        <Button asChild size="sm">
-                          <Link href={href}>
-                            Open
-                            <ArrowRight className="size-3.5" />
-                          </Link>
-                        </Button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="sv-project-pages">
+            <div className="sv-project-pages-head" aria-hidden>
+              <span>#</span>
+              <span>Page</span>
+              <span>Status</span>
+              <span />
+            </div>
+            {pages.map((page, index) => {
+              const href = `/supervision/projects/${project._id}/pages/${page._id}`;
+              const status = pageTone(page.reviewStatus);
+              return (
+                <article
+                  key={page._id}
+                  className={cn("sv-project-page", `is-${status.tone}`)}
+                >
+                  <span className="sv-project-page-num">{index + 1}</span>
+                  <Link href={href} className="sv-project-page-copy">
+                    <h3>{page.title}</h3>
+                    {page.reviewRemark ? (
+                      <p>{page.reviewRemark}</p>
+                    ) : (
+                      <p>Open to review content and leave feedback.</p>
+                    )}
+                  </Link>
+                  <span
+                    className={cn(
+                      "sv-project-page-status",
+                      `is-${status.tone}`,
+                    )}
+                  >
+                    <status.Icon
+                      className="size-3"
+                      strokeWidth={2.25}
+                      aria-hidden
+                    />
+                    {status.label}
+                  </span>
+                  <Link href={href} className="sv-projects-open">
+                    Open
+                    <ArrowRight className="size-3.5" />
+                  </Link>
+                </article>
+              );
+            })}
           </div>
         )}
       </section>
