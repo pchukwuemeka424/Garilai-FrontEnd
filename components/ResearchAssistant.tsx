@@ -145,7 +145,14 @@ function SkeletonCards() {
 	);
 }
 
-export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecturer" | "student" }) {
+export function ResearchAssistant({
+	variant = "lecturer",
+	withLayout = true,
+}: {
+	variant?: "lecturer" | "student";
+	/** When false, render page content only (parent already provides StudentLayout / AulaLayout). */
+	withLayout?: boolean;
+}) {
 	const { user, loading: authLoading, setTokenQuota } = useAuth();
 	const router = useRouter();
 	const searchParams = useSearchParams();
@@ -1545,5 +1552,6 @@ export function ResearchAssistant({ variant = "lecturer" }: { variant?: "lecture
 		</>
 	);
 
+	if (!withLayout) return page;
 	return variant === "student" ? <StudentLayout>{page}</StudentLayout> : <AulaLayout showRightPanel={false}>{page}</AulaLayout>;
 }

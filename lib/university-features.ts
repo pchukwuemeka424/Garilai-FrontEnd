@@ -20,24 +20,24 @@ export const DEFAULT_UNIVERSITY_FEATURES: UniversityFeatures = {
 
 export const UNIVERSITY_FEATURE_LABELS: Record<UniversityFeatureKey, { label: string; description: string }> = {
 	researchAssistant: {
-		label: "Research Assistant",
-		description: "Research ideas, outlines, and paper generation for students and lecturers.",
+		label: "Research Assistant AI",
+		description: "AI research ideas, outlines, and paper generation for students and lecturers.",
 	},
 	researchNotebook: {
-		label: "Research Notebook",
-		description: "Notes, datasets, figures, and lab workspace.",
+		label: "Research Notebook AI",
+		description: "AI-assisted notes, datasets, figures, and lab workspace.",
 	},
 	studentAssessment: {
-		label: "Student Assessment",
-		description: "Student projects hub, assignments, and feedback.",
+		label: "Student Assessment AI hub",
+		description: "Student AI-assisted projects hub, assignments, and feedback.",
 	},
 	supervisionAssistant: {
-		label: "Supervision Assistant",
-		description: "Lecturer supervision of theses, reviews, and supervisees.",
+		label: "Supervision AI",
+		description: "Lecturer AI-assisted supervision of theses, chapter AI review, and supervisees.",
 	},
 	advancedResearch: {
-		label: "Advanced Research",
-		description: "Live generate, effort reports, and advanced research scopes.",
+		label: "Advanced Research AI",
+		description: "Live generate, effort reports, and advanced AI research scopes.",
 	},
 };
 

@@ -206,7 +206,7 @@ export function AdminAssessmentDashboard({ variant }: Props) {
 
 	if (!ready) {
 		return (
-			<Shell title="Student Assessment" subtitle="Loading…" breadcrumb="Academic products">
+			<Shell title="Assessment AI oversight" subtitle="Loading…" breadcrumb="AI product oversight">
 				<p className="muted">Loading…</p>
 			</Shell>
 		);
@@ -214,10 +214,10 @@ export function AdminAssessmentDashboard({ variant }: Props) {
 
 	return (
 		<Shell
-			title="Student Assessment"
-			subtitle="Oversee assignment briefs and submissions (metadata only)"
+			title="Assessment AI oversight"
+			subtitle="Oversee assignment briefs and AI-linked submissions (metadata only)"
 			breadcrumb={
-				variant === "super" ? "Platform · Student Assessment" : "Academic products · Student Assessment"
+				variant === "super" ? "Platform · Student Assessment" : "AI product oversight · Assessment"
 			}
 		>
 			{error && <p className="error-text">{error}</p>}

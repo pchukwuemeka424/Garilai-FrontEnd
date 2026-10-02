@@ -56,7 +56,7 @@ export function AdminShell({ title, subtitle, instructions, breadcrumb, actions,
 	if (loading || !ready) {
 		return (
 			<div className="admin">
-				<p className="admin-loading muted">Loading admin…</p>
+				<p className="admin-loading muted">Loading AI governance…</p>
 			</div>
 		);
 	}

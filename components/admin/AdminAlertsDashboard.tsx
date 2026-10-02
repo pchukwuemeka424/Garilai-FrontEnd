@@ -376,7 +376,7 @@ export function AdminAlertsDashboard() {
 															<div><strong>Acknowledged:</strong> {alert.acknowledgedAt ? formatAdminDate(alert.acknowledgedAt) : "Not yet"}</div>
 															<div><strong>Resolved:</strong> {alert.resolvedAt ? formatAdminDate(alert.resolvedAt) : "Not yet"}</div>
 															<div><strong>Response Notes:</strong> {alert.responseNotes || "—"}</div>
-															<div><strong>Notification Sent:</strong> {alert.notificationSent ? "Yes" : "No"}</div>
+															<div><strong>Notification delivered:</strong> {alert.notificationSent ? "Yes" : "No"}</div>
 															{alert.linkedAuditId && <div><strong>Linked Audit:</strong> <code>{alert.linkedAuditId}</code></div>}
 															{alert.linkedIncidentId && <div><strong>Linked Incident:</strong> <code>{alert.linkedIncidentId}</code></div>}
 														</div>

@@ -27,12 +27,12 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
 		items: [
 			{
 				id: "admin-governance-hub",
-				label: "Governance Dashboard",
+				label: "AI Governance Hub",
 				href: "/admin",
 				iconId: "dashboard",
-				description: "Real-time AI use, alerts, adoption, platform health",
+				description: "Student and lecturer AI posture, alerts, integrity",
 				instructions:
-					"This is the single real-time overview of AI use at your institution. Review key governance metrics, active alerts, adoption trends, and platform health, then open a module from the sidebar to investigate.",
+					"This is the institutional AI governance overview. Compare student vs lecturer AI posture, review open AI alerts and incidents, check integrity coverage, then open a module from the sidebar to investigate — without opening private research content.",
 				feature: "governance_hub",
 			},
 		],
@@ -48,7 +48,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
 				iconId: "analytics",
 				description: "Adoption by faculty, department, programme, cohort",
 				instructions:
-					"See how GARIL AI is used across faculties, departments, programmes, and cohorts. Review adoption and engagement without opening private research content.",
+					"See how institutional AI is used across faculties, departments, programmes, cohorts, roles, and AI product surfaces (Research, Notebook, portal AI, chapter AI reviewer). Adoption only — private research content stays hidden.",
 				feature: "analytics",
 			},
 			{
@@ -56,9 +56,9 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
 				label: "Token Usage Tracking",
 				href: "/admin/tokens",
 				iconId: "tokens",
-				description: "Consumption by faculty, department, programme, user",
+				description: "AI consumption by faculty, department, programme, user",
 				instructions:
-					"Monitor AI token consumption by faculty, department, programme, and individual users. Use this to manage operational cost, spot unusually high usage, and plan capacity.",
+					"Monitor AI token consumption by faculty, department, programme, and individual users. Use this to manage AI cost and capacity risk across student and lecturer accounts.",
 				feature: "tokens",
 			},
 		],
@@ -74,17 +74,17 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
 				iconId: "audit",
 				description: "Searchable, filterable, tamper-resistant event log",
 				instructions:
-					"Every governance-relevant action on the platform is recorded here, including user and administrative actions. Search and filter the tamper-resistant log for accountability and investigations.",
+					"Every AI-governance-relevant action is recorded here, including student and lecturer AI use and administrative actions. Search and filter the tamper-resistant log for accountability and investigations.",
 				feature: "audit",
 			},
 			{
 				id: "admin-alerts",
-				label: "Governance Alerts",
+				label: "AI Governance Alerts",
 				href: "/admin/alerts",
 				iconId: "alert",
-				description: "High-risk activity, policy breaches, investigation context",
+				description: "High-risk AI activity, policy breaches, investigation context",
 				instructions:
-					"Alerts notify you when high-risk activity occurs, such as possible sensitive-data exposure or an institutional policy breach. Each alert includes context so you can investigate and respond promptly.",
+					"Alerts notify you when high-risk AI activity occurs, such as possible sensitive-data exposure or an institutional AI policy breach. Each alert includes context so you can investigate and respond promptly.",
 				feature: "alerts",
 			},
 			{
@@ -92,9 +92,9 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
 				label: "Incident Management",
 				href: "/admin/incidents",
 				iconId: "incident",
-				description: "Record, investigate, and resolve with full history",
+				description: "Record, investigate, and resolve AI misuse with full history",
 				instructions:
-					"Record, investigate, and resolve incidents relating to platform misuse or policy violations. Each incident keeps a complete history of actions, comments, and resolution status.",
+					"Record, investigate, and resolve incidents relating to AI misuse or policy violations. Each incident keeps a complete history of actions, comments, and resolution status.",
 				feature: "incidents",
 			},
 			{
@@ -104,7 +104,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
 				iconId: "users",
 				description: "Activate, suspend, deactivate; roles and account history",
 				instructions:
-					"Manage user accounts: activate, suspend, or deactivate access as needed. View user status, assigned roles, and governance-related account history.",
+					"Manage student and lecturer accounts that use institutional AI: activate, suspend, or deactivate access. View roles and governance-related account history.",
 				feature: "users",
 			},
 		],
@@ -115,55 +115,55 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
 		items: [
 			{
 				id: "admin-reports",
-				label: "Governance Reporting",
+				label: "AI Governance Reporting",
 				href: "/admin/reports",
 				iconId: "reports",
 				description: "Reports for Management, Senate, and external auditors",
 				instructions:
-					"Generate governance reports for university Management, Senate, and external auditors. Reports summarise platform usage, governance activity, incidents, policy compliance, and institutional AI adoption.",
+					"Generate AI governance reports for university Management, Senate, and external auditors. Reports summarise AI usage, alerts, incidents, policy compliance, and institutional AI adoption. Export as text or CSV.",
 				feature: "reports",
 			},
 		],
 	},
 	{
 		id: "academic-products",
-		label: "Academic products",
+		label: "AI product oversight",
 		items: [
 			{
 				id: "admin-modules",
-				label: "Product modules",
+				label: "AI product modules",
 				href: "/admin/modules",
 				iconId: "policy",
-				description: "Enable or disable Research, Notebook, Assessment, Supervision",
+				description: "Enable or disable AI surfaces for students and lecturers",
 				instructions:
-					"Turn institutional product modules on or off for your university. Disabled modules are hidden from students and lecturers and blocked at the API.",
+					"Turn institutional AI product modules on or off for your university (Research Assistant, Notebook, Student Assessment, Supervision, Advanced Research). Disabled modules are hidden from students and lecturers and blocked at the API.",
 				feature: "modules",
 			},
 			{
 				id: "admin-supervision",
-				label: "Supervision",
+				label: "Supervision AI oversight",
 				href: "/admin/supervision",
 				iconId: "users",
-				description: "Oversee thesis projects and assign supervisors",
+				description: "Metadata overview of AI-linked supervision projects",
 				instructions:
-					"Review supervision projects across your institution, assign or reassign supervisors, and update project status. Document bodies stay private — only metadata is shown.",
+					"Oversee supervision projects that use institutional AI. Assign or reassign supervisors and update project status. Document bodies stay private — this is AI product oversight, not a writing desk.",
 				feature: "supervision",
 			},
 			{
 				id: "admin-assessment",
-				label: "Student Assessment",
+				label: "Assessment AI oversight",
 				href: "/admin/assessment",
 				iconId: "contribution",
-				description: "Oversee assignment briefs and submissions",
+				description: "Metadata overview of briefs and AI-linked submissions",
 				instructions:
-					"Monitor assignment briefs and student submissions, publish or archive briefs, and update submission status. Full assignment text remains private.",
+					"Monitor assignment briefs and student submissions tied to institutional AI. Publish or archive briefs and update submission status. Full assignment text remains private — metadata only.",
 				feature: "assessment",
 			},
 		],
 	},
 	{
 		id: "research",
-		label: "Research integrity",
+		label: "AI integrity",
 		items: [
 			{
 				id: "admin-contributions",
@@ -172,43 +172,43 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
 				iconId: "contribution",
 				description: "Verify AI-assistance records without exposing the work",
 				instructions:
-					"Verify that AI contribution records have been generated for research outputs. These records show how GARIL AI assisted a piece of academic work without exposing the work itself. Lecturer research titles are encrypted in this console.",
+					"Verify AI contribution records for research and portal AI outputs. These show how institutional AI assisted academic work without exposing the work itself. Lecturer titles are encrypted in this console.",
 				feature: "contributions",
 			},
 			{
 				id: "admin-provenance",
-				label: "Research Provenance",
+				label: "AI Provenance",
 				href: "/admin/provenance",
 				iconId: "provenance",
 				description: "Verify AI-assisted process history; privacy preserved",
 				instructions:
-					"Authorised reviewers can verify the provenance history of a research output when required for academic integrity. The record shows the AI-assisted process while preserving user privacy. Lecturer research titles are encrypted here.",
+					"Verify provenance history for AI-assisted research and portal outputs when required for academic integrity. Records show process metadata while preserving user privacy.",
 				feature: "provenance",
 			},
 		],
 	},
 	{
 		id: "controls",
-		label: "Controls",
+		label: "AI controls",
 		items: [
 			{
 				id: "admin-policies",
-				label: "Policy Management",
+				label: "AI Policy Management",
 				href: "/admin/policies",
 				iconId: "policy",
 				description: "Institutional AI rules that trigger alerts on violation",
 				instructions:
-					"Define and manage institutional AI policies that apply within GARIL AI. Policies determine acceptable AI use, trigger governance alerts when violated, and provide a consistent governance framework.",
+					"Define institutional AI policies for Research, Notebook, portal AI, chapter AI reviewer, and related surfaces. Policies determine acceptable AI use and trigger governance alerts when violated.",
 				feature: "policies",
 			},
 			{
 				id: "admin-privacy",
-				label: "Research Privacy Controls",
+				label: "AI Privacy Controls",
 				href: "/admin/privacy",
 				iconId: "privacy",
-				description: "Rules that govern access to user research data",
+				description: "Rules that govern access to AI-assisted research data",
 				instructions:
-					"Configure and enforce privacy rules that govern access to user research data. Governance oversight does not provide access to users’ raw research materials unless institutional policy explicitly authorises it.",
+					"Configure privacy rules for AI-assisted research data. Governance oversight does not provide access to users’ raw materials unless institutional policy explicitly authorises it.",
 				feature: "privacy",
 			},
 			{
@@ -216,9 +216,9 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
 				label: "Retention & Deletion",
 				href: "/admin/retention",
 				iconId: "retention",
-				description: "Retain, archive, or delete governance and research records",
+				description: "Retain, archive, or delete AI governance and research records",
 				instructions:
-					"Configure how long governance records and research-related data are retained, archived, or deleted, in line with institutional and regulatory requirements.",
+					"Configure how long AI governance records and research-related data are retained, archived, or deleted, in line with institutional and regulatory requirements. Enforcement is configured here for operators to act on.",
 				feature: "retention",
 			},
 		],

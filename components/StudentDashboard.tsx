@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
 	ArrowRight,
 	BarChart3,
@@ -10,6 +10,7 @@ import {
 	ClipboardList,
 	Coins,
 	FileText,
+	Layers,
 	Lightbulb,
 	MessageSquareText,
 	Microscope,
@@ -56,69 +57,6 @@ function dueSoon(dueAt?: string | null) {
 	if (Number.isNaN(t)) return false;
 	const now = Date.now();
 	return t >= now && t - now <= 7 * 24 * 60 * 60 * 1000;
-}
-
-function WorkspaceCard({
-	tone,
-	icon,
-	badge,
-	title,
-	description,
-	tags,
-	steps,
-	href,
-	cta,
-	links,
-}: {
-	tone: "blue" | "teal" | "purple";
-	icon: ReactNode;
-	badge: string;
-	title: string;
-	description: string;
-	tags: string[];
-	steps: Array<{ label: string; hint: string }>;
-	href: string;
-	cta: string;
-	links: Array<{ href: string; label: string; icon: ReactNode }>;
-}) {
-	return (
-		<article className={`stu-hub-card stu-hub-card-${tone}`}>
-			<div className="stu-hub-card-head">
-				<div className="stu-hub-card-icon" aria-hidden>
-					{icon}
-				</div>
-				<span className="stu-hub-badge">{badge}</span>
-			</div>
-			<h3 className="stu-hub-card-title">{title}</h3>
-			<p className="stu-hub-card-desc">{description}</p>
-			<div className="stu-hub-tags">
-				{tags.map((tag) => (
-					<span key={tag}>{tag}</span>
-				))}
-			</div>
-			<ol className="stu-hub-path">
-				{steps.map((step, index) => (
-					<li key={step.label}>
-						<em>{index + 1}</em>
-						<strong>{step.label}</strong>
-						<span>{step.hint}</span>
-					</li>
-				))}
-			</ol>
-			<Link href={href} className="stu-hub-cta">
-				<span>{cta}</span>
-				<ArrowRight size={15} />
-			</Link>
-			<div className="stu-hub-links">
-				{links.map((link) => (
-					<Link key={link.href + link.label} href={link.href}>
-						{link.icon}
-						{link.label}
-					</Link>
-				))}
-			</div>
-		</article>
-	);
 }
 
 export function StudentDashboard() {
@@ -177,151 +115,323 @@ export function StudentDashboard() {
 	const stat = (value: number) => (loading ? "—" : value.toLocaleString());
 
 	return (
-		<div className="stu-hub">
-			<header className="stu-hub-header">
-				<div className="stu-hub-header-copy">
-					<div className="stu-hub-meta">
-						<span className="stu-hub-live-badge">
-							<span className="stu-hub-live-dot" />
+		<div className="stu-pro-dash">
+			<header className="stu-pro-header">
+				<div className="stu-pro-header-copy">
+					<div className="stu-pro-meta">
+						<span className="stu-pro-badge-live">
+							<span className="stu-pro-live-dot" />
 							Student workspace
 						</span>
-						<span className="stu-hub-date">{formatAcademicDate()}</span>
+						<span className="stu-pro-date">{formatAcademicDate()}</span>
 					</div>
-					<h1 className="stu-hub-title">
+					<h1 className="stu-pro-title">
 						{getGreeting()}, {firstName}
 					</h1>
-					<p className="stu-hub-subtitle">
+					<p className="stu-pro-subtitle">
 						{programmeLine
 							? `${programmeLine}${user.cohort ? ` · ${user.cohort}` : ""}`
 							: "Generate cited papers, capture notebook evidence, and submit work for lecturer assessment."}
 					</p>
 				</div>
-
-				<div className="stu-hub-stats" aria-label="Workspace summary">
-					<div className="stu-hub-stat">
-						<span className="stu-hub-stat-icon stu-hub-stat-navy" aria-hidden>
-							<Coins size={14} />
-						</span>
-						<div>
-							<strong>{remaining.toLocaleString()}</strong>
-							<em>Tokens left</em>
-						</div>
-						{allowance > 0 ? (
-							<div className="stu-hub-stat-bar" aria-hidden>
-								<span style={{ width: `${Math.max(0, 100 - tokenPct)}%` }} />
-							</div>
-						) : null}
-					</div>
-					<div className="stu-hub-stat">
-						<span className="stu-hub-stat-icon stu-hub-stat-amber" aria-hidden>
-							<Lightbulb size={14} />
-						</span>
-						<div>
-							<strong>{stat(ideaCount)}</strong>
-							<em>{paperCount ? `${paperCount} papers` : "Saved ideas"}</em>
-						</div>
-					</div>
-					<div className="stu-hub-stat">
-						<span className="stu-hub-stat-icon stu-hub-stat-blue" aria-hidden>
-							<ClipboardList size={14} />
-						</span>
-						<div>
-							<strong>{stat(assignmentCount)}</strong>
-							<em>{dueSoonCount ? `${dueSoonCount} due this week` : "Assessments"}</em>
-						</div>
-					</div>
-					<div className="stu-hub-stat">
-						<span className="stu-hub-stat-icon stu-hub-stat-purple" aria-hidden>
-							<MessageSquareText size={14} />
-						</span>
-						<div>
-							<strong>{stat(revisionCount)}</strong>
-							<em>Feedback</em>
-						</div>
-					</div>
+				<div className="stu-pro-header-actions">
+					<Link href="/student/research" className="stu-pro-btn-ghost">
+						<Sparkles size={14} />
+						<span>New synthesis</span>
+					</Link>
+					<Link href="/student/assignments" className="stu-pro-btn-solid">
+						<span>Open assignments</span>
+						<ArrowRight size={14} />
+					</Link>
 				</div>
 			</header>
 
-			<section className="stu-hub-modules" aria-labelledby="stu-hub-heading">
-				<div className="stu-hub-section-head">
-					<h2 id="stu-hub-heading">Your academic tools</h2>
-					<p>Open a workspace to write, record evidence, or submit assessed coursework.</p>
+			<section className="stu-pro-kpis" aria-label="Workspace summary">
+				<article className="stu-pro-kpi">
+					<div className="stu-pro-kpi-top">
+						<span className="stu-pro-kpi-label">Tokens remaining</span>
+						<span className="stu-pro-kpi-icon stu-pro-kpi-ink" aria-hidden>
+							<Coins size={15} />
+						</span>
+					</div>
+					<p className="stu-pro-kpi-value">{remaining.toLocaleString()}</p>
+					{allowance > 0 ? (
+						<>
+							<div className="stu-pro-kpi-bar" aria-hidden>
+								<span style={{ width: `${Math.max(0, 100 - tokenPct)}%` }} />
+							</div>
+							<p className="stu-pro-kpi-caption">
+								{used.toLocaleString()} used of {allowance.toLocaleString()}
+							</p>
+						</>
+					) : (
+						<p className="stu-pro-kpi-caption">Institutional allocation</p>
+					)}
+				</article>
+
+				<article className="stu-pro-kpi">
+					<div className="stu-pro-kpi-top">
+						<span className="stu-pro-kpi-label">Saved ideas</span>
+						<span className="stu-pro-kpi-icon stu-pro-kpi-amber" aria-hidden>
+							<Lightbulb size={15} />
+						</span>
+					</div>
+					<p className="stu-pro-kpi-value">{stat(ideaCount)}</p>
+					<p className="stu-pro-kpi-caption">
+						{loading ? "Loading library…" : paperCount ? `${paperCount} papers saved` : "Topic & brief bank"}
+					</p>
+				</article>
+
+				<article className="stu-pro-kpi">
+					<div className="stu-pro-kpi-top">
+						<span className="stu-pro-kpi-label">Assessments</span>
+						<span className="stu-pro-kpi-icon stu-pro-kpi-blue" aria-hidden>
+							<ClipboardList size={15} />
+						</span>
+					</div>
+					<p className="stu-pro-kpi-value">{stat(assignmentCount)}</p>
+					<p className="stu-pro-kpi-caption">
+						{loading
+							? "Loading briefs…"
+							: dueSoonCount
+								? `${dueSoonCount} due this week`
+								: "Active assignment briefs"}
+					</p>
+				</article>
+
+				<article className="stu-pro-kpi">
+					<div className="stu-pro-kpi-top">
+						<span className="stu-pro-kpi-label">Feedback</span>
+						<span className="stu-pro-kpi-icon stu-pro-kpi-rose" aria-hidden>
+							<MessageSquareText size={15} />
+						</span>
+					</div>
+					<p className="stu-pro-kpi-value">{stat(revisionCount)}</p>
+					<Link href="/student/feedback" className="stu-pro-kpi-link">
+						<span>Review remarks</span>
+						<ArrowRight size={13} />
+					</Link>
+				</article>
+			</section>
+
+			<section className="stu-pro-modules" aria-labelledby="stu-pro-heading">
+				<div className="stu-pro-section-head">
+					<div>
+						<h2 id="stu-pro-heading" className="stu-pro-section-title">
+							Academic workspaces
+						</h2>
+						<p className="stu-pro-section-desc">
+							Write with citations, capture empirical evidence, and submit coursework for lecturer review.
+						</p>
+					</div>
 				</div>
 
-				<div className="stu-hub-grid">
-					<WorkspaceCard
-						tone="blue"
-						icon={<Microscope size={22} />}
-						badge="Literature & writing"
-						title="Research Assistant"
-						description="Generate literature syntheses, methodology frameworks, and cited academic papers for your programme."
-						tags={["APA 7th & IEEE", "Citation verifier", "DOCX / PDF"]}
-						steps={[
-							{ label: "Scope", hint: "Set the brief" },
-							{ label: "Synthesize", hint: "Cite sources" },
-							{ label: "Export", hint: "Refine & save" },
-						]}
-						href="/student/research"
-						cta="Launch Research Assistant"
-						links={[
-							{ href: "/student/research/saved", label: "Saved papers", icon: <FileText size={12} /> },
-							{ href: "/student/research", label: "New synthesis", icon: <Sparkles size={12} /> },
-						]}
-					/>
+				<div className="stu-pro-grid">
+					<article className="stu-pro-card stu-pro-card-blue">
+						<div className="stu-pro-card-head">
+							<div className="stu-pro-card-icon" aria-hidden>
+								<Microscope size={22} />
+							</div>
+							<span className="stu-pro-card-badge">Literature & writing</span>
+						</div>
 
-					<WorkspaceCard
-						tone="teal"
-						icon={<BookOpen size={22} />}
-						badge="Data & visuals"
-						title="Research Notebook"
-						description="Capture lab notes, statistical plots, and dataset tables, then embed evidence into your papers."
-						tags={["Statistical plots", "Tabular datasets", "Evidence linking"]}
-						steps={[
-							{ label: "Record", hint: "Log evidence" },
-							{ label: "Visualize", hint: "Build figures" },
-							{ label: "Attach", hint: "Link to writing" },
-						]}
-						href="/student/research/notebook"
-						cta="Launch Research Notebook"
-						links={[
-							{ href: "/student/research/notebook", label: "Plot generator", icon: <BarChart3 size={12} /> },
-							{ href: "/student/research/notebook", label: "Dataset library", icon: <FileText size={12} /> },
-						]}
-					/>
+						<h3 className="stu-pro-card-title">Research Assistant</h3>
+						<p className="stu-pro-card-desc">
+							Generate literature syntheses, methodology frameworks, and cited academic papers for your programme.
+						</p>
 
-					<WorkspaceCard
-						tone="purple"
-						icon={<ClipboardCheck size={22} />}
-						badge="Coursework & review"
-						title="Student Assessment"
-						description="Submit assignments, manage thesis folders, and track lecturer scores, remarks, and revision requests."
-						tags={["Assignment briefs", "Supervisor remarks", "Project folders"]}
-						steps={[
-							{ label: "Brief", hint: "Read the task" },
-							{ label: "Submit", hint: "Send for review" },
-							{ label: "Revise", hint: "Act on scores" },
-						]}
-						href="/student/assistant"
-						cta="Launch Student Assessment"
-						links={[
-							{ href: "/student/assignments", label: "Assignments", icon: <ClipboardList size={12} /> },
-							{ href: "/student/feedback", label: "Feedback", icon: <MessageSquareText size={12} /> },
-						]}
-					/>
+						<div className="stu-pro-tags">
+							<span>APA 7th & IEEE</span>
+							<span>Citation verifier</span>
+							<span>DOCX / PDF</span>
+						</div>
+
+						<div className="stu-pro-workflow">
+							<div className="stu-pro-workflow-head">
+								<Layers size={13} />
+								<span>Workflow</span>
+							</div>
+							<ol className="stu-pro-steps">
+								<li>
+									<em>1</em>
+									<span>
+										<strong>Scope</strong> Set discipline, inquiry questions, and assignment constraints.
+									</span>
+								</li>
+								<li>
+									<em>2</em>
+									<span>
+										<strong>Synthesize</strong> Draft multi-section papers with inline bibliographic anchors.
+									</span>
+								</li>
+								<li>
+									<em>3</em>
+									<span>
+										<strong>Export</strong> Refine wording and save citation-ready manuscripts.
+									</span>
+								</li>
+							</ol>
+						</div>
+
+						<div className="stu-pro-card-actions">
+							<Link href="/student/research" className="stu-pro-cta">
+								<span>Launch Research Assistant</span>
+								<ArrowRight size={15} />
+							</Link>
+							<div className="stu-pro-sublinks">
+								<Link href="/student/research/saved">
+									<FileText size={12} />
+									Saved papers
+								</Link>
+								<Link href="/student/research">
+									<Sparkles size={12} />
+									New synthesis
+								</Link>
+							</div>
+						</div>
+					</article>
+
+					<article className="stu-pro-card stu-pro-card-teal">
+						<div className="stu-pro-card-head">
+							<div className="stu-pro-card-icon" aria-hidden>
+								<BookOpen size={22} />
+							</div>
+							<span className="stu-pro-card-badge">Data & visuals</span>
+						</div>
+
+						<h3 className="stu-pro-card-title">Research Notebook</h3>
+						<p className="stu-pro-card-desc">
+							Capture lab notes, statistical plots, and dataset tables, then embed evidence into your papers.
+						</p>
+
+						<div className="stu-pro-tags">
+							<span>Statistical plots</span>
+							<span>Tabular datasets</span>
+							<span>Evidence linking</span>
+						</div>
+
+						<div className="stu-pro-workflow">
+							<div className="stu-pro-workflow-head">
+								<Layers size={13} />
+								<span>Workflow</span>
+							</div>
+							<ol className="stu-pro-steps">
+								<li>
+									<em>1</em>
+									<span>
+										<strong>Record</strong> Log observations, field notes, and experimental results.
+									</span>
+								</li>
+								<li>
+									<em>2</em>
+									<span>
+										<strong>Visualize</strong> Build figures, distributions, and comparison charts.
+									</span>
+								</li>
+								<li>
+									<em>3</em>
+									<span>
+										<strong>Attach</strong> Link evidence blocks directly into manuscript chapters.
+									</span>
+								</li>
+							</ol>
+						</div>
+
+						<div className="stu-pro-card-actions">
+							<Link href="/student/research/notebook" className="stu-pro-cta">
+								<span>Launch Research Notebook</span>
+								<ArrowRight size={15} />
+							</Link>
+							<div className="stu-pro-sublinks">
+								<Link href="/student/research/notebook">
+									<BarChart3 size={12} />
+									Plot generator
+								</Link>
+								<Link href="/student/research/notebook">
+									<FileText size={12} />
+									Dataset library
+								</Link>
+							</div>
+						</div>
+					</article>
+
+					<article className="stu-pro-card stu-pro-card-rose">
+						<div className="stu-pro-card-head">
+							<div className="stu-pro-card-icon" aria-hidden>
+								<ClipboardCheck size={22} />
+							</div>
+							<span className="stu-pro-card-badge">Coursework & review</span>
+						</div>
+
+						<h3 className="stu-pro-card-title">Student Assessment</h3>
+						<p className="stu-pro-card-desc">
+							Submit assignments, manage thesis folders, and track lecturer scores, remarks, and revision requests.
+						</p>
+
+						<div className="stu-pro-tags">
+							<span>Assignment briefs</span>
+							<span>Supervisor remarks</span>
+							<span>Project folders</span>
+						</div>
+
+						<div className="stu-pro-workflow">
+							<div className="stu-pro-workflow-head">
+								<Layers size={13} />
+								<span>Workflow</span>
+							</div>
+							<ol className="stu-pro-steps">
+								<li>
+									<em>1</em>
+									<span>
+										<strong>Brief</strong> Read the task, rubric, and submission requirements.
+									</span>
+								</li>
+								<li>
+									<em>2</em>
+									<span>
+										<strong>Submit</strong> Send chapters or full papers for lecturer review.
+									</span>
+								</li>
+								<li>
+									<em>3</em>
+									<span>
+										<strong>Revise</strong> Act on scores and feedback until approval.
+									</span>
+								</li>
+							</ol>
+						</div>
+
+						<div className="stu-pro-card-actions">
+							<Link href="/student/assistant" className="stu-pro-cta">
+								<span>Launch Student Assessment</span>
+								<ArrowRight size={15} />
+							</Link>
+							<div className="stu-pro-sublinks">
+								<Link href="/student/assignments">
+									<ClipboardList size={12} />
+									Assignments
+								</Link>
+								<Link href="/student/feedback">
+									<MessageSquareText size={12} />
+									Feedback
+								</Link>
+							</div>
+						</div>
+					</article>
 				</div>
 			</section>
 
-			<footer className="stu-hub-footer">
-				<div className="stu-hub-footer-copy">
-					<span className="stu-hub-footer-icon" aria-hidden>
+			<footer className="stu-pro-footer">
+				<div className="stu-pro-footer-copy">
+					<span className="stu-pro-footer-icon" aria-hidden>
 						<ShieldCheck size={15} />
 					</span>
 					<p>
 						Academic integrity guard active
-						<em>Cited sources required · Supervisor review on submitted work</em>
+						<span>Cited sources required · Supervisor review on submitted work</span>
 					</p>
 				</div>
-				<nav className="stu-hub-jumps" aria-label="Quick links">
+				<nav className="stu-pro-jumps" aria-label="Quick links">
 					<Link href="/student/research/saved">Saved research</Link>
 					<Link href="/student/projects">Projects</Link>
 					<Link href="/student/feedback">Feedback</Link>

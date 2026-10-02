@@ -186,8 +186,14 @@ export function getProgramLevelLabel(id: string): string {
 	return NIGERIA_PROGRAM_LEVELS.find((p) => p.id === id)?.label ?? id;
 }
 
-export function formatStudentProgram(departmentId: string, programLevelId: string): string {
+export function formatStudentProgram(
+	departmentId: string,
+	programLevelId: string,
+	yearLevel?: string,
+): string {
 	const department = getDepartmentLabel(departmentId);
 	const level = getProgramLevelLabel(programLevelId);
+	const year = yearLevel?.trim();
+	if (year) return `${department} (${level} · ${year})`;
 	return `${department} (${level})`;
 }

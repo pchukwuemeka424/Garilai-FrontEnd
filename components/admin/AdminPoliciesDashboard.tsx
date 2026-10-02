@@ -6,6 +6,7 @@ import { AdminPanel, AdminShell, AdminStatCard, formatAdminDate } from "@/compon
 import { useAdminGuard } from "@/hooks/useAdminGuard";
 import { createAdminPolicy, deleteAdminPolicy, evaluateAdminPolicy, fetchAdminPolicies, updateAdminPolicy } from "@/lib/admin-api";
 import type { GovernancePolicyRecord, PolicyEvaluation, PolicyStats } from "@/lib/admin-governance";
+import { AI_POLICY_TARGETS } from "@/lib/ai-governance-targets";
 
 const SCOPES = ["feature", "dataset", "tool", "use_case", "content"] as const;
 const EFFECTS = ["permitted", "restricted", "blocked"] as const;
@@ -20,7 +21,7 @@ const emptyForm = {
 	name: "",
 	description: "",
 	scope: "feature" as string,
-	target: "",
+	target: "research_assistant",
 	effect: "blocked" as string,
 	roles: [] as string[],
 	faculties: [] as string[],
@@ -60,8 +61,15 @@ export function AdminPoliciesDashboard() {
 	const [form, setForm] = useState(emptyForm);
 	const [editingId, setEditingId] = useState<string | null>(null);
 
-	const [testInput, setTestInput] = useState({ scope: "feature", target: "", role: "student", faculty: "" });
+	const [testInput, setTestInput] = useState({
+		scope: "feature",
+		target: "research_assistant",
+		role: "student",
+		faculty: "",
+	});
 	const [testResult, setTestResult] = useState<PolicyEvaluation | null>(null);
+	const [customTarget, setCustomTarget] = useState(false);
+	const [customTestTarget, setCustomTestTarget] = useState(false);
 
 	const load = useCallback(async () => {
 		setError(null);
@@ -218,9 +226,9 @@ export function AdminPoliciesDashboard() {
 
 	return (
 		<AdminShell
-			title="Policy Management"
-			subtitle="Institutional AI policies that define acceptable use and trigger alerts when violated"
-			breadcrumb="Admin · Controls"
+			title="AI Policy Management"
+			subtitle="Institutional AI policies for research, notebook, portal AI, and related surfaces"
+			breadcrumb="Admin · AI controls"
 			actions={
 				<div className="admin-actions-row">
 					<button type="button" className="ghost-btn" onClick={() => { setShowCreate(!showCreate); setEditingId(null); setForm(emptyForm); }}>
@@ -248,11 +256,41 @@ export function AdminPoliciesDashboard() {
 			)}
 
 			{showCreate && (
-				<AdminPanel title={editingId ? "Edit Policy" : "Create Policy"} description="Define scope, target, effect, and applicable roles">
+				<AdminPanel title={editingId ? "Edit AI Policy" : "Create AI Policy"} description="Choose an AI surface target, effect, and applicable roles">
 					<div className="admin-form-grid">
-						<label>Name *<input className="topic-input" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="e.g. Block bulk export for students" /></label>
+						<label>Name *<input className="topic-input" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="e.g. Block chapter AI reviewer for students" /></label>
 						<label>Scope<select className="topic-input" value={form.scope} onChange={(e) => setForm((f) => ({ ...f, scope: e.target.value }))}>{SCOPES.map((s) => <option key={s} value={s}>{s}</option>)}</select></label>
-						<label>Target *<input className="topic-input" value={form.target} onChange={(e) => setForm((f) => ({ ...f, target: e.target.value }))} placeholder="e.g. bulk_export, sensitive_data, gpt4" /></label>
+						<label>
+							AI target *
+							{customTarget ? (
+								<input
+									className="topic-input"
+									value={form.target}
+									onChange={(e) => setForm((f) => ({ ...f, target: e.target.value }))}
+									placeholder="Custom target key"
+								/>
+							) : (
+								<select
+									className="topic-input"
+									value={AI_POLICY_TARGETS.some((t) => t.value === form.target) ? form.target : AI_POLICY_TARGETS[0].value}
+									onChange={(e) => {
+										if (e.target.value === "__custom__") {
+											setCustomTarget(true);
+											setForm((f) => ({ ...f, target: "" }));
+											return;
+										}
+										setForm((f) => ({ ...f, target: e.target.value }));
+									}}
+								>
+									{AI_POLICY_TARGETS.map((t) => (
+										<option key={t.value} value={t.value}>
+											{t.label}
+										</option>
+									))}
+									<option value="__custom__">Custom…</option>
+								</select>
+							)}
+						</label>
 						<label>Effect<select className="topic-input" value={form.effect} onChange={(e) => setForm((f) => ({ ...f, effect: e.target.value }))}>{EFFECTS.map((e) => <option key={e} value={e}>{e}</option>)}</select></label>
 						<label>Priority<input className="topic-input" type="number" value={form.priority} onChange={(e) => setForm((f) => ({ ...f, priority: Number(e.target.value) }))} /></label>
 						<label className="admin-checkbox-label"><input type="checkbox" checked={form.enabled} onChange={(e) => setForm((f) => ({ ...f, enabled: e.target.checked }))} /> Enabled</label>
@@ -277,10 +315,40 @@ export function AdminPoliciesDashboard() {
 			)}
 
 			{showTest && (
-				<AdminPanel title="Policy Tester" description="Simulate policy evaluation for a given scenario">
+				<AdminPanel title="AI Policy Tester" description="Simulate policy evaluation for an AI surface">
 					<div className="admin-form-grid">
 						<label>Scope<select className="topic-input" value={testInput.scope} onChange={(e) => setTestInput((t) => ({ ...t, scope: e.target.value }))}>{SCOPES.map((s) => <option key={s} value={s}>{s}</option>)}</select></label>
-						<label>Target<input className="topic-input" value={testInput.target} onChange={(e) => setTestInput((t) => ({ ...t, target: e.target.value }))} placeholder="e.g. bulk_export" /></label>
+						<label>
+							AI target
+							{customTestTarget ? (
+								<input
+									className="topic-input"
+									value={testInput.target}
+									onChange={(e) => setTestInput((t) => ({ ...t, target: e.target.value }))}
+									placeholder="Custom target key"
+								/>
+							) : (
+								<select
+									className="topic-input"
+									value={AI_POLICY_TARGETS.some((t) => t.value === testInput.target) ? testInput.target : AI_POLICY_TARGETS[0].value}
+									onChange={(e) => {
+										if (e.target.value === "__custom__") {
+											setCustomTestTarget(true);
+											setTestInput((t) => ({ ...t, target: "" }));
+											return;
+										}
+										setTestInput((t) => ({ ...t, target: e.target.value }));
+									}}
+								>
+									{AI_POLICY_TARGETS.map((t) => (
+										<option key={t.value} value={t.value}>
+											{t.label}
+										</option>
+									))}
+									<option value="__custom__">Custom…</option>
+								</select>
+							)}
+						</label>
 						<label>Role<select className="topic-input" value={testInput.role} onChange={(e) => setTestInput((t) => ({ ...t, role: e.target.value }))}>{ALL_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}</select></label>
 						<label>Faculty<input className="topic-input" value={testInput.faculty} onChange={(e) => setTestInput((t) => ({ ...t, faculty: e.target.value }))} placeholder="Optional" /></label>
 					</div>

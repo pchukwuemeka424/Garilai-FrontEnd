@@ -334,9 +334,9 @@ export function AdminRetentionDashboard() {
 
 	return (
 		<AdminShell
-			title="Retention & Deletion Management"
-			subtitle="How long governance and research-related records are retained, archived, or deleted"
-			breadcrumb="Admin · Controls"
+			title="AI Retention & Deletion"
+			subtitle="Configure how long AI governance and research-related records are retained. Operators act on these policies manually — auto-deletion is not enforced yet."
+			breadcrumb="Admin · AI controls"
 			actions={
 				<>
 					<button

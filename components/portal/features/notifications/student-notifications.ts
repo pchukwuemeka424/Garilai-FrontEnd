@@ -51,6 +51,8 @@ export function isNotificationUnread(n: NotificationItem) {
 /** Human label for notification `type` strings from the backend. */
 export function notificationTypeLabel(type?: string) {
   switch (type) {
+    case "assignment.published":
+      return "New assignment";
     case "assignment.scored":
       return "Score";
     case "page.approved":
@@ -105,6 +107,10 @@ export function notificationHref(
   }
 
   switch (n.type) {
+    case "assignment.published":
+      return projectId
+        ? `/student/assignments/${projectId}`
+        : "/student/assignments";
     case "assignment.scored":
       return projectId ? `/student/assignments/${projectId}` : null;
     case "page.approved":

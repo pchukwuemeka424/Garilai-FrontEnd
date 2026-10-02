@@ -1,22 +1,29 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
 	ArrowRight,
 	CalendarClock,
-	ChevronRight,
 	ClipboardList,
 	FolderKanban,
 	MessageSquareText,
 	Plus,
 	RefreshCw,
-	type LucideIcon,
 } from "lucide-react";
 
 import { useAuth } from "@/hooks/useAuth";
 import { apiFetch } from "@/lib/portal-api";
 import { projectTypeLabel } from "@/lib/portal/project-types";
+import {
+	formatNotificationRelative,
+	isNotificationUnread,
+	notificationHref,
+	parseNotificationsPayload,
+	type NotificationItem,
+} from "@/components/portal/features/notifications/student-notifications";
+import { assignmentSubmissionStatus } from "@/lib/portal/assignment-status";
+import type { ReviewTrailEvent } from "@/lib/portal/review-trail";
 
 type WorkspaceProject = {
 	_id: string;
@@ -25,6 +32,7 @@ type WorkspaceProject = {
 	topic?: string;
 	progressPercent?: number;
 	status?: string;
+	createdAt?: string;
 	updatedAt?: string;
 	supervisor?: { id: string; name: string; email: string } | null;
 	score?: number | null;
@@ -34,7 +42,18 @@ type WorkspaceProject = {
 		title?: string;
 		reviewStatus?: string;
 		content?: string;
+		order?: number;
+		reviewTrail?: ReviewTrailEvent[];
 	}>;
+};
+
+type AssignmentNotice = {
+	key: string;
+	title: string;
+	body: string;
+	href: string;
+	when?: string;
+	notificationId?: string;
 };
 
 function formatToday(): string {
@@ -94,121 +113,30 @@ function dueSoon(dueAt?: string | null) {
 }
 
 function assignmentTone(row: WorkspaceProject): { label: string; tone: string } {
-	if (typeof row.score === "number") return { label: "Graded", tone: "graded" };
-	const page = row.pages?.[0];
-	if (page?.reviewStatus === "approved") return { label: "Approved", tone: "done" };
-	if (page?.reviewStatus === "needs_revision") return { label: "Needs revision", tone: "alert" };
-	if (page?.reviewStatus && page.reviewStatus !== "none") return { label: "Submitted", tone: "info" };
-	if (String(page?.content || "").trim()) return { label: "In progress", tone: "progress" };
-	return { label: "Not started", tone: "idle" };
-}
-
-function MetricLink({
-	label,
-	value,
-	hint,
-	href,
-	loading,
-}: {
-	label: string;
-	value: number | string;
-	hint: string;
-	href: string;
-	loading?: boolean;
-}) {
-	return (
-		<Link href={href} className="stu-assist-metric">
-			<p className="stu-assist-metric-label">{label}</p>
-			{loading ? (
-				<span className="stu-assist-metric-value stu-assist-metric-loading">-</span>
-			) : (
-				<span className="stu-assist-metric-value">{value}</span>
-			)}
-			<p className="stu-assist-metric-hint">{loading ? "\u00a0" : hint}</p>
-		</Link>
-	);
-}
-
-function ToolModule({
-	title,
-	description,
-	href,
-	icon: Icon,
-	cta,
-	count,
-	features,
-	steps,
-	wide,
-	children,
-}: {
-	title: string;
-	description: string;
-	href: string;
-	icon: LucideIcon;
-	cta: string;
-	count?: number | string;
-	features: string[];
-	steps: Array<{ label: string; hint: string }>;
-	wide?: boolean;
-	children: ReactNode;
-}) {
-	return (
-		<article className={`stu-assist-module${wide ? " stu-assist-module-wide" : ""}`}>
-			<div className="stu-assist-module-head">
-				<span className="stu-assist-module-icon" aria-hidden>
-					<Icon size={16} strokeWidth={1.75} />
-				</span>
-				<div className="stu-assist-module-title">
-					<div className="stu-assist-module-title-row">
-						<h3>{title}</h3>
-						{count != null ? <span className="stu-assist-module-count">{count}</span> : null}
-					</div>
-					<p>{description}</p>
-				</div>
-			</div>
-
-			<ul className="stu-assist-features" aria-label={`${title} features`}>
-				{features.map((feature) => (
-					<li key={feature}>{feature}</li>
-				))}
-			</ul>
-
-			<ol className="stu-assist-steps" aria-label={`How to use ${title}`}>
-				{steps.map((step, index) => (
-					<li key={step.label}>
-						<em aria-hidden>{index + 1}</em>
-						<div>
-							<strong>{step.label}</strong>
-							<span>{step.hint}</span>
-						</div>
-					</li>
-				))}
-			</ol>
-
-			<div className="stu-assist-module-body">
-				<p className="stu-assist-body-label">Recent</p>
-				{children}
-			</div>
-			<Link href={href} className="stu-assist-module-cta">
-				{cta}
-				<ArrowRight size={14} />
-			</Link>
-		</article>
-	);
+	const status = assignmentSubmissionStatus(row);
+	if (status.tone === "revision") return { label: status.label, tone: "alert" };
+	if (status.tone === "approved" || status.tone === "graded") {
+		return { label: status.label, tone: "done" };
+	}
+	if (status.tone === "submitted") return { label: status.label, tone: "info" };
+	return { label: status.label, tone: status.tone };
 }
 
 export function StudentAssistant() {
 	const { user } = useAuth();
 	const [projects, setProjects] = useState<WorkspaceProject[]>([]);
+	const [notifications, setNotifications] = useState<NotificationItem[]>([]);
 	const [loading, setLoading] = useState(true);
 
 	const refresh = useCallback(async () => {
 		setLoading(true);
 		try {
-			const projectList = (await apiFetch("/api/v1/projects").catch(
-				() => [],
-			)) as WorkspaceProject[];
+			const [projectList, notificationPayload] = await Promise.all([
+				apiFetch("/api/v1/projects").catch(() => []) as Promise<WorkspaceProject[]>,
+				apiFetch("/api/v1/notifications").catch(() => null),
+			]);
 			setProjects(Array.isArray(projectList) ? projectList : []);
+			setNotifications(parseNotificationsPayload(notificationPayload).items);
 		} finally {
 			setLoading(false);
 		}
@@ -268,18 +196,117 @@ export function StudentAssistant() {
 		);
 	}, [projects]);
 
-	const dueSoonCount = assignments.filter((a) => dueSoon(a.assignmentBrief?.dueAt)).length;
-	const avgProgress =
-		researchProjects.length === 0
-			? 0
-			: Math.round(
-					researchProjects.reduce((sum, p) => sum + (p.progressPercent ?? 0), 0) /
-						researchProjects.length,
-				);
+	const newAssignmentNotices = useMemo(() => {
+		const fromNotifications: AssignmentNotice[] = notifications
+			.filter((n) => n.type === "assignment.published" && isNotificationUnread(n))
+			.map((n) => ({
+				key: `n-${n._id}`,
+				title: n.title || "New assignment",
+				body: n.body || "Your lecturer published a new assignment brief.",
+				href: notificationHref(n, "student") || "/student/assignments",
+				when: formatNotificationRelative(n.createdAt),
+				notificationId: n._id,
+			}));
 
-	const continueProject = activeProjects[0] ?? upcomingAssignments[0] ?? null;
+		if (fromNotifications.length > 0) {
+			return fromNotifications.slice(0, 3);
+		}
+
+		// Fallback: surface not-started assignments created in the last 14 days.
+		const weekMs = 14 * 24 * 60 * 60 * 1000;
+		const now = Date.now();
+		return assignments
+			.filter((row) => {
+				const status = assignmentTone(row);
+				if (status.tone !== "idle") return false;
+				const created = row.createdAt ? new Date(row.createdAt).getTime() : NaN;
+				if (Number.isNaN(created) || now - created > weekMs) return false;
+				return true;
+			})
+			.sort(
+				(a, b) =>
+					new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime(),
+			)
+			.slice(0, 3)
+			.map((row) => {
+				const due = row.assignmentBrief?.dueAt
+					? `Due ${formatShortDate(row.assignmentBrief.dueAt)}`
+					: "Open the brief to get started";
+				const course = row.assignmentBrief?.courseName?.trim();
+				return {
+					key: `a-${row._id}`,
+					title: "New assignment",
+					body: course ? `${row.title} · ${course}. ${due}.` : `${row.title}. ${due}.`,
+					href: projectHref(row),
+					when: formatRelative(row.createdAt),
+				} satisfies AssignmentNotice;
+			});
+	}, [notifications, assignments]);
+
+	const dueSoonCount = assignments.filter((a) => dueSoon(a.assignmentBrief?.dueAt)).length;
 	const firstName = user?.name.split(" ")[0] ?? "there";
 	const hasAttention = revisionItems.length > 0 || dueSoonCount > 0;
+
+	const recentItems = useMemo(() => {
+		const assignmentRows = upcomingAssignments.map((row) => {
+			const status = assignmentTone(row);
+			// Never show "New" after the student has started or submitted.
+			const isNew = status.tone === "idle";
+			const badge = isNew
+				? "New"
+				: status.label === "Needs revision"
+					? "Revision"
+					: status.tone === "info"
+						? "Submitted"
+						: status.tone === "done"
+							? status.label
+							: status.tone === "progress"
+								? "Pending"
+								: "Assignment";
+			const badgeTone = isNew
+				? "new"
+				: status.tone === "alert"
+					? "alert"
+					: status.tone === "info"
+						? "submitted"
+						: status.tone === "done"
+							? "done"
+							: status.tone === "progress"
+								? "progress"
+								: "assignment";
+			const due = row.assignmentBrief?.dueAt
+				? `Due ${formatShortDate(row.assignmentBrief.dueAt)}`
+				: null;
+			return {
+				key: `a-${row._id}`,
+				href: projectHref(row),
+				title: row.title,
+				kind: "assignment" as const,
+				badge,
+				badgeTone,
+				due,
+				statusLabel: status.label,
+				statusTone: badgeTone === "new" ? "idle" : badgeTone,
+			};
+		});
+		const projectRows = activeProjects.map((project) => ({
+			key: `p-${project._id}`,
+			href: projectHref(project),
+			title: project.title,
+			kind: "project" as const,
+			badge: projectTypeLabel(project.projectType),
+			badgeTone: "project" as const,
+			due: null as string | null,
+			statusLabel: `${project.progressPercent ?? 0}%${
+				project.updatedAt ? ` · ${formatRelative(project.updatedAt)}` : ""
+			}`,
+			statusTone: "project" as const,
+		}));
+		// Assignments always listed first, then projects.
+		return [...assignmentRows, ...projectRows].slice(0, 5);
+	}, [upcomingAssignments, activeProjects]);
+
+	const newRecentCount = recentItems.filter((item) => item.badgeTone === "new").length;
 
 	if (!user) return null;
 
@@ -291,7 +318,7 @@ export function StudentAssistant() {
 					<h1>
 						{getGreeting()}, {firstName}
 					</h1>
-					<p>Writing desk for theses, coursework, and supervisor feedback.</p>
+					<p>Submit coursework or open a project folder for supervisor review.</p>
 				</div>
 				<div className="stu-assist-intro-actions">
 					<button
@@ -307,274 +334,163 @@ export function StudentAssistant() {
 				</div>
 			</header>
 
-			<section className="stu-assist-metrics" aria-label="Workspace overview">
-				<MetricLink
-					label="Projects"
-					value={researchProjects.length}
-					hint={researchProjects.length ? `${avgProgress}% avg progress` : "Start a thesis or paper"}
-					href="/student/projects"
-					loading={loading}
-				/>
-				<MetricLink
-					label="Assignments"
-					value={assignments.length}
-					hint={dueSoonCount ? `${dueSoonCount} due this week` : "No deadlines this week"}
-					href="/student/assignments"
-					loading={loading}
-				/>
-				<MetricLink
-					label="Revisions"
-					value={revisionItems.length}
-					hint={revisionItems.length ? "Supervisor comments waiting" : "Nothing to revise"}
-					href="/student/feedback"
-					loading={loading}
-				/>
-			</section>
-
-			{continueProject ? (
-				<Link href={projectHref(continueProject)} className="stu-assist-continue">
-					<div className="stu-assist-continue-copy">
-						<p>Continue writing</p>
-						<strong>{continueProject.title}</strong>
-						<span>
-							{isAssignment(continueProject)
-								? continueProject.assignmentBrief?.courseName || "Assignment"
-								: projectTypeLabel(continueProject.projectType)}
-							{continueProject.updatedAt ? ` · Updated ${formatRelative(continueProject.updatedAt)}` : ""}
-						</span>
+			<section className="stu-assist-columns" aria-label="Student assessment">
+				<article className="stu-assist-card">
+					<div className="stu-assist-card-head">
+						<p className="stu-assist-column-kicker">Submit work</p>
+						<h2>Hand in your writing</h2>
+						<p>Choose an assignment brief or a project folder to submit for review.</p>
 					</div>
-					<div className="stu-assist-continue-progress">
-						<span>{Math.min(100, Math.max(0, continueProject.progressPercent ?? 0))}%</span>
-						<div className="stu-assist-progress" role="presentation">
-							<div
-								className="stu-assist-progress-fill"
-								style={{
-									width: `${Math.min(100, Math.max(0, continueProject.progressPercent ?? 0))}%`,
-								}}
-							/>
+
+					<div className="stu-assist-submit-list">
+						<Link href="/student/assignments" className="stu-assist-submit-row">
+							<span className="stu-assist-column-icon" aria-hidden>
+								<ClipboardList size={18} strokeWidth={1.75} />
+							</span>
+							<span className="stu-assist-submit-copy">
+								<strong>Submit assignment</strong>
+								<em>
+									{loading
+										? "Loading briefs…"
+										: newAssignmentNotices.length > 0
+											? `${newAssignmentNotices.length} new · ${assignments.length} brief${assignments.length === 1 ? "" : "s"}`
+											: dueSoonCount > 0
+												? `${assignments.length} briefs · ${dueSoonCount} due this week`
+												: assignments.length
+													? `${assignments.length} lecturer brief${assignments.length === 1 ? "" : "s"}`
+													: "Open published lecturer briefs"}
+								</em>
+							</span>
+							{newAssignmentNotices.length > 0 ? (
+								<span className="stu-assist-row-badge" aria-label={`${newAssignmentNotices.length} new`}>
+									{newAssignmentNotices.length}
+								</span>
+							) : null}
+							<span className="stu-assist-submit-cta">
+								Open
+								<ArrowRight size={14} />
+							</span>
+						</Link>
+
+						<Link href="/student/projects/new" className="stu-assist-submit-row">
+							<span className="stu-assist-column-icon" aria-hidden>
+								<FolderKanban size={18} strokeWidth={1.75} />
+							</span>
+							<span className="stu-assist-submit-copy">
+								<strong>Submit project</strong>
+								<em>
+									{loading
+										? "Loading projects…"
+										: researchProjects.length
+											? `${researchProjects.length} project folder${researchProjects.length === 1 ? "" : "s"} · create or continue`
+											: "Start a thesis, dissertation, or paper"}
+								</em>
+							</span>
+							<span className="stu-assist-submit-cta">
+								<Plus size={14} />
+								New
+							</span>
+						</Link>
+					</div>
+
+					<div className="stu-assist-card-foot">
+						<Link href="/student/projects" className="stu-assist-btn stu-assist-btn-ghost">
+							View all projects
+						</Link>
+						{dueSoonCount > 0 ? (
+							<p className="stu-assist-column-meta">
+								<CalendarClock size={13} aria-hidden />
+								{dueSoonCount} due this week
+							</p>
+						) : null}
+					</div>
+				</article>
+
+				<aside className="stu-assist-card stu-assist-card-side">
+					<div className="stu-assist-card-head">
+						<p className="stu-assist-column-kicker">Workspace</p>
+						<h2>Feedback & recent</h2>
+						<p>Supervisor comments and your latest drafts.</p>
+					</div>
+
+					<div className="stu-assist-side-block">
+						<div className="stu-assist-feedback-inline">
+							<span className="stu-assist-feedback-icon" aria-hidden>
+								<MessageSquareText size={16} />
+							</span>
+							<div>
+								<strong>Feedback</strong>
+								<p>
+									{loading
+										? "Checking supervisor comments…"
+										: hasAttention
+											? [
+													revisionItems.length
+														? `${revisionItems.length} need${revisionItems.length === 1 ? "s" : ""} revision`
+														: null,
+													dueSoonCount ? `${dueSoonCount} due this week` : null,
+												]
+													.filter(Boolean)
+													.join(" · ")
+											: "No revision requests right now."}
+								</p>
+							</div>
+							<Link href="/student/feedback" className="stu-assist-btn stu-assist-btn-ghost">
+								Review
+								<ArrowRight size={14} />
+							</Link>
 						</div>
 					</div>
-					<span className="stu-assist-continue-open">
-						Open
-						<ArrowRight size={14} aria-hidden />
-					</span>
-				</Link>
-			) : null}
 
-			<div className="stu-assist-layout">
-				<div className="stu-assist-grid">
-					<ToolModule
-						title="Projects"
-						description="Theses, dissertations, and research folders."
-						href="/student/projects"
-						icon={FolderKanban}
-						cta="Open projects"
-						count={loading ? "-" : researchProjects.length}
-						features={[
-							"Chapter writing desk",
-							"Supervisor review trail",
-							"Import / export drafts",
-						]}
-						steps={[
-							{ label: "Create", hint: "Start a thesis, dissertation, or paper folder" },
-							{ label: "Write", hint: "Draft chapters and attach notebook evidence" },
-							{ label: "Submit", hint: "Send pages for supervisor review" },
-						]}
-					>
+					<div className="stu-assist-column-body">
+						<div className="stu-assist-body-label-row">
+							<p className="stu-assist-body-label">Recent</p>
+							{newRecentCount > 0 ? (
+								<span className="stu-assist-count-badge" aria-label={`${newRecentCount} new`}>
+									{newRecentCount} new
+								</span>
+							) : null}
+						</div>
 						{loading ? (
 							<div className="stu-assist-skeleton" aria-hidden />
-						) : activeProjects.length === 0 ? (
-							<p className="stu-assist-quiet">No writing projects yet.</p>
+						) : recentItems.length === 0 ? (
+							<p className="stu-assist-quiet">Nothing submitted yet.</p>
 						) : (
 							<ul className="stu-assist-preview">
-								{activeProjects.slice(0, 3).map((project) => (
-									<li key={project._id}>
-										<Link href={projectHref(project)}>
-											<strong>{project.title}</strong>
-											<span>
-												{projectTypeLabel(project.projectType)} · {project.progressPercent ?? 0}%
-											</span>
-										</Link>
-									</li>
-								))}
-							</ul>
-						)}
-					</ToolModule>
-
-					<ToolModule
-						title="Assignments"
-						description="Coursework briefs and upcoming due dates."
-						href="/student/assignments"
-						icon={ClipboardList}
-						cta="Open assignments"
-						count={loading ? "-" : assignments.length}
-						features={[
-							"Published lecturer briefs",
-							"Due-date tracking",
-							"One-page submission",
-						]}
-						steps={[
-							{ label: "Pick brief", hint: "Choose a published coursework brief" },
-							{ label: "Draft", hint: "Write or import your submission" },
-							{ label: "Hand in", hint: "Submit before the due date" },
-						]}
-					>
-						{loading ? (
-							<div className="stu-assist-skeleton" aria-hidden />
-						) : upcomingAssignments.length === 0 ? (
-							<p className="stu-assist-quiet">No assignments from lecturers yet.</p>
-						) : (
-							<ul className="stu-assist-preview">
-								{upcomingAssignments.slice(0, 3).map((row) => {
-									const status = assignmentTone(row);
-									return (
-										<li key={row._id}>
-											<Link href={projectHref(row)}>
-												<strong>{row.title}</strong>
-												<span>
-													{row.assignmentBrief?.dueAt
-														? `Due ${formatShortDate(row.assignmentBrief.dueAt)}`
-														: "No due date"}
-													{" · "}
-													{status.label}
-												</span>
-											</Link>
-										</li>
-									);
-								})}
-							</ul>
-						)}
-					</ToolModule>
-
-					<ToolModule
-						title="Feedback"
-						description="Supervisor comments on your drafts."
-						href="/student/feedback"
-						icon={MessageSquareText}
-						cta="Review feedback"
-						count={loading ? "-" : revisionItems.length}
-						wide
-						features={[
-							"Inline remarks",
-							"Revision requests",
-							"Scores and decisions",
-						]}
-						steps={[
-							{ label: "Read", hint: "Open remarks on marked chapters or briefs" },
-							{ label: "Revise", hint: "Update the draft where feedback points" },
-							{ label: "Resubmit", hint: "Send the revised page for another look" },
-						]}
-					>
-						{loading ? (
-							<div className="stu-assist-skeleton" aria-hidden />
-						) : revisionItems.length === 0 ? (
-							<p className="stu-assist-quiet">No revision requests right now.</p>
-						) : (
-							<ul className="stu-assist-preview">
-								{revisionItems.slice(0, 3).map((item) => (
+								{recentItems.map((item) => (
 									<li key={item.key}>
-										<Link href={item.href}>
-											<strong>{item.title}</strong>
-											<span>{item.projectTitle}</span>
+										<Link href={item.href} className="stu-assist-preview-link">
+											<span className="stu-assist-preview-copy">
+												<strong>{item.title}</strong>
+												<span className="stu-assist-preview-meta">
+													{item.due ? <span>{item.due}</span> : null}
+													{item.due && item.statusLabel ? (
+														<span className="stu-assist-meta-sep" aria-hidden>
+															·
+														</span>
+													) : null}
+													{item.statusLabel ? (
+														<span
+															className={`stu-assist-status tone-${item.statusTone}`}
+														>
+															{item.statusLabel}
+														</span>
+													) : null}
+												</span>
+											</span>
+											<span
+												className={`stu-assist-item-badge tone-${item.badgeTone}`}
+											>
+												{item.badge}
+											</span>
 										</Link>
 									</li>
 								))}
 							</ul>
 						)}
-					</ToolModule>
-				</div>
-
-				<aside className="stu-assist-aside">
-					<section className="stu-assist-panel">
-						<div className="stu-assist-panel-head">
-							<h2>Needs attention</h2>
-							<p>Items that should move first.</p>
-						</div>
-						{loading ? (
-							<div className="stu-assist-skeleton" aria-hidden />
-						) : !hasAttention ? (
-							<p className="stu-assist-quiet">You're clear - nothing urgent.</p>
-						) : (
-							<ul className="stu-assist-queue">
-								{revisionItems.length > 0 ? (
-									<li>
-										<Link href="/student/feedback">
-											<span className="stu-assist-queue-icon stu-assist-queue-rose" aria-hidden>
-												<MessageSquareText size={14} />
-											</span>
-											<div>
-												<strong>
-													{revisionItems.length}{" "}
-													{revisionItems.length === 1 ? "needs revision" : "need revision"}
-												</strong>
-												<span>Open supervisor feedback</span>
-											</div>
-										</Link>
-									</li>
-								) : null}
-								{dueSoonCount > 0 ? (
-									<li>
-										<Link href="/student/assignments">
-											<span className="stu-assist-queue-icon stu-assist-queue-amber" aria-hidden>
-												<CalendarClock size={14} />
-											</span>
-											<div>
-												<strong>{dueSoonCount} due this week</strong>
-												<span>Check assignment deadlines</span>
-											</div>
-										</Link>
-									</li>
-								) : null}
-							</ul>
-						)}
-					</section>
-
-					<section className="stu-assist-panel">
-						<div className="stu-assist-panel-head">
-							<h2>Quick start</h2>
-							<p>Jump into the next writing task.</p>
-						</div>
-						<ul className="stu-assist-shortcuts">
-							<li>
-								<Link href="/student/projects/new" className="stu-assist-shortcut">
-									<span className="stu-assist-shortcut-icon" aria-hidden>
-										<Plus size={14} />
-									</span>
-									<span>
-										New project
-										<em>Thesis, dissertation, or paper</em>
-									</span>
-									<ChevronRight size={14} />
-								</Link>
-							</li>
-							<li>
-								<Link href="/student/assignments" className="stu-assist-shortcut">
-									<span className="stu-assist-shortcut-icon" aria-hidden>
-										<ClipboardList size={14} />
-									</span>
-									<span>
-										Submit coursework
-										<em>Open lecturer briefs</em>
-									</span>
-									<ChevronRight size={14} />
-								</Link>
-							</li>
-							<li>
-								<Link href="/student/feedback" className="stu-assist-shortcut">
-									<span className="stu-assist-shortcut-icon" aria-hidden>
-										<MessageSquareText size={14} />
-									</span>
-									<span>
-										Respond to feedback
-										<em>Revise marked drafts</em>
-									</span>
-									<ChevronRight size={14} />
-								</Link>
-							</li>
-						</ul>
-					</section>
+					</div>
 				</aside>
-			</div>
+			</section>
 		</div>
 	);
 }

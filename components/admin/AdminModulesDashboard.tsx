@@ -63,7 +63,7 @@ export function AdminModulesDashboard() {
 
 	if (!ready || loading) {
 		return (
-			<AdminShell title="Product modules" subtitle="Loading…" breadcrumb="Academic products">
+			<AdminShell title="AI product modules" subtitle="Loading…" breadcrumb="AI product oversight">
 				<p className="muted">Loading…</p>
 			</AdminShell>
 		);
@@ -71,9 +71,9 @@ export function AdminModulesDashboard() {
 
 	return (
 		<AdminShell
-			title="Product modules"
-			subtitle={universityName ? `Modules for ${universityName}` : "Enable or disable product surfaces"}
-			breadcrumb="Academic products · Modules"
+			title="AI product modules"
+			subtitle={universityName ? `AI modules for ${universityName}` : "Enable or disable AI product surfaces"}
+			breadcrumb="AI product oversight · Modules"
 		>
 			{error && <p className="error-text">{error}</p>}
 			{savedAt && <p className="muted">Saved.</p>}

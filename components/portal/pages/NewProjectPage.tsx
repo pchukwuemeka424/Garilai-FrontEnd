@@ -12,6 +12,8 @@ import {
 	CircleHelp,
 	ClipboardList,
 	Info,
+	ListOrdered,
+	PenLine,
 } from "lucide-react";
 import { Input } from "@/components/portal/ui/input";
 import { Select } from "@/components/portal/ui/select";
@@ -24,7 +26,9 @@ import {
 	projectCreationSetupBlurb,
 	projectCreationSubmitCta,
 	projectCreationSubmitPending,
+	projectCreationTitleChecklist,
 	projectCreationVerbLabel,
+	projectHowItWorksSteps,
 	projectTitleFieldLabel,
 	type ProjectType,
 } from "@/lib/portal/project-types";
@@ -225,6 +229,8 @@ export default function NewProjectPage() {
 	);
 
 	const guidance = projectCreationGuidance(projectType);
+	const howItWorks = projectHowItWorksSteps(projectType);
+	const titleChecklist = projectCreationTitleChecklist(projectType);
 	const titleFieldLabel = projectTitleFieldLabel(projectType);
 	const advisorNoun = projectAdvisorNoun(projectType);
 	const advisorLabel = projectAdvisorLabel(projectType);
@@ -449,9 +455,41 @@ export default function NewProjectPage() {
 		);
 	}
 
-	const pageTitle = `${projectCreationVerbLabel(projectType)} ${
-		selected?.label.toLowerCase() ?? "project"
-	}`;
+	const pageTitle = projectType
+		? `${projectCreationVerbLabel(projectType)} ${selected?.label.toLowerCase() ?? "project"}`
+		: fromAssignments
+			? "Start assignment"
+			: "Create project folder";
+
+	const overviewSteps = isAssignment
+		? [
+				{
+					title: "Choose lecturer & year",
+					body: "Select your lecturer and course year so we can load published briefs.",
+				},
+				{
+					title: "Pick the brief",
+					body: "Open the published assignment instructions, due date, and word count.",
+				},
+				{
+					title: "Confirm your details",
+					body: "Check the title, Mat No, and course name, then open the writing page.",
+				},
+			]
+		: [
+				{
+					title: "Choose the type",
+					body: "Pick dissertation, thesis, project, or another folder structure that fits your work.",
+				},
+				{
+					title: "Assign your supervisor",
+					body: "Select a supervisor from your university so they can review drafts later.",
+				},
+				{
+					title: "Set a working title",
+					body: "Use a clear title now — you can refine it after you start writing.",
+				},
+			];
 
 	return (
 		<div className="stu-new">
@@ -467,6 +505,33 @@ export default function NewProjectPage() {
 				</div>
 			</header>
 
+			<section className="stu-new-howto" aria-label="How to get started">
+				<div className="stu-new-howto-head">
+					<span className="stu-new-howto-icon" aria-hidden>
+						<ListOrdered size={16} strokeWidth={1.75} />
+					</span>
+					<div>
+						<h2>Before you start</h2>
+						<p>
+							{isAssignment
+								? "Follow these three steps to open a coursework writing page."
+								: "A short setup creates your writing folder and review trail."}
+						</p>
+					</div>
+				</div>
+				<ol className="stu-new-howto-steps">
+					{overviewSteps.map((step, index) => (
+						<li key={step.title}>
+							<em aria-hidden>{index + 1}</em>
+							<div>
+								<strong>{step.title}</strong>
+								<span>{step.body}</span>
+							</div>
+						</li>
+					))}
+				</ol>
+			</section>
+
 			<form className="stu-new-form" onSubmit={onSubmit}>
 				{error ? (
 					<p className="stu-new-error" role="alert">
@@ -477,151 +542,192 @@ export default function NewProjectPage() {
 				<div className="stu-new-shell">
 					<div className="stu-new-pane">
 						<div className="stu-new-pane-head">
-							<h2>Details</h2>
+							<p className="stu-new-step-label">Step 1</p>
+							<h2>What are you submitting?</h2>
 							<p>
-								{isAssignment
-									? "Type, lecturer, year, and your student details."
-									: "Type, supervisor, and working title."}
+								{fromAssignments
+									? "Assignment is selected. Confirm the lecturer and brief below."
+									: "Choose the folder type that matches your assessment."}
 							</p>
 						</div>
 
-						<div className="stu-new-grid">
-							<Field
-								label="Type"
+						<Field
+							label="Submission type"
+							required
+							hint={
+								selected?.description ||
+								"Pick assignment, dissertation, thesis, or another project type."
+							}
+						>
+							<FieldSelect
+								value={projectType}
+								onChange={(e) => {
+									const next = e.target.value as ProjectType;
+									if (PROJECT_TYPES.some((t) => t.value === next)) {
+										selectProjectType(next);
+									}
+								}}
 								required
-								hint={
-									selected?.description ||
-									"Assignment, dissertation, thesis, or another type."
-								}
+								aria-label="What are you submitting?"
 							>
-								<FieldSelect
-									value={projectType}
-									onChange={(e) => {
-										const next = e.target.value as ProjectType;
-										if (next) selectProjectType(next);
-									}}
-									required
-									aria-label="Project type"
-								>
-									<option value="" disabled>
-										Select type...
+								<option value="" disabled>
+									Select what you are submitting...
+								</option>
+								{PROJECT_TYPES.map((type) => (
+									<option key={type.value} value={type.value}>
+										{type.label}
 									</option>
-									{PROJECT_TYPES.map((type) => (
-										<option key={type.value} value={type.value}>
-											{type.label}
-										</option>
-									))}
-								</FieldSelect>
-							</Field>
+								))}
+							</FieldSelect>
+						</Field>
 
-							<Field
-								label={advisorLabel}
-								required
-								hint={
-									universityName
-										? universityName
-										: "From your registered university"
-								}
-							>
-								<FieldSelect
-									value={supervisorId}
-									onChange={(e) => {
-										setSupervisorId(e.target.value);
-										setAssignmentBriefId("");
-										if (isAssignment) setCourseYear("");
-									}}
-									required
-									disabled={loadingSupervisors || supervisors.length === 0}
-								>
-									<option value="" disabled>
-										{loadingSupervisors
-											? `Loading ${advisorPlural}...`
-											: supervisors.length === 0
-												? `No ${advisorPlural} available`
-												: `Select ${advisorNoun}...`}
-									</option>
-									{supervisors.map((supervisor) => (
-										<option key={supervisor.id} value={supervisor.id}>
-											{supervisor.name} · {supervisor.email}
-										</option>
-									))}
-								</FieldSelect>
-							</Field>
-						</div>
-
-						{!loadingSupervisors && supervisors.length === 0 ? (
-							<div className="stu-new-notice">
-								<CircleHelp size={15} aria-hidden />
+						<div className="stu-new-section">
+							<div className="stu-new-pane-head">
+								<p className="stu-new-step-label">Step 2</p>
+								<h2>
+									{isAssignment ? "Lecturer & year" : "Supervisor & title"}
+								</h2>
 								<p>
-									No {advisorPlural} are registered for{" "}
-									{universityName || "your university"} yet. Ask a {advisorNoun} to
-									register with the same university, then refresh this page.
+									{isAssignment
+										? "These details load published briefs and appear on your submission."
+										: "Your supervisor will receive chapters when you submit for review."}
 								</p>
 							</div>
-						) : null}
 
-						{isAssignment ? (
-							<Field label="Year / level" required>
-								<FieldSelect
-									value={courseYear}
-									onChange={(e) => setCourseYear(e.target.value)}
+							<div className="stu-new-grid">
+								<Field
+									label={advisorLabel}
 									required
-								>
-									<option value="" disabled>
-										Select year...
-									</option>
-									{COURSE_YEAR_OPTIONS.map((opt) => (
-										<option key={opt.value} value={opt.value}>
-											{opt.label}
-										</option>
-									))}
-								</FieldSelect>
-							</Field>
-						) : null}
-
-						<div className="stu-new-divider">
-							<Field label={titleFieldLabel} required>
-								<Input
-									className="stu-new-control"
-									value={title}
-									onChange={(e) => setTitle(e.target.value)}
-									placeholder={
-										isAssignment
-											? "e.g. Week 4 lab report - software testing"
-											: "e.g. AI-assisted thesis supervision in higher education"
+									hint={
+										universityName
+											? universityName
+											: "From your registered university"
 									}
-									required
-									minLength={3}
-								/>
-							</Field>
+								>
+									<FieldSelect
+										value={supervisorId}
+										onChange={(e) => {
+											setSupervisorId(e.target.value);
+											setAssignmentBriefId("");
+											if (isAssignment) setCourseYear("");
+										}}
+										required
+										disabled={loadingSupervisors || supervisors.length === 0}
+									>
+										<option value="" disabled>
+											{loadingSupervisors
+												? `Loading ${advisorPlural}...`
+												: supervisors.length === 0
+													? `No ${advisorPlural} available`
+													: `Select ${advisorNoun}...`}
+										</option>
+										{supervisors.map((supervisor) => (
+											<option key={supervisor.id} value={supervisor.id}>
+												{supervisor.name} · {supervisor.email}
+											</option>
+										))}
+									</FieldSelect>
+								</Field>
+
+								{isAssignment ? (
+									<Field label="Year / level" required>
+										<FieldSelect
+											value={courseYear}
+											onChange={(e) => setCourseYear(e.target.value)}
+											required
+										>
+											<option value="" disabled>
+												Select year...
+											</option>
+											{COURSE_YEAR_OPTIONS.map((opt) => (
+												<option key={opt.value} value={opt.value}>
+													{opt.label}
+												</option>
+											))}
+										</FieldSelect>
+									</Field>
+								) : (
+									<Field
+										label={titleFieldLabel}
+										required
+										hint="Keep it specific — you can refine it later."
+									>
+										<Input
+											className="stu-new-control"
+											value={title}
+											onChange={(e) => setTitle(e.target.value)}
+											placeholder="e.g. AI-assisted thesis supervision in higher education"
+											required
+											minLength={3}
+										/>
+									</Field>
+								)}
+							</div>
+
+							{!loadingSupervisors && supervisors.length === 0 ? (
+								<div className="stu-new-notice">
+									<CircleHelp size={15} aria-hidden />
+									<p>
+										No {advisorPlural} are registered for{" "}
+										{universityName || "your university"} yet. Ask a {advisorNoun}{" "}
+										to register with the same university, then refresh this page.
+									</p>
+								</div>
+							) : null}
 						</div>
 
 						{isAssignment ? (
-							<div className="stu-new-grid">
-								<Field label="Mat No / Student No" required>
+							<div className="stu-new-section">
+								<div className="stu-new-pane-head">
+									<p className="stu-new-step-label">Step 3</p>
+									<h2>Your submission details</h2>
+									<p>
+										Confirm the title and student details. Selecting a brief fills
+										these in automatically when available.
+									</p>
+								</div>
+
+								<Field
+									label={titleFieldLabel}
+									required
+									hint="Use the brief title unless your lecturer asks for a different working title."
+								>
 									<Input
 										className="stu-new-control"
-										value={studentMatNo}
-										onChange={(e) => setStudentMatNo(e.target.value)}
-										placeholder="e.g. CSC/2021/0123"
+										value={title}
+										onChange={(e) => setTitle(e.target.value)}
+										placeholder="e.g. Week 4 lab report - software testing"
 										required
-										minLength={2}
-										maxLength={64}
-										autoComplete="off"
+										minLength={3}
 									/>
 								</Field>
-								<Field label="Course name" required>
-									<Input
-										className="stu-new-control"
-										value={courseName}
-										onChange={(e) => setCourseName(e.target.value)}
-										placeholder="e.g. Software Engineering"
-										required
-										minLength={2}
-										maxLength={200}
-										autoComplete="off"
-									/>
-								</Field>
+
+								<div className="stu-new-grid">
+									<Field label="Mat No / Student No" required>
+										<Input
+											className="stu-new-control"
+											value={studentMatNo}
+											onChange={(e) => setStudentMatNo(e.target.value)}
+											placeholder="e.g. CSC/2021/0123"
+											required
+											minLength={2}
+											maxLength={64}
+											autoComplete="off"
+										/>
+									</Field>
+									<Field label="Course name" required>
+										<Input
+											className="stu-new-control"
+											value={courseName}
+											onChange={(e) => setCourseName(e.target.value)}
+											placeholder="e.g. Software Engineering"
+											required
+											minLength={2}
+											maxLength={200}
+											autoComplete="off"
+										/>
+									</Field>
+								</div>
 							</div>
 						) : null}
 					</div>
@@ -630,8 +736,9 @@ export default function NewProjectPage() {
 						{isAssignment ? (
 							<>
 								<div className="stu-new-pane-head">
+									<p className="stu-new-step-label">Published brief</p>
 									<h2>
-										Published brief
+										Select the assignment
 										{briefsRequireSelection ? (
 											<em className="stu-new-required" aria-hidden>
 												*
@@ -640,49 +747,96 @@ export default function NewProjectPage() {
 									</h2>
 									<p>
 										{courseYear.trim()
-											? `Briefs for ${courseYear.trim()}.`
+											? `Briefs for ${courseYear.trim()}. Read the instructions before you open the writing page.`
 											: "Choose a lecturer and year to load briefs."}
 									</p>
 								</div>
 								{renderBriefList()}
 							</>
-						) : selected && guidance ? (
+						) : (
 							<div className="stu-new-guidance">
 								<div className="stu-new-pane-head">
-									<h2>{selected.label}</h2>
-									<p>{selected.description}</p>
+									<p className="stu-new-step-label">Write-up guide</p>
+									<h2>
+										{selected ? `${selected.label} instructions` : "Getting started"}
+									</h2>
+									<p>
+										{selected?.description ||
+											"Pick a type on the left to see structure tips and the writing workflow."}
+									</p>
 								</div>
-								<div className="stu-new-tip">
-									<Info size={15} aria-hidden />
-									<p>{guidance.tip}</p>
-								</div>
-							</div>
-						) : (
-							<div className="stu-new-panel-empty">
-								<span className="stu-new-panel-icon" aria-hidden>
-									<Info size={18} strokeWidth={1.75} />
-								</span>
-								<strong>Select a type</strong>
-								<p>Structure and supervision details will appear here.</p>
+
+								{guidance ? (
+									<>
+										<div className="stu-new-tip">
+											<Info size={15} aria-hidden />
+											<p>{guidance.tip}</p>
+										</div>
+
+										<div className="stu-new-guide-block">
+											<h3>After you create this folder</h3>
+											<ol className="stu-new-guide-steps">
+												{howItWorks.map((step) => (
+													<li key={step.title}>
+														<strong>{step.title}</strong>
+														<span>{step.body}</span>
+													</li>
+												))}
+											</ol>
+										</div>
+
+										<div className="stu-new-guide-block">
+											<h3>Title tips</h3>
+											<ul className="stu-new-checklist">
+												{titleChecklist.map((item) => (
+													<li key={item}>{item}</li>
+												))}
+											</ul>
+										</div>
+									</>
+								) : (
+									<div className="stu-new-panel-empty">
+										<span className="stu-new-panel-icon" aria-hidden>
+											<Info size={18} strokeWidth={1.75} />
+										</span>
+										<strong>Select a type</strong>
+										<p>
+											You will see writing structure tips and a short how-it-works
+											guide here.
+										</p>
+									</div>
+								)}
 							</div>
 						)}
 					</div>
 				</div>
 
 				<div className="stu-new-footer">
-					<Link href={backHref} className="stu-new-btn stu-new-btn-ghost">
-						Cancel
-					</Link>
-					<button
-						type="submit"
-						disabled={!canSubmit}
-						className="stu-new-btn stu-new-btn-primary"
-					>
-						{loading
-							? projectCreationSubmitPending(projectType)
-							: projectCreationSubmitCta(projectType)}
-						{!loading ? <ArrowRight size={15} /> : null}
-					</button>
+					<div className="stu-new-footer-note">
+						<span className="stu-new-footer-icon" aria-hidden>
+							<PenLine size={14} />
+						</span>
+						<p>
+							{isAssignment
+								? "You will open a single writing page to draft or import your submission."
+								: "You will open a chapter folder where you can write, import, and submit pages for review."}
+						</p>
+					</div>
+					<div className="stu-new-footer-actions">
+						<Link href={backHref} className="stu-new-btn stu-new-btn-ghost">
+							Cancel
+						</Link>
+						<button
+							type="submit"
+							disabled={!canSubmit}
+							className="stu-new-btn stu-new-btn-primary"
+						>
+							{loading
+								? projectCreationSubmitPending(projectType)
+								: projectCreationSubmitCta(projectType)}
+							{!loading ? <ArrowRight size={15} /> : null}
+						</button>
+					</div>
 				</div>
 			</form>
 		</div>

@@ -22,6 +22,12 @@ import { RemarkHtml } from "@/components/portal/editor/remark-html";
 import { apiFetch } from "@/lib/portal-api";
 import { stripReviewMarks } from "@/lib/portal/apply-highlights";
 import { cn } from "@/lib/portal/cn";
+import {
+  assignmentSubmissionStatus,
+  primaryAssignmentPage,
+  type AssignmentStatusMeta,
+} from "@/lib/portal/assignment-status";
+import type { ReviewTrailEvent } from "@/lib/portal/review-trail";
 
 type ProjectPage = {
   _id: string;
@@ -31,6 +37,7 @@ type ProjectPage = {
   reviewStatus?: "none" | "approved" | "needs_revision" | string;
   reviewRemark?: string;
   reviewAnnotatedHtml?: string;
+  reviewTrail?: ReviewTrailEvent[];
 };
 
 type CriterionScore = {
@@ -52,34 +59,14 @@ type AssignmentProject = {
   pages?: ProjectPage[];
 };
 
-type StatusMeta = {
-  label: string;
-  tone: "graded" | "approved" | "revision" | "submitted" | "progress" | "idle";
-};
+type StatusMeta = AssignmentStatusMeta;
 
 function primaryPage(pages: ProjectPage[] | undefined) {
-  if (!Array.isArray(pages) || pages.length === 0) return null;
-  return [...pages].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))[0] ?? null;
+  return primaryAssignmentPage(pages);
 }
 
 function statusMeta(project: AssignmentProject): StatusMeta {
-  if (typeof project.score === "number") {
-    return { label: "Graded", tone: "graded" };
-  }
-  const page = primaryPage(project.pages);
-  if (page?.reviewStatus === "approved") {
-    return { label: "Approved", tone: "approved" };
-  }
-  if (page?.reviewStatus === "needs_revision") {
-    return { label: "Needs revision", tone: "revision" };
-  }
-  if (page?.reviewStatus && page.reviewStatus !== "none") {
-    return { label: "Submitted", tone: "submitted" };
-  }
-  if (String(page?.content || "").trim()) {
-    return { label: "In progress", tone: "progress" };
-  }
-  return { label: "Not started", tone: "idle" };
+  return assignmentSubmissionStatus(project);
 }
 
 function stripHtmlToText(html: string) {

@@ -19,7 +19,7 @@ type ReportType =
 	| "policy_effectiveness"
 	| "token_consumption";
 
-type ReportFormat = "pdf" | "docx" | "csv";
+type ReportFormat = "txt" | "csv";
 
 const REPORT_TYPE_OPTIONS: Array<{ value: ReportType; label: string }> = [
 	{ value: "executive_summary", label: "Executive summary" },
@@ -36,8 +36,8 @@ const AUDIENCE_OPTIONS: Array<{ value: GovernanceReportAudience; label: string }
 	{ value: "external_auditors", label: "External auditors" },
 ];
 
-const STATUS_FLOW = ["draft", "review", "approved", "published"] as const;
-type ReportStatus = (typeof STATUS_FLOW)[number];
+/** Persisted report statuses in the API (draft | final | archived). */
+const STORED_STATUSES = ["draft", "final", "archived"] as const;
 
 function downloadBlob(content: string, filename: string, mime: string) {
 	const blob = new Blob([content], { type: mime });
@@ -95,22 +95,10 @@ function exportFullReport(report: GovernanceReportRecord) {
 }
 
 function statusAccent(status: string): "primary" | "success" | "warning" | "danger" | undefined {
-	if (status === "published") return "success";
-	if (status === "approved") return "primary";
-	if (status === "review") return "warning";
+	if (status === "final") return "success";
+	if (status === "draft") return "warning";
+	if (status === "archived") return "primary";
 	return undefined;
-}
-
-function nextStatus(current: string): ReportStatus | null {
-	const idx = STATUS_FLOW.indexOf(current as ReportStatus);
-	if (idx < 0 || idx >= STATUS_FLOW.length - 1) return null;
-	return STATUS_FLOW[idx + 1];
-}
-
-function prevStatus(current: string): ReportStatus | null {
-	const idx = STATUS_FLOW.indexOf(current as ReportStatus);
-	if (idx <= 0) return null;
-	return STATUS_FLOW[idx - 1];
 }
 
 export function AdminReportsDashboard() {
@@ -123,7 +111,7 @@ export function AdminReportsDashboard() {
 	const [error, setError] = useState<string | null>(null);
 
 	const [reportType, setReportType] = useState<ReportType>("executive_summary");
-	const [format, setFormat] = useState<ReportFormat>("pdf");
+	const [format, setFormat] = useState<ReportFormat>("txt");
 	const [audience, setAudience] = useState<GovernanceReportAudience>("both");
 	const [periodStart, setPeriodStart] = useState("");
 	const [periodEnd, setPeriodEnd] = useState("");
@@ -218,8 +206,8 @@ export function AdminReportsDashboard() {
 
 	return (
 		<AdminShell
-			title="Governance Reporting"
-			subtitle="Reports for Management, Senate, and external auditors"
+			title="AI Governance Reporting"
+			subtitle="AI governance reports for Management, Senate, and external auditors"
 			breadcrumb="Admin · Reporting"
 			actions={
 				<button type="button" className="ghost-btn" onClick={() => void load()}>
@@ -269,14 +257,13 @@ export function AdminReportsDashboard() {
 							</select>
 						</label>
 						<label>
-							Format
+							Export format
 							<select
 								className="topic-input"
 								value={format}
 								onChange={(e) => setFormat(e.target.value as ReportFormat)}
 							>
-								<option value="pdf">PDF</option>
-								<option value="docx">DOCX</option>
+								<option value="txt">Text (.txt)</option>
 								<option value="csv">CSV</option>
 							</select>
 						</label>
@@ -391,7 +378,7 @@ export function AdminReportsDashboard() {
 											{report.periodStart.slice(0, 10)} — {report.periodEnd.slice(0, 10)}
 										</td>
 										<td>
-											<span className={`admin-chip${statusAccent(report.status) ? ` admin-sev-${report.status === "published" ? "low" : report.status === "approved" ? "medium" : "high"}` : ""}`}>
+											<span className={`admin-chip${statusAccent(report.status) ? ` admin-sev-${report.status === "final" ? "low" : report.status === "draft" ? "high" : "medium"}` : ""}`}>
 												{report.status}
 											</span>
 										</td>
@@ -417,37 +404,12 @@ export function AdminReportsDashboard() {
 					description={`${selected.periodStart.slice(0, 10)} — ${selected.periodEnd.slice(0, 10)} · ${selected.status}`}
 					actions={
 						<>
-							{/* Approval Workflow */}
-							{prevStatus(selected.status) && (
-								<button
-									type="button"
-									className="ghost-btn"
-									onClick={() => {
-										const prev = prevStatus(selected.status);
-										if (prev) setSelected({ ...selected, status: prev });
-									}}
-								>
-									← {prevStatus(selected.status)}
-								</button>
-							)}
-							{nextStatus(selected.status) && (
-								<button
-									type="button"
-									className="primary-btn"
-									onClick={() => {
-										const next = nextStatus(selected.status);
-										if (next) setSelected({ ...selected, status: next });
-									}}
-								>
-									Advance to {nextStatus(selected.status)} →
-								</button>
-							)}
 							<button
 								type="button"
 								className="ghost-btn"
 								onClick={() => exportGovernanceReportText(selected)}
 							>
-								Download Text
+								Download text
 							</button>
 							<button
 								type="button"
@@ -472,27 +434,19 @@ export function AdminReportsDashboard() {
 						</>
 					}
 				>
-					{/* Status Workflow Indicator */}
 					<div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem", flexWrap: "wrap", alignItems: "center" }}>
-						{STATUS_FLOW.map((s, i) => {
+						{STORED_STATUSES.map((s, i) => {
 							const isActive = s === selected.status;
-							const isPast = STATUS_FLOW.indexOf(selected.status as ReportStatus) > i;
 							return (
 								<span key={s} style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
-									<span
-										className={`admin-chip${isActive ? " admin-sev-medium" : isPast ? " admin-sev-low" : ""}`}
-									>
-										{s}
-									</span>
-									{i < STATUS_FLOW.length - 1 && <span className="muted">→</span>}
+									<span className={`admin-chip${isActive ? " admin-sev-medium" : ""}`}>{s}</span>
+									{i < STORED_STATUSES.length - 1 && <span className="muted">·</span>}
 								</span>
 							);
 						})}
 					</div>
 
-					{/* Expandable Sections */}
 					<div className="admin-report-body">
-						{/* Summary */}
 						<section>
 							<button
 								type="button"
@@ -507,7 +461,6 @@ export function AdminReportsDashboard() {
 							)}
 						</section>
 
-						{/* Report Sections */}
 						{selected.sections.map((section) => (
 							<section key={section.heading}>
 								<button
@@ -533,11 +486,10 @@ export function AdminReportsDashboard() {
 				</AdminPanel>
 			)}
 
-			{/* By Status Breakdown */}
 			{Object.keys(byStatus).length > 0 && (
 				<AdminPanel title="Reports by Status">
 					<section className="admin-stats">
-						{STATUS_FLOW.map((s) => (
+						{STORED_STATUSES.map((s) => (
 							<AdminStatCard
 								key={s}
 								label={s.charAt(0).toUpperCase() + s.slice(1)}

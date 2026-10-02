@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { AuthField } from "@/components/auth/AuthField";
 import { AuthRoleSelector, type AuthAccountRole } from "@/components/auth/AuthRoleSelector";
+import { AuthSearchableSelect } from "@/components/auth/AuthSearchableSelect";
 import { AuthSelectField } from "@/components/auth/AuthSelectField";
 import { AuthSplitLayout, REGISTER_HERO } from "@/components/auth/AuthSplitLayout";
 import { LegalDocumentModal } from "@/components/legal/LegalDocumentModal";
@@ -20,6 +21,7 @@ import {
 	NIGERIA_PROGRAM_LEVELS,
 } from "@/lib/nigeria-departments";
 import { isFreeEmail, LECTURER_FREE_EMAIL_ERROR } from "@/lib/email";
+import { COURSE_YEAR_OPTIONS } from "@/lib/portal/course-years";
 import {
 	fetchOnboardedUniversities,
 	type OnboardedUniversity,
@@ -29,8 +31,20 @@ type Props = {
 	defaultRole?: AuthAccountRole;
 };
 
+type RegisterStep = "account" | "institution" | "security";
+
+const STEPS: { id: RegisterStep; label: string }[] = [
+	{ id: "account", label: "Account" },
+	{ id: "institution", label: "Institution" },
+	{ id: "security", label: "Security" },
+];
+
 function parseRole(value: string | null): AuthAccountRole {
 	return value === "student" ? "student" : "lecturer";
+}
+
+function isValidEmail(value: string): boolean {
+	return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
 
 export function RegisterScreen({ defaultRole = "lecturer" }: Props) {
@@ -38,6 +52,7 @@ export function RegisterScreen({ defaultRole = "lecturer" }: Props) {
 	const searchParams = useSearchParams();
 	const { user, loading, register, registerStudent } = useAuth();
 
+	const [stepIndex, setStepIndex] = useState(0);
 	const [role, setRole] = useState<AuthAccountRole>(() =>
 		parseRole(searchParams.get("role") ?? defaultRole),
 	);
@@ -47,6 +62,7 @@ export function RegisterScreen({ defaultRole = "lecturer" }: Props) {
 	const [institutionId, setInstitutionId] = useState("");
 	const [departmentId, setDepartmentId] = useState("");
 	const [programLevelId, setProgramLevelId] = useState("");
+	const [yearLevel, setYearLevel] = useState("");
 	const [password, setPassword] = useState("");
 	const [confirmPassword, setConfirmPassword] = useState("");
 	const [acceptedPolicies, setAcceptedPolicies] = useState(false);
@@ -60,6 +76,9 @@ export function RegisterScreen({ defaultRole = "lecturer" }: Props) {
 	const isStudent = role === "student";
 	const selectedCountry = getRegisterCountry(countryCode);
 	const noOnboardedUniversities = Boolean(countryCode) && !universitiesLoading && universities.length === 0;
+	const currentStep = STEPS[stepIndex]?.id ?? "account";
+	const isFirstStep = stepIndex === 0;
+	const isLastStep = stepIndex === STEPS.length - 1;
 
 	useEffect(() => {
 		if (!loading && user) router.replace(dashboardPathForRole(user.role));
@@ -109,82 +128,90 @@ export function RegisterScreen({ defaultRole = "lecturer" }: Props) {
 	const institutionOptions = useMemo(
 		() =>
 			universities.map((university) => ({
-				id: university.catalogueId,
+				value: university.catalogueId,
 				label: university.name,
 			})),
 		[universities],
 	);
 
+	const validateStep = (step: RegisterStep): string | null => {
+		if (step === "account") {
+			if (role !== "student" && role !== "lecturer") {
+				return "Please select an account type.";
+			}
+			if (!name.trim()) return "Please enter your full name.";
+			if (!email.trim()) return "Please enter your email.";
+			if (!isValidEmail(email)) return "Please enter a valid email address.";
+			if (!isStudent && isFreeEmail(email)) return LECTURER_FREE_EMAIL_ERROR;
+			return null;
+		}
+
+		if (step === "institution") {
+			if (!countryCode) return "Please select your country.";
+			if (universitiesLoading) return "Still loading institutions. Please wait a moment.";
+			if (universitiesError) return universitiesError;
+			if (noOnboardedUniversities) {
+				return "No onboarded universities for this country yet. Contact your administrator.";
+			}
+			if (!institutionId) return "Please select your institution.";
+			if (!universities.some((u) => u.catalogueId === institutionId)) {
+				return "Your university is not yet onboarded on this platform. Contact your administrator.";
+			}
+			if (!departmentId) return "Please select your department.";
+			if (isStudent && !programLevelId) return "Please select your program.";
+			if (isStudent && !yearLevel) return "Please select your year / level.";
+			return null;
+		}
+
+		if (step === "security") {
+			if (password.length < 8) return "Password must be at least 8 characters.";
+			if (password !== confirmPassword) return "Passwords do not match.";
+			if (!acceptedPolicies) {
+				return "Please agree to the Terms of Service, Privacy Policy, and Acceptable Use Policy.";
+			}
+			return null;
+		}
+
+		return null;
+	};
+
+	const goToStep = (index: number) => {
+		setError(null);
+		setStepIndex(Math.max(0, Math.min(STEPS.length - 1, index)));
+	};
+
+	const handleNext = () => {
+		const message = validateStep(currentStep);
+		if (message) {
+			setError(message);
+			return;
+		}
+		goToStep(stepIndex + 1);
+	};
+
+	const handlePrevious = () => {
+		goToStep(stepIndex - 1);
+	};
+
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
+		if (!isLastStep) {
+			handleNext();
+			return;
+		}
+
 		setError(null);
-
-		if (!countryCode) {
-			setError("Please select your country.");
-			return;
-		}
-
-		if (universitiesLoading) {
-			setError("Still loading institutions. Please wait a moment.");
-			return;
-		}
-
-		if (universitiesError) {
-			setError(universitiesError);
-			return;
-		}
-
-		if (noOnboardedUniversities) {
-			setError(
-				"No onboarded universities for this country yet. Contact your administrator.",
-			);
-			return;
-		}
-
-		if (!institutionId) {
-			setError("Please select your institution.");
-			return;
-		}
-
-		if (!universities.some((u) => u.catalogueId === institutionId)) {
-			setError(
-				"Your university is not yet onboarded on this platform. Contact your administrator.",
-			);
-			return;
-		}
-
-		if (!departmentId) {
-			setError("Please select your department.");
-			return;
-		}
-
-		if (isStudent && !programLevelId) {
-			setError("Please select your program level.");
-			return;
-		}
-
-		if (!isStudent && isFreeEmail(email)) {
-			setError(LECTURER_FREE_EMAIL_ERROR);
-			return;
-		}
-
-		if (password !== confirmPassword) {
-			setError("Passwords do not match.");
-			return;
-		}
-
-		if (password.length < 8) {
-			setError("Password must be at least 8 characters.");
-			return;
-		}
-
-		if (!acceptedPolicies) {
-			setError("Please agree to the Terms of Service, Privacy Policy, and Acceptable Use Policy.");
-			return;
+		for (const step of STEPS) {
+			const message = validateStep(step.id);
+			if (message) {
+				setError(message);
+				setStepIndex(STEPS.findIndex((s) => s.id === step.id));
+				return;
+			}
 		}
 
 		const department = isStudent
-			? formatStudentProgram(departmentId, programLevelId)
+			? formatStudentProgram(departmentId, programLevelId, yearLevel)
 			: getDepartmentLabel(departmentId);
 		const institution =
 			universities.find((u) => u.catalogueId === institutionId)?.name ?? institutionId;
@@ -223,12 +250,26 @@ export function RegisterScreen({ defaultRole = "lecturer" }: Props) {
 						? `Select your institution in ${selectedCountry.label}`
 						: "Select your university or polytechnic";
 
+	const stepTitle =
+		currentStep === "account"
+			? "Account details"
+			: currentStep === "institution"
+				? "Institution"
+				: "Secure your account";
+
+	const stepHint =
+		currentStep === "account"
+			? "Choose your role and tell us how to identify your account."
+			: currentStep === "institution"
+				? "Link your profile to an onboarded university."
+				: "Create a password and accept the policies to finish.";
+
 	return (
 		<AuthSplitLayout
 			wide
 			hero={REGISTER_HERO}
 			title="Create your account"
-			subtitle="Set up your institutional profile. We'll tailor the workspace to your role and university."
+			subtitle="Set up your institutional profile in a few short steps."
 			footer={
 				<p>
 					Already have an account?{" "}
@@ -239,102 +280,137 @@ export function RegisterScreen({ defaultRole = "lecturer" }: Props) {
 			}
 		>
 			<form className="login-form" onSubmit={handleSubmit} noValidate>
-				<section className="login-form-section">
-					<h2 className="login-form-section-title">Account type</h2>
-					<AuthRoleSelector value={role} onChange={setRole} disabled={submitting} />
-				</section>
+				<nav className="login-stepper" aria-label="Registration steps">
+					<ol className="login-stepper-list">
+						{STEPS.map((step, index) => {
+							const status =
+								index < stepIndex ? "done" : index === stepIndex ? "current" : "upcoming";
+							return (
+								<li
+									key={step.id}
+									className={`login-stepper-item login-stepper-item-${status}`}
+									aria-current={status === "current" ? "step" : undefined}
+								>
+									<span className="login-stepper-index" aria-hidden="true">
+										{index < stepIndex ? "✓" : index + 1}
+									</span>
+									<span className="login-stepper-label">{step.label}</span>
+								</li>
+							);
+						})}
+					</ol>
+					<p className="login-stepper-progress">
+						Step {stepIndex + 1} of {STEPS.length}
+					</p>
+				</nav>
 
-				<section className="login-form-section">
-					<h2 className="login-form-section-title">Personal details</h2>
-					<div className="login-form-fields login-form-fields-grid">
-						<AuthField
-							id="register-name"
-							label="Full name"
-							placeholder={isStudent ? "Alex Johnson" : "Dr. Jane Smith"}
-							value={name}
-							onChange={(e) => setName(e.target.value)}
-							autoComplete="name"
-							required
-						/>
-
-						<AuthField
-							id="register-email"
-							label="Email"
-							type="email"
-							placeholder={
-								isStudent
-									? "alex.johnson@gmail.com"
-									: "jane.smith@university.edu"
-							}
-							value={email}
-							onChange={(e) => setEmail(e.target.value)}
-							autoComplete="email"
-							required
-							error={
-								!isStudent && email.trim() && isFreeEmail(email)
-									? "University or professional email required"
-									: undefined
-							}
-						/>
+				<section className="login-form-section" aria-labelledby="register-step-title">
+					<div className="login-step-intro">
+						<h2 id="register-step-title" className="login-form-section-title">
+							{stepTitle}
+						</h2>
+						<p className="login-step-hint">{stepHint}</p>
 					</div>
-				</section>
 
-				<section className="login-form-section">
-					<h2 className="login-form-section-title">Institution</h2>
-					<div className="login-form-fields">
-						<AuthSelectField
-							id="register-country"
-							label="Country"
-							value={countryCode}
-							onChange={(e) => setCountryCode(e.target.value)}
-							placeholder="Select your country"
-							required
-							disabled={submitting}
-						>
-							{REGISTER_COUNTRIES.map((country) => (
-								<option key={country.code} value={country.code}>
-									{country.label}
-								</option>
-							))}
-						</AuthSelectField>
+					{currentStep === "account" && (
+						<div className="login-form-fields">
+							<div className="login-form-field-block">
+								<span className="login-form-field-label">Account type</span>
+								<AuthRoleSelector
+									value={role}
+									onChange={(next) => {
+										setRole(next);
+										setError(null);
+									}}
+									disabled={submitting}
+								/>
+							</div>
 
-						<AuthSelectField
-							id="register-institution"
-							label="Institution"
-							value={institutionId}
-							onChange={(e) => setInstitutionId(e.target.value)}
-							placeholder={institutionPlaceholder}
-							required
-							disabled={
-								submitting ||
-								!countryCode ||
-								universitiesLoading ||
-								noOnboardedUniversities ||
-								Boolean(universitiesError) ||
-								institutionOptions.length === 0
-							}
-						>
-							{institutionOptions.map((university) => (
-								<option key={university.id} value={university.id}>
-									{university.label}
-								</option>
-							))}
-						</AuthSelectField>
+							<div className="login-form-fields-grid">
+								<AuthField
+									id="register-name"
+									label="Full name"
+									placeholder={isStudent ? "Alex Johnson" : "Dr. Jane Smith"}
+									value={name}
+									onChange={(e) => setName(e.target.value)}
+									autoComplete="name"
+									required
+								/>
 
-						{noOnboardedUniversities && (
-							<p className="login-form-note" role="status">
-								No universities are onboarded for {selectedCountry?.label ?? "this country"} yet.
-								Contact your administrator.
-							</p>
-						)}
+								<AuthField
+									id="register-email"
+									label="Email"
+									type="email"
+									placeholder={
+										isStudent
+											? "alex.johnson@gmail.com"
+											: "jane.smith@university.edu"
+									}
+									value={email}
+									onChange={(e) => setEmail(e.target.value)}
+									autoComplete="email"
+									required
+									error={
+										!isStudent && email.trim() && isFreeEmail(email)
+											? "University or professional email required"
+											: undefined
+									}
+								/>
+							</div>
+						</div>
+					)}
 
-						{universitiesError && (
-							<p className="login-form-note" role="alert">
-								{universitiesError}
-							</p>
-						)}
+					{currentStep === "institution" && (
+						<div className="login-form-fields">
+							<AuthSelectField
+								id="register-country"
+								label="Country"
+								value={countryCode}
+								onChange={(e) => setCountryCode(e.target.value)}
+								placeholder="Select your country"
+								required
+								disabled={submitting}
+							>
+								{REGISTER_COUNTRIES.map((country) => (
+									<option key={country.code} value={country.code}>
+										{country.label}
+									</option>
+								))}
+							</AuthSelectField>
 
-						<div className={isStudent ? "login-form-fields-grid" : undefined}>
+							<AuthSearchableSelect
+								id="register-institution"
+								label="Institution"
+								value={institutionId}
+								onChange={setInstitutionId}
+								placeholder={institutionPlaceholder}
+								searchPlaceholder="Search institutions…"
+								resetKey={countryCode}
+								required
+								disabled={
+									submitting ||
+									!countryCode ||
+									universitiesLoading ||
+									noOnboardedUniversities ||
+									Boolean(universitiesError) ||
+									institutionOptions.length === 0
+								}
+								options={institutionOptions}
+							/>
+
+							{noOnboardedUniversities && (
+								<p className="login-form-note" role="status">
+									No universities are onboarded for {selectedCountry?.label ?? "this country"} yet.
+									Contact your administrator.
+								</p>
+							)}
+
+							{universitiesError && (
+								<p className="login-form-note" role="alert">
+									{universitiesError}
+								</p>
+							)}
+
 							<AuthSelectField
 								id="register-department"
 								label="Department / faculty"
@@ -355,52 +431,119 @@ export function RegisterScreen({ defaultRole = "lecturer" }: Props) {
 							</AuthSelectField>
 
 							{isStudent && (
-								<AuthSelectField
-									id="register-program"
-									label="Program / level"
-									value={programLevelId}
-									onChange={(e) => setProgramLevelId(e.target.value)}
-									placeholder="Select program level"
-									required
-								>
-									{NIGERIA_PROGRAM_LEVELS.map((level) => (
-										<option key={level.id} value={level.id}>
-											{level.label}
-										</option>
-									))}
-								</AuthSelectField>
+								<div className="login-form-fields-grid">
+									<AuthSelectField
+										id="register-program"
+										label="Program"
+										value={programLevelId}
+										onChange={(e) => setProgramLevelId(e.target.value)}
+										placeholder="Select program"
+										required
+									>
+										{NIGERIA_PROGRAM_LEVELS.map((level) => (
+											<option key={level.id} value={level.id}>
+												{level.label}
+											</option>
+										))}
+									</AuthSelectField>
+
+									<AuthSelectField
+										id="register-year-level"
+										label="Year / level"
+										value={yearLevel}
+										onChange={(e) => setYearLevel(e.target.value)}
+										placeholder="Select year / level"
+										required
+									>
+										{COURSE_YEAR_OPTIONS.map((option) => (
+											<option key={option.value} value={option.value}>
+												{option.label}
+											</option>
+										))}
+									</AuthSelectField>
+								</div>
 							)}
 						</div>
-					</div>
-				</section>
+					)}
 
-				<section className="login-form-section">
-					<h2 className="login-form-section-title">Security</h2>
-					<div className="login-form-fields login-form-fields-grid">
-						<AuthField
-							id="register-password"
-							label="Password"
-							type="password"
-							placeholder="At least 8 characters"
-							value={password}
-							onChange={(e) => setPassword(e.target.value)}
-							autoComplete="new-password"
-							minLength={8}
-							required
-						/>
+					{currentStep === "security" && (
+						<div className="login-form-fields">
+							<div className="login-form-fields-grid">
+								<AuthField
+									id="register-password"
+									label="Password"
+									type="password"
+									placeholder="At least 8 characters"
+									value={password}
+									onChange={(e) => setPassword(e.target.value)}
+									autoComplete="new-password"
+									minLength={8}
+									required
+								/>
 
-						<AuthField
-							id="register-confirm"
-							label="Confirm password"
-							type="password"
-							placeholder="Re-enter password"
-							value={confirmPassword}
-							onChange={(e) => setConfirmPassword(e.target.value)}
-							autoComplete="new-password"
-							minLength={8}
-							required
-						/>
-					</div>
+								<AuthField
+									id="register-confirm"
+									label="Confirm password"
+									type="password"
+									placeholder="Re-enter password"
+									value={confirmPassword}
+									onChange={(e) => setConfirmPassword(e.target.value)}
+									autoComplete="new-password"
+									minLength={8}
+									required
+								/>
+							</div>
+
+							<label className="login-consent">
+								<input
+									type="checkbox"
+									checked={acceptedPolicies}
+									onChange={(e) => setAcceptedPolicies(e.target.checked)}
+									disabled={submitting}
+									required
+								/>
+								<span>
+									I agree to the{" "}
+									<button
+										type="button"
+										className="login-link login-link-button"
+										onClick={(e) => {
+											e.preventDefault();
+											e.stopPropagation();
+											setLegalModal("terms");
+										}}
+									>
+										Terms of Service
+									</button>
+									,{" "}
+									<button
+										type="button"
+										className="login-link login-link-button"
+										onClick={(e) => {
+											e.preventDefault();
+											e.stopPropagation();
+											setLegalModal("privacy");
+										}}
+									>
+										Privacy Policy
+									</button>
+									, and{" "}
+									<button
+										type="button"
+										className="login-link login-link-button"
+										onClick={(e) => {
+											e.preventDefault();
+											e.stopPropagation();
+											setLegalModal("aup");
+										}}
+									>
+										Acceptable Use Policy
+									</button>
+									.
+								</span>
+							</label>
+						</div>
+					)}
 				</section>
 
 				{error && (
@@ -409,79 +552,54 @@ export function RegisterScreen({ defaultRole = "lecturer" }: Props) {
 					</div>
 				)}
 
-				<label className="login-consent">
-					<input
-						type="checkbox"
-						checked={acceptedPolicies}
-						onChange={(e) => setAcceptedPolicies(e.target.checked)}
-						disabled={submitting}
-						required
-					/>
-					<span>
-						I agree to the{" "}
+				<div className={`login-step-actions${isFirstStep ? " login-step-actions-single" : ""}`}>
+					{!isFirstStep ? (
 						<button
 							type="button"
-							className="login-link login-link-button"
-							onClick={(e) => {
-								e.preventDefault();
-								e.stopPropagation();
-								setLegalModal("terms");
-							}}
+							className="login-btn login-btn-secondary"
+							onClick={handlePrevious}
+							disabled={submitting}
 						>
-							Terms of Service
+							Previous
 						</button>
-						,{" "}
-						<button
-							type="button"
-							className="login-link login-link-button"
-							onClick={(e) => {
-								e.preventDefault();
-								e.stopPropagation();
-								setLegalModal("privacy");
-							}}
-						>
-							Privacy Policy
-						</button>
-						, and{" "}
-						<button
-							type="button"
-							className="login-link login-link-button"
-							onClick={(e) => {
-								e.preventDefault();
-								e.stopPropagation();
-								setLegalModal("aup");
-							}}
-						>
-							Acceptable Use Policy
-						</button>
-						.
-					</span>
-				</label>
+					) : null}
 
-				<button
-					type="submit"
-					className="login-btn"
-					disabled={
-						submitting ||
-						loading ||
-						universitiesLoading ||
-						noOnboardedUniversities ||
-						!countryCode ||
-						Boolean(universitiesError) ||
-						!acceptedPolicies
-					}
-				>
-					{submitting
-						? "Creating account…"
-						: isStudent
-							? "Create student account"
-							: "Create lecturer account"}
-				</button>
+					{isLastStep ? (
+						<button
+							type="submit"
+							className="login-btn"
+							disabled={submitting || loading || !acceptedPolicies}
+						>
+							{submitting
+								? "Creating account…"
+								: isStudent
+									? "Create student account"
+									: "Create lecturer account"}
+						</button>
+					) : (
+						<button
+							type="button"
+							className="login-btn"
+							onClick={handleNext}
+							disabled={
+								submitting ||
+								(currentStep === "institution" &&
+									(universitiesLoading ||
+										noOnboardedUniversities ||
+										Boolean(universitiesError)))
+							}
+						>
+							Next
+						</button>
+					)}
+				</div>
 
-				<p className="login-form-note">
-					You will use {isStudent ? "student" : "lecturer"} tools within your institution&apos;s
-					governed AI environment.
-				</p>
+				{isLastStep && (
+					<p className="login-form-note">
+						You will use {isStudent ? "student" : "lecturer"} tools within your institution&apos;s
+						governed AI environment.
+					</p>
+				)}
 			</form>
 
 			<LegalDocumentModal documentId={legalModal} onClose={() => setLegalModal(null)} />

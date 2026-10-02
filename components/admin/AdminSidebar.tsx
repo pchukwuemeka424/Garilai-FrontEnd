@@ -37,7 +37,7 @@ export function AdminSidebar({ id = "admin-sidebar", className, onNavigate }: Pr
 			className={`admin-sidebar app-sidebar${className ? ` ${className}` : ""}`}
 			aria-label="Admin navigation"
 		>
-			<SidebarBrand href="/admin" badge="Governance" onNavigate={onNavigate} />
+			<SidebarBrand href="/admin" badge="AI Governance" onNavigate={onNavigate} />
 
 			<div className="admin-sidebar-nav">
 				{ADMIN_NAV_GROUPS.map((group) => {

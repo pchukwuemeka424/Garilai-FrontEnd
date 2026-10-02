@@ -15,12 +15,18 @@ import {
 import { apiFetch } from "@/lib/portal-api";
 import type { AssignmentBriefView } from "@/components/portal/features/assignment/assignment-brief-panel";
 import { cn } from "@/lib/portal/cn";
+import {
+	assignmentSubmissionStatus,
+	type AssignmentStatusMeta,
+} from "@/lib/portal/assignment-status";
+import type { ReviewTrailEvent } from "@/lib/portal/review-trail";
 
 type ProjectPage = {
 	_id: string;
 	content?: string;
 	order?: number;
 	reviewStatus?: "none" | "approved" | "needs_revision" | string;
+	reviewTrail?: ReviewTrailEvent[];
 };
 
 type AssignmentRow = {
@@ -35,37 +41,13 @@ type AssignmentRow = {
 	pages?: ProjectPage[];
 };
 
-type StatusMeta = {
-	label: string;
-	tone: "graded" | "approved" | "revision" | "submitted" | "progress" | "idle";
-};
+type StatusMeta = AssignmentStatusMeta;
 
 type StatusFilter = "all" | "dueSoon" | "active" | "revision" | "graded";
 type ViewMode = "list" | "grid";
 
-function primaryPage(pages: ProjectPage[] | undefined) {
-	if (!Array.isArray(pages) || pages.length === 0) return null;
-	return [...pages].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))[0] ?? null;
-}
-
 function assignmentStatus(row: AssignmentRow): StatusMeta {
-	if (typeof row.score === "number") {
-		return { label: "Graded", tone: "graded" };
-	}
-	const page = primaryPage(row.pages);
-	if (page?.reviewStatus === "approved") {
-		return { label: "Approved", tone: "approved" };
-	}
-	if (page?.reviewStatus === "needs_revision") {
-		return { label: "Needs revision", tone: "revision" };
-	}
-	if (page?.reviewStatus && page.reviewStatus !== "none") {
-		return { label: "Submitted", tone: "submitted" };
-	}
-	if (String(page?.content || "").trim()) {
-		return { label: "In progress", tone: "progress" };
-	}
-	return { label: "Not started", tone: "idle" };
+	return assignmentSubmissionStatus(row);
 }
 
 function dueLabel(dueAt?: string | null) {
@@ -87,7 +69,7 @@ function dueTimestamp(dueAt?: string | null) {
 
 function isOverdue(dueAt?: string | null, status?: StatusMeta) {
 	if (!dueAt) return false;
-	if (status?.label === "Graded" || status?.label === "Approved") return false;
+	if (status?.tone === "graded" || status?.tone === "approved") return false;
 	const date = new Date(dueAt);
 	if (Number.isNaN(date.getTime())) return false;
 	const end = new Date(date);
@@ -97,24 +79,12 @@ function isOverdue(dueAt?: string | null, status?: StatusMeta) {
 
 function isDueSoon(dueAt?: string | null, status?: StatusMeta) {
 	if (!dueAt) return false;
-	if (status?.label === "Graded" || status?.label === "Approved") return false;
+	if (status?.tone === "graded" || status?.tone === "approved") return false;
 	const t = new Date(dueAt).getTime();
 	if (Number.isNaN(t)) return false;
 	const now = Date.now();
 	const week = 7 * 24 * 60 * 60 * 1000;
 	return t >= now && t - now <= week;
-}
-
-function statusProgress(status: StatusMeta, row: AssignmentRow, maxScore: number) {
-	if (status.tone === "graded") {
-		const score = typeof row.score === "number" ? row.score : 0;
-		return Math.min(100, Math.round((score / Math.max(maxScore, 1)) * 100));
-	}
-	if (status.tone === "approved") return 100;
-	if (status.tone === "submitted") return 75;
-	if (status.tone === "revision") return 55;
-	if (status.tone === "progress") return 35;
-	return 8;
 }
 
 function formatToday() {
@@ -165,11 +135,11 @@ export default function StudentAssignmentsPage() {
 		let needsRevision = 0;
 		for (const row of rows) {
 			const status = assignmentStatus(row);
-			if (status.label === "Graded") graded += 1;
-			if (status.label === "In progress" || status.label === "Submitted") {
+			if (status.tone === "graded") graded += 1;
+			if (status.tone === "progress" || status.tone === "submitted") {
 				inProgress += 1;
 			}
-			if (status.label === "Needs revision") needsRevision += 1;
+			if (status.tone === "revision") needsRevision += 1;
 			if (isDueSoon(row.assignmentBrief?.dueAt, status)) dueSoon += 1;
 		}
 		return {
@@ -186,8 +156,8 @@ export default function StudentAssignmentsPage() {
 		return rows
 			.filter((row) => {
 				const status = assignmentStatus(row);
-				if (statusFilter === "graded" && status.label !== "Graded") return false;
-				if (statusFilter === "revision" && status.label !== "Needs revision") {
+				if (statusFilter === "graded" && status.tone !== "graded") return false;
+				if (statusFilter === "revision" && status.tone !== "revision") {
 					return false;
 				}
 				if (statusFilter === "dueSoon" && !isDueSoon(row.assignmentBrief?.dueAt, status)) {
@@ -195,8 +165,8 @@ export default function StudentAssignmentsPage() {
 				}
 				if (
 					statusFilter === "active" &&
-					status.label !== "In progress" &&
-					status.label !== "Submitted"
+					status.tone !== "progress" &&
+					status.tone !== "submitted"
 				) {
 					return false;
 				}
@@ -253,17 +223,9 @@ export default function StudentAssignmentsPage() {
 					<h1>Assignments</h1>
 					<p>
 						Coursework from your lecturers. Open a brief, write the submission, and track
-						feedback and marks. Research folders live under{" "}
-						<Link href="/student/projects">Projects</Link>.
+						feedback and marks.
 					</p>
 				</div>
-				<Link
-					href="/student/projects/new?from=assignments"
-					className="stu-asn-btn stu-asn-btn-primary"
-				>
-					<Plus size={15} />
-					Start assignment
-				</Link>
 			</header>
 
 			<section className="stu-asn-metrics" aria-label="Assignment summary">
@@ -307,28 +269,6 @@ export default function StudentAssignmentsPage() {
 						</p>
 					</div>
 					<div className="stu-asn-library-tools">
-						<div className="stu-asn-tabs" role="tablist" aria-label="Status filter">
-							{(
-								[
-									["all", "All"],
-									["dueSoon", "Due soon"],
-									["active", "Active"],
-									["revision", "Revision"],
-									["graded", "Graded"],
-								] as const
-							).map(([value, label]) => (
-								<button
-									key={value}
-									type="button"
-									role="tab"
-									aria-selected={statusFilter === value}
-									className={cn(statusFilter === value && "is-on")}
-									onClick={() => setStatusFilter(value)}
-								>
-									{label}
-								</button>
-							))}
-						</div>
 						<div className="stu-asn-search">
 							<Search size={14} aria-hidden />
 							<input
@@ -411,7 +351,7 @@ export default function StudentAssignmentsPage() {
 							<span>Assignment</span>
 							<span>Due</span>
 							<span>Lecturer</span>
-							<span>Progress</span>
+							<span>Score</span>
 							<span />
 						</div>
 						<ul>
@@ -423,84 +363,77 @@ export default function StudentAssignmentsPage() {
 								const soon = isDueSoon(brief?.dueAt, status);
 								const maxScore =
 									typeof brief?.maxScore === "number" ? brief.maxScore : 100;
-								const pct = statusProgress(status, row, maxScore);
+								const hasScore = typeof row.score === "number";
 								const courseLine = [brief?.courseName, brief?.courseYear]
 									.filter(Boolean)
 									.join(" · ");
+								const href = `/student/assignments/${row._id}`;
+								const title = brief?.title || row.title;
 
 								return (
-									<li
-										key={row._id}
-										className={cn("stu-asn-row", overdue && "is-alert")}
-									>
-										<div className="stu-asn-row-main">
-											<span className="stu-asn-row-icon" aria-hidden>
-												<ClipboardList size={16} strokeWidth={1.75} />
-											</span>
-											<div className="stu-asn-row-copy">
-												<Link href={`/student/assignments/${row._id}`}>
-													{brief?.title || row.title}
-												</Link>
-												<p>
-													{courseLine || "Coursework assignment"}
-													{" · "}
-													{maxScore} marks
-												</p>
-												<span className={cn("stu-asn-badge", `tone-${status.tone}`)}>
-													{status.label}
+									<li key={row._id}>
+										<Link
+											href={href}
+											className={cn("stu-asn-row", overdue && "is-alert")}
+											aria-label={`Open ${title}`}
+										>
+											<div className="stu-asn-row-main">
+												<span className="stu-asn-row-icon" aria-hidden>
+													<ClipboardList size={16} strokeWidth={1.75} />
+												</span>
+												<div className="stu-asn-row-copy">
+													<strong className="stu-asn-row-title">{title}</strong>
+													<p>
+														{courseLine || "Coursework assignment"}
+														{" · "}
+														{maxScore} marks
+													</p>
+													<span className={cn("stu-asn-badge", `tone-${status.tone}`)}>
+														{status.label}
+													</span>
+												</div>
+											</div>
+											<div
+												className={cn(
+													"stu-asn-row-due",
+													overdue && "is-overdue",
+													soon && !overdue && "is-soon",
+												)}
+											>
+												<span className="stu-asn-mobile-label">Due</span>
+												<span>
+													<Calendar size={13} aria-hidden />
+													{due
+														? overdue
+															? `Overdue · ${due}`
+															: soon
+																? `Soon · ${due}`
+																: due
+														: "No due date"}
 												</span>
 											</div>
-										</div>
-										<div
-											className={cn(
-												"stu-asn-row-due",
-												overdue && "is-overdue",
-												soon && !overdue && "is-soon",
-											)}
-										>
-											<span className="stu-asn-mobile-label">Due</span>
-											<span>
-												<Calendar size={13} aria-hidden />
-												{due
-													? overdue
-														? `Overdue · ${due}`
-														: soon
-															? `Soon · ${due}`
-															: due
-													: "No due date"}
-											</span>
-										</div>
-										<div className="stu-asn-row-lecturer">
-											<span className="stu-asn-mobile-label">Lecturer</span>
-											<span>
-												<UserRound size={13} aria-hidden />
-												{row.supervisor?.name || "No lecturer"}
-											</span>
-										</div>
-										<div className="stu-asn-row-progress">
-											<span className="stu-asn-mobile-label">Progress</span>
-											<div className="stu-asn-progress-line">
-												<div className="stu-asn-progress">
-													<span style={{ width: `${pct}%` }} />
-												</div>
-												{typeof row.score === "number" ? (
-													<strong className="is-score">
+											<div className="stu-asn-row-lecturer">
+												<span className="stu-asn-mobile-label">Lecturer</span>
+												<span>
+													<UserRound size={13} aria-hidden />
+													{row.supervisor?.name || "No lecturer"}
+												</span>
+											</div>
+											<div className="stu-asn-row-score">
+												<span className="stu-asn-mobile-label">Score</span>
+												{hasScore ? (
+													<strong className="stu-asn-score is-set">
 														{row.score}
 														<em>/{maxScore}</em>
 													</strong>
 												) : (
-													<strong>{pct}%</strong>
+													<strong className="stu-asn-score is-pending">—</strong>
 												)}
 											</div>
-										</div>
-										<div className="stu-asn-row-actions">
-											<Link
-												href={`/student/assignments/${row._id}`}
-												className="stu-asn-btn stu-asn-btn-ghost stu-asn-btn-sm"
-											>
+											<span className="stu-asn-row-chevron" aria-hidden>
 												Open
-											</Link>
-										</div>
+											</span>
+										</Link>
 									</li>
 								);
 							})}
@@ -516,15 +449,19 @@ export default function StudentAssignmentsPage() {
 							const soon = isDueSoon(brief?.dueAt, status);
 							const maxScore =
 								typeof brief?.maxScore === "number" ? brief.maxScore : 100;
-							const pct = statusProgress(status, row, maxScore);
+							const hasScore = typeof row.score === "number";
 							const courseLine = [brief?.courseName, brief?.courseYear]
 								.filter(Boolean)
 								.join(" · ");
+							const href = `/student/assignments/${row._id}`;
+							const title = brief?.title || row.title;
 
 							return (
-								<article
+								<Link
 									key={row._id}
+									href={href}
 									className={cn("stu-asn-card", overdue && "is-alert")}
+									aria-label={`Open ${title}`}
 								>
 									<div className="stu-asn-card-top">
 										<span className="stu-asn-row-icon" aria-hidden>
@@ -534,12 +471,7 @@ export default function StudentAssignmentsPage() {
 											{status.label}
 										</span>
 									</div>
-									<Link
-										href={`/student/assignments/${row._id}`}
-										className="stu-asn-card-title"
-									>
-										{brief?.title || row.title}
-									</Link>
+									<strong className="stu-asn-card-title">{title}</strong>
 									<p className="stu-asn-card-topic">
 										{courseLine || "Coursework assignment"} · {maxScore} marks
 									</p>
@@ -563,28 +495,20 @@ export default function StudentAssignmentsPage() {
 										<UserRound size={13} aria-hidden />
 										{row.supervisor?.name || "No lecturer"}
 									</p>
-									<div className="stu-asn-card-progress">
-										<div className="stu-asn-progress-line">
-											<div className="stu-asn-progress">
-												<span style={{ width: `${pct}%` }} />
-											</div>
-											{typeof row.score === "number" ? (
-												<strong className="is-score">
-													{row.score}
-													<em>/{maxScore}</em>
-												</strong>
-											) : (
-												<strong>{pct}%</strong>
-											)}
-										</div>
+									<div className="stu-asn-card-score">
+										<span className="stu-asn-mobile-label">Score</span>
+										{hasScore ? (
+											<strong className="stu-asn-score is-set">
+												{row.score}
+												<em>/{maxScore}</em>
+											</strong>
+										) : (
+											<strong className="stu-asn-score is-pending">
+												—<em>/{maxScore}</em>
+											</strong>
+										)}
 									</div>
-									<Link
-										href={`/student/assignments/${row._id}`}
-										className="stu-asn-btn stu-asn-btn-primary stu-asn-btn-sm"
-									>
-										Open assignment
-									</Link>
-								</article>
+								</Link>
 							);
 						})}
 					</div>

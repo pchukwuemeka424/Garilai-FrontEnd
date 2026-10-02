@@ -20,6 +20,10 @@ export type UsageAnalytics = {
 		ideaSessions: number;
 		papers: number;
 		projects: number;
+		portalProjects?: number;
+		chapterAiReviews?: number;
+		notebookAssets?: number;
+		portalAiChats?: number;
 	};
 	byFaculty: UsageBreakdownRow[];
 	byDepartment: UsageBreakdownRow[];
@@ -115,7 +119,7 @@ export type PlatformOverview = {
 		aiServiceStatus: "operational" | "degraded" | "outage" | string;
 		storageUsageGb: number;
 		apiStatus: "operational" | "degraded" | "outage" | string;
-		platformUptimePercent: number;
+		platformUptimePercent: number | null;
 	};
 	charts: {
 		dailyAiUsage: Array<{ name: string; value: number }>;
@@ -187,6 +191,20 @@ export type GovernanceReportRecord = {
 	updatedAt: string;
 };
 
+export type RoleAiPosture = {
+	role: "student" | "lecturer";
+	label: string;
+	activeUsers: number;
+	tokensUsed: number;
+	sessions: number;
+	ideaSessions: number;
+	papers: number;
+	projects: number;
+	contributions: number;
+	provenance: number;
+	openAlerts: number;
+};
+
 export type GovernanceDashboard = {
 	platform: {
 		userCount: number;
@@ -199,6 +217,7 @@ export type GovernanceDashboard = {
 		totals: UsageAnalytics["totals"];
 		byFaculty: UsageBreakdownRow[];
 		byFeature: UsageAnalytics["byFeature"];
+		byRole?: UsageBreakdownRow[];
 	};
 	tokens: {
 		userCount: number;
@@ -221,6 +240,8 @@ export type GovernanceDashboard = {
 	provenance: ProvenanceStats;
 	privacy: PrivacyStats;
 	retention: RetentionStats;
+	studentPosture?: RoleAiPosture;
+	lecturerPosture?: RoleAiPosture;
 	activeIncidents: GovernanceIncidentRecord[];
 	activeAlerts: GovernanceAlertRecord[];
 	recentFlags: AuditLogRecord[];
@@ -399,6 +420,7 @@ export type AlertStats = {
 	critical: number;
 	high: number;
 	last24h: number;
+	byActorRole?: { student: number; lecturer: number };
 };
 
 export type AiContributionStatementRecord = {
@@ -436,6 +458,7 @@ export type ContributionStats = {
 	aiAssisted: number;
 	humanEdited: number;
 	pendingVerification: number;
+	byOwnerRole?: { student: number; lecturer: number };
 };
 
 export type ProvenanceEvent = {
@@ -476,6 +499,7 @@ export type ProvenanceStats = {
 	cleared: number;
 	escalated: number;
 	available: number;
+	byOwnerRole?: { student: number; lecturer: number };
 };
 
 export type ResearchPrivacySettingRecord = {

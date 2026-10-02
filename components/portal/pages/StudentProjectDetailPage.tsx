@@ -8,31 +8,21 @@ import {
   ArrowRight,
   Calendar,
   Check,
+  ChevronDown,
   CircleHelp,
   Download,
+  FolderKanban,
   History,
   Lightbulb,
-  Mail,
   MessageSquare,
   PenLine,
   Plus,
   RefreshCw,
   Send,
   Upload,
+  UserRound,
   X,
 } from "lucide-react";
-import { Button } from "@/components/portal/ui/button";
-import { Badge } from "@/components/portal/ui/badge";
-import { Input } from "@/components/portal/ui/input";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/portal/ui/card";
-import { EmptyState } from "@/components/portal/feedback/empty-state";
-import { LoadingPage } from "@/components/portal/feedback/loading-page";
 import { countWordsFromHtml } from "@/components/portal/editor/document-editor";
 import { apiFetch, apiUpload } from "@/lib/portal-api";
 import {
@@ -138,7 +128,6 @@ function statusForPage(
     };
   }
 
-  // Fall back to page review mirror when chapter title was renamed after review.
   if (page.reviewStatus === "approved") {
     return { status: "Approved", commentCount: 0 };
   }
@@ -154,18 +143,18 @@ function statusForPage(
   return { status: "Not started", commentCount: 0 };
 }
 
-function statusBadgeClass(status: TimelineStatus) {
+function statusTone(status: TimelineStatus) {
   switch (status) {
     case "Approved":
-      return "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/15";
+      return "approved";
     case "Rejected":
-      return "bg-red-50 text-red-700 ring-1 ring-inset ring-red-600/20";
+      return "revision";
     case "In review":
-      return "bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-600/20";
+      return "review";
     case "In progress":
-      return "bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-600/15";
+      return "progress";
     default:
-      return "bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-500/10";
+      return "idle";
   }
 }
 
@@ -174,43 +163,13 @@ function statusLabel(status: TimelineStatus) {
     case "Approved":
       return "Approved";
     case "Rejected":
-      return "Rejected";
+      return "Needs revision";
     case "In review":
-      return "Pending Review";
+      return "Pending review";
     case "In progress":
-      return "In Progress";
+      return "In progress";
     default:
-      return "Not Started";
-  }
-}
-
-function pipelineNodeClass(status: TimelineStatus) {
-  switch (status) {
-    case "Approved":
-      return "bg-emerald-500 text-white ring-4 ring-emerald-100";
-    case "Rejected":
-      return "bg-red-500 text-white ring-4 ring-red-100";
-    case "In review":
-      return "bg-amber-500 text-white ring-4 ring-amber-100";
-    case "In progress":
-      return "bg-primary text-white ring-4 ring-primary/15";
-    default:
-      return "bg-slate-200 text-slate-600 ring-4 ring-slate-100";
-  }
-}
-
-function pipelineConnectorClass(status: TimelineStatus) {
-  switch (status) {
-    case "Approved":
-      return "bg-emerald-400";
-    case "Rejected":
-      return "bg-red-400";
-    case "In review":
-      return "bg-amber-400";
-    case "In progress":
-      return "bg-primary";
-    default:
-      return "bg-slate-200";
+      return "Not started";
   }
 }
 
@@ -234,6 +193,14 @@ function formatDate(value?: string) {
   });
 }
 
+function formatToday() {
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  }).format(new Date());
+}
+
 const CHAPTER_HINTS: Record<string, string> = {
   abstract: "Concise overview of the study",
   introduction: "Background, problem, and objectives",
@@ -255,7 +222,6 @@ function chapterHint(title: string) {
   return "Open to write or revise this chapter";
 }
 
-/** Prefer needs-revision → in progress → in review → first with content → first chapter. */
 function pickContinueChapter(
   pageStatuses: Array<{
     page: ProjectPage;
@@ -279,6 +245,17 @@ function pickContinueChapter(
   );
 }
 
+function topicStatusLabel(status?: Project["topicStatus"]) {
+  switch (status) {
+    case "approved":
+      return "Approved";
+    case "submitted":
+      return "Awaiting approval";
+    default:
+      return "Draft";
+  }
+}
+
 export default function ProjectOverviewPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -293,6 +270,7 @@ export default function ProjectOverviewPage() {
   const [newPageTitle, setNewPageTitle] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
   const [showHowItWorks, setShowHowItWorks] = useState(false);
+  const [showVersions, setShowVersions] = useState(false);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -303,6 +281,11 @@ export default function ProjectOverviewPage() {
   const [compareText, setCompareText] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [todayLabel, setTodayLabel] = useState("");
+
+  useEffect(() => {
+    setTodayLabel(formatToday());
+  }, []);
 
   function chapterHref(pageId: string) {
     return `/student/projects/${projectId}/pages/${pageId}`;
@@ -377,6 +360,7 @@ export default function ProjectOverviewPage() {
   );
 
   const approvedCount = pageStatuses.filter((p) => p.status === "Approved").length;
+  const revisionCount = pageStatuses.filter((p) => p.status === "Rejected").length;
   const progressPct = project?.progressPercent ?? 0;
   const continueTarget = useMemo(
     () => pickContinueChapter(pageStatuses),
@@ -532,17 +516,24 @@ export default function ProjectOverviewPage() {
     setError(null);
     try {
       const pack = (await apiFetch(`/api/v1/projects/${projectId}/export`)) as {
-        html?: string;
+        title?: string;
+        projectType?: string;
+        abstract?: string;
+        pages?: Array<{ title?: string; content?: string }>;
         filename?: string;
       };
-      const blob = new Blob([pack.html || ""], { type: "text/html;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = pack.filename || `${project?.title || "thesis"}.html`;
-      a.click();
-      URL.revokeObjectURL(url);
-      setMessage("Thesis package downloaded");
+      const { downloadProjectDocx } = await import("@/lib/portal-project-docx");
+      const filename = await downloadProjectDocx({
+        title: pack.title || project?.title || "project",
+        projectType: pack.projectType || project?.projectType,
+        abstract: pack.abstract,
+        pages: (pack.pages || pages).map((page) => ({
+          title: page.title || "Untitled",
+          content: page.content || "",
+        })),
+        filename: pack.filename,
+      });
+      setMessage(`Downloaded “${filename}”`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Export failed");
     }
@@ -579,38 +570,63 @@ export default function ProjectOverviewPage() {
   }
 
   if (loading || pageFromQuery) {
-    return <LoadingPage label="Opening project…" />;
+    return (
+      <div className="stu-prd" aria-busy="true">
+        <header className="stu-prd-intro">
+          <div className="stu-prd-intro-copy">
+            <Link href="/student/projects" className="stu-prd-back">
+              <ArrowLeft size={14} />
+              Back to projects
+            </Link>
+            <p className="stu-prd-eyebrow">{todayLabel || "Project"}</p>
+            <h1>Project</h1>
+            <p>Loading chapters, progress, and supervisor details…</p>
+          </div>
+        </header>
+        <div className="stu-prd-skeleton-strip" aria-hidden />
+        <div className="stu-prd-panel">
+          <div className="stu-prd-skeleton-block" aria-hidden />
+        </div>
+      </div>
+    );
   }
 
   if (!project) {
     return (
-      <EmptyState
-        title="Project not found"
-        description={error || "This project could not be loaded."}
-        action="Back to projects"
-        href="/student/projects"
-      />
+      <div className="stu-prd">
+        <header className="stu-prd-intro">
+          <div className="stu-prd-intro-copy">
+            <Link href="/student/projects" className="stu-prd-back">
+              <ArrowLeft size={14} />
+              Back to projects
+            </Link>
+            <p className="stu-prd-eyebrow">{todayLabel || "Project"}</p>
+            <h1>Project not found</h1>
+            <p>{error || "This project could not be loaded."}</p>
+          </div>
+        </header>
+        <div className="stu-prd-empty">
+          <span className="stu-prd-empty-icon" aria-hidden>
+            <FolderKanban size={22} />
+          </span>
+          <h3>Unable to open this project</h3>
+          <p>It may have been removed, or you may not have access.</p>
+          <Link href="/student/projects" className="stu-prd-btn stu-prd-btn-primary">
+            View projects
+          </Link>
+        </div>
+      </div>
     );
   }
 
   const projectStatus =
     progressPct >= 100
-      ? {
-          label: "Completed",
-          className: "bg-emerald-50 text-emerald-700 ring-emerald-600/15",
-          dot: "bg-emerald-500",
-        }
-      : project.topicStatus === "draft" && progressPct === 0
-        ? {
-            label: "Draft",
-            className: "bg-slate-100 text-slate-600 ring-slate-500/10",
-            dot: "bg-slate-400",
-          }
-        : {
-            label: "Active",
-            className: "bg-emerald-50 text-emerald-700 ring-emerald-600/15",
-            dot: "bg-emerald-500",
-          };
+      ? { label: "Completed", tone: "approved" as const }
+      : revisionCount > 0
+        ? { label: "Needs revision", tone: "revision" as const }
+        : project.topicStatus === "draft" && progressPct === 0
+          ? { label: "Draft", tone: "idle" as const }
+          : { label: "Active", tone: "progress" as const };
 
   const typeLabel = projectTypeLabel(project.projectType);
   const howItWorksTeaser = projectHowItWorksTeaser(project.projectType);
@@ -618,7 +634,6 @@ export default function ProjectOverviewPage() {
   const singlePage = isSinglePageProjectType(project.projectType);
   const unitLabelPlural = singlePage ? "pages" : "chapters";
   const unitNoun = projectWritingUnitNoun(project.projectType);
-  // Seed empty "Assignment" page ≠ uploaded; any non-empty writing counts as uploaded.
   const hasWritingContent = pages.some(
     (p) => countWordsFromHtml(String(p.content || "")) > 0,
   );
@@ -626,20 +641,27 @@ export default function ProjectOverviewPage() {
     ? hasWritingContent
       ? `Reupload ${unitNoun}`
       : `Upload ${unitNoun}`
-    : "Upload file";
-  const uploadActionTitle = singlePage
-    ? hasWritingContent
-      ? `Reupload ${unitNoun}`
-      : `Upload ${unitNoun}`
-    : "Import .docx / .pdf";
-  const uploadActionBody = singlePage
-    ? hasWritingContent
-      ? "Replace the writing page with a new Word/PDF"
-      : "Load an offline draft onto one page"
-    : "Split an offline draft into chapters";
+    : importing
+      ? "Importing…"
+      : "Import document";
+  const backHref = singlePage ? "/student/assignments" : "/student/projects";
+  const backLabel = singlePage ? "Back to assignments" : "Back to projects";
+  const continueLabel = continueTarget
+    ? singlePage
+      ? "Continue writing"
+      : `Continue “${continueTarget.title}”`
+    : singlePage
+      ? "Open writing page"
+      : "Start writing";
+  const subtitle =
+    project.topic?.trim() ||
+    project.courseName?.trim() ||
+    (singlePage
+      ? "Review the brief, write your submission, and track feedback."
+      : "Write chapters, submit for review, and track supervisor feedback.");
 
   return (
-    <div className="space-y-5">
+    <div className="stu-prd">
       <input
         ref={fileInputRef}
         type="file"
@@ -651,300 +673,182 @@ export default function ProjectOverviewPage() {
         }}
       />
 
-      <Link
-        href={
-          singlePage
-            ? "/student/assignments"
-            : "/student/projects"
-        }
-        className="inline-flex items-center gap-2 text-sm font-semibold text-foreground/55 hover:text-blue-600"
-      >
-        <ArrowLeft className="size-4" />
-        {singlePage ? "Back to assignments" : "Back to all projects"}
-      </Link>
+      <header className="stu-prd-intro">
+        <div className="stu-prd-intro-copy">
+          <Link href={backHref} className="stu-prd-back">
+            <ArrowLeft size={14} />
+            {backLabel}
+          </Link>
+          <p className="stu-prd-eyebrow">
+            {typeLabel}
+            {todayLabel ? ` · ${todayLabel}` : ""}
+          </p>
+          <h1>{project.title}</h1>
+          <p>{subtitle}</p>
+        </div>
+        <div className="stu-prd-intro-actions">
+          <button
+            type="button"
+            className="stu-prd-btn stu-prd-btn-ghost"
+            disabled={importing}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <Upload size={15} />
+            {uploadLabel}
+          </button>
+          <button
+            type="button"
+            className="stu-prd-btn stu-prd-btn-ghost"
+            onClick={() => void exportPackage()}
+          >
+            <Download size={15} />
+            Export
+          </button>
+          {project.topicStatus === "draft" ? (
+            <button
+              type="button"
+              className="stu-prd-btn stu-prd-btn-ghost"
+              disabled={topicBusy}
+              onClick={() => void submitTopic()}
+            >
+              <Send size={15} />
+              {topicBusy ? "Submitting…" : "Submit topic"}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="stu-prd-btn stu-prd-btn-primary"
+            onClick={continueWriting}
+          >
+            <PenLine size={15} />
+            {continueLabel}
+            <ArrowRight size={14} />
+          </button>
+        </div>
+      </header>
 
-      <Card className="overflow-hidden rounded-xl shadow-sm">
-        <CardContent className="p-0">
-          <div className="flex flex-col gap-5 p-5 sm:p-6 lg:flex-row lg:items-start lg:justify-between lg:gap-8">
-            <div className="min-w-0 space-y-3">
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-[1.75rem] sm:leading-tight">
-                  {project.title}
-                </h1>
-                <span
-                  className={cn(
-                    "inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-semibold ring-1 ring-inset",
-                    projectStatus.className,
-                  )}
-                >
-                  <span
-                    className={cn("size-1.5 shrink-0 rounded-full", projectStatus.dot)}
-                    aria-hidden
-                  />
-                  {projectStatus.label}
-                </span>
-              </div>
-
-              <p className="text-sm font-semibold text-blue-600">{typeLabel}</p>
-
-              {singlePage && project.studentMatNo?.trim() ? (
-                <p className="text-sm text-foreground/55">
-                  Mat No / Student No:{" "}
-                  <span className="font-semibold text-foreground/80">
-                    {project.studentMatNo.trim()}
-                  </span>
-                </p>
-              ) : null}
-
-              {singlePage && project.courseYear?.trim() ? (
-                <p className="text-sm text-foreground/55">
-                  Year:{" "}
-                  <span className="font-semibold text-foreground/80">
-                    {project.courseYear.trim()}
-                  </span>
-                </p>
-              ) : null}
-
-              {singlePage && project.courseName?.trim() ? (
-                <p className="text-sm text-foreground/55">
-                  Course:{" "}
-                  <span className="font-semibold text-foreground/80">
-                    {project.courseName.trim()}
-                  </span>
-                </p>
-              ) : null}
-
-              {singlePage && typeof project.score === "number" ? (
-                <div className="rounded-xl border border-emerald-600/15 bg-emerald-50/80 px-4 py-3">
-                  <p className="text-xs font-bold uppercase tracking-wide text-emerald-800/70">
-                    Lecturer score
-                  </p>
-                  <p className="mt-1 font-display text-3xl font-bold tracking-tight text-emerald-800">
-                    {project.score}
-                    <span className="text-lg font-semibold text-emerald-700/70">
-                      /
-                      {typeof project.assignmentBrief?.maxScore === "number"
-                        ? project.assignmentBrief.maxScore
-                        : 100}
-                    </span>
-                  </p>
-                  {project.criterionScores &&
-                  project.criterionScores.length > 0 ? (
-                    <ul className="mt-2 space-y-1 text-sm text-emerald-900/75">
-                      {project.criterionScores.map((c) => (
-                        <li key={c.name} className="flex justify-between gap-3">
-                          <span>{c.name}</span>
-                          <span className="font-semibold">
-                            {c.score}/{c.maxMarks}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                  {project.scoreNote?.trim() ? (
-                    <p className="mt-1.5 text-sm text-emerald-900/70">
-                      {project.scoreNote.trim()}
-                    </p>
-                  ) : null}
-                  {project.scoredAt ? (
-                    <p className="mt-1 text-xs text-emerald-800/50">
-                      Scored {formatDate(project.scoredAt)}
-                    </p>
-                  ) : null}
-                </div>
-              ) : null}
-
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm text-foreground/55">
-                {project.supervisor?.name && (
-                  <>
-                    <span className="inline-flex items-center gap-1.5">
-                      <Mail className="size-3.5 shrink-0 text-foreground/40" />
-                      <span className="font-medium text-foreground/70">
-                        {project.supervisor.name}
-                      </span>
-                    </span>
-                    <span
-                      className="hidden h-3 w-px bg-border sm:block"
-                      aria-hidden
-                    />
-                  </>
-                )}
-                <span className="inline-flex items-center gap-1.5">
-                  <Calendar className="size-3.5 shrink-0 text-foreground/40" />
-                  Started {formatDate(project.createdAt)}
-                </span>
-                <span
-                  className="hidden h-3 w-px bg-border sm:block"
-                  aria-hidden
-                />
-                <span className="inline-flex items-center gap-1.5">
-                  <RefreshCw className="size-3.5 shrink-0 text-foreground/40" />
-                  {formatRelative(project.updatedAt)}
-                </span>
-              </div>
-            </div>
-
-            <div className="flex shrink-0 flex-wrap gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => void exportPackage()}
-              >
-                <Download className="size-4" />
-                Export
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={importing}
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <Upload className="size-4" />
-                {importing ? "Analysing…" : uploadLabel}
-              </Button>
-              {project.topicStatus === "draft" ? (
-                <Button
-                  type="button"
-                  disabled={topicBusy}
-                  onClick={() => void submitTopic()}
-                >
-                  <Send className="size-4" />
-                  {topicBusy ? "Submitting…" : "Submit topic"}
-                </Button>
-              ) : null}
-            </div>
+      <section className="stu-prd-metrics" aria-label="Project overview">
+        <div className="stu-prd-metric">
+          <span className="stu-prd-metric-label">Status</span>
+          <strong className="stu-prd-metric-value">
+            <span className={cn("stu-prd-badge", `tone-${projectStatus.tone}`)}>
+              {projectStatus.label}
+            </span>
+          </strong>
+          <span className="stu-prd-metric-hint">{formatRelative(project.updatedAt)}</span>
+        </div>
+        <div className="stu-prd-metric">
+          <span className="stu-prd-metric-label">Progress</span>
+          <strong className="stu-prd-metric-value">
+            {progressPct}
+            <em>%</em>
+          </strong>
+          <span className="stu-prd-metric-hint">
+            {approvedCount} of {pages.length} {unitLabelPlural} approved
+          </span>
+          <div className="stu-prd-progress" aria-hidden>
+            <span style={{ width: `${Math.min(100, Math.max(0, progressPct))}%` }} />
           </div>
+        </div>
+        <div className="stu-prd-metric">
+          <span className="stu-prd-metric-label">Supervisor</span>
+          <strong className="stu-prd-metric-value stu-prd-metric-text">
+            <UserRound size={14} aria-hidden />
+            {project.supervisor?.name || "Not assigned"}
+          </strong>
+          <span className="stu-prd-metric-hint">
+            {project.supervisor?.email || "Awaiting assignment"}
+          </span>
+        </div>
+        <div className="stu-prd-metric">
+          <span className="stu-prd-metric-label">Topic</span>
+          <strong className="stu-prd-metric-value">
+            <span
+              className={cn(
+                "stu-prd-badge",
+                project.topicStatus === "approved"
+                  ? "tone-approved"
+                  : project.topicStatus === "submitted"
+                    ? "tone-review"
+                    : "tone-idle",
+              )}
+            >
+              {topicStatusLabel(project.topicStatus)}
+            </span>
+          </strong>
+          <span className="stu-prd-metric-hint">
+            Started {formatDate(project.createdAt)}
+          </span>
+        </div>
+      </section>
 
-          <div className="border-t border-border bg-slate-50/70 px-5 py-4 sm:px-6">
-            <div className="mb-2 flex items-center justify-between gap-3 text-sm">
-              <span className="font-semibold text-foreground/70">
-                Overall progress
-              </span>
-              <span className="font-bold tabular-nums text-blue-600">
-                {progressPct}%
-              </span>
-            </div>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200/80">
-              <div
-                className="h-full rounded-full bg-primary transition-all"
-                style={{ width: `${Math.min(100, Math.max(0, progressPct))}%` }}
-              />
-            </div>
-            <p className="mt-2 text-xs text-foreground/50">
-              {approvedCount} of {pages.length || "—"} {unitLabelPlural} approved
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-
-      {project.projectType === "assignment" && project.assignmentBrief ? (
+      {singlePage && project.assignmentBrief ? (
         <AssignmentBriefPanel brief={project.assignmentBrief} />
       ) : null}
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {[
-          {
-            title: singlePage ? "Open writing page" : "Write by chapter",
-            body: continueTarget
-              ? `Continue “${continueTarget.title}”`
-              : singlePage
-                ? "Open the full-page editor"
-                : "Open the full-page editor",
-            icon: PenLine,
-            className: "bg-blue-50 text-blue-600",
-            onClick: continueWriting,
-          },
-          {
-            title: uploadActionTitle,
-            body: uploadActionBody,
-            icon: Upload,
-            className: "bg-emerald-50 text-emerald-600",
-            onClick: () => fileInputRef.current?.click(),
-          },
-          ...(singlePage
-            ? []
-            : [
-                {
-                  title: "Create chapter",
-                  body: "Add a new section and start writing",
-                  icon: Plus,
-                  className: "bg-violet-50 text-violet-600",
-                  onClick: openCreateChapter,
-                },
-              ]),
-          {
-            title: "How it works",
-            body: howItWorksTeaser,
-            icon: Lightbulb,
-            className: "bg-amber-50 text-amber-600",
-            onClick: () => setShowHowItWorks((v) => !v),
-          },
-        ].map((action) => (
-          <button
-            key={action.title}
-            type="button"
-            onClick={action.onClick}
-            className="flex items-start gap-3 rounded-xl border border-border bg-card p-4 text-left shadow-sm transition hover:border-blue-600/30 hover:shadow-md"
-          >
-            <span
-              className={cn(
-                "grid size-10 shrink-0 place-items-center rounded-lg",
-                action.className,
-              )}
-            >
-              <action.icon className="size-5" />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="flex items-center justify-between gap-2">
-                <span className="text-sm font-semibold">{action.title}</span>
-                <ArrowRight className="size-4 shrink-0 text-foreground/30" />
+      {singlePage && typeof project.score === "number" ? (
+        <section className="stu-prd-score" aria-label="Lecturer score">
+          <div>
+            <p className="stu-prd-score-label">Lecturer score</p>
+            <p className="stu-prd-score-value">
+              {project.score}
+              <span>
+                /
+                {typeof project.assignmentBrief?.maxScore === "number"
+                  ? project.assignmentBrief.maxScore
+                  : 100}
               </span>
-              <span className="mt-0.5 block text-xs text-foreground/55">
-                {action.body}
-              </span>
-            </span>
-          </button>
-        ))}
-      </div>
+            </p>
+            {project.scoreNote?.trim() ? (
+              <p className="stu-prd-score-note">{project.scoreNote.trim()}</p>
+            ) : null}
+            {project.scoredAt ? (
+              <p className="stu-prd-score-meta">
+                Scored {formatDate(project.scoredAt)}
+              </p>
+            ) : null}
+          </div>
+          {project.criterionScores && project.criterionScores.length > 0 ? (
+            <ul className="stu-prd-criteria">
+              {project.criterionScores.map((c) => (
+                <li key={c.name}>
+                  <span>{c.name}</span>
+                  <strong>
+                    {c.score}/{c.maxMarks}
+                  </strong>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </section>
+      ) : null}
 
-      {showHowItWorks && (
-        <Card className="rounded-xl">
-          <CardContent className="grid gap-3 p-5 sm:grid-cols-3">
-            {howItWorksSteps.map((step) => (
-              <div key={step.title}>
-                <p className="text-sm font-semibold">{step.title}</p>
-                <p className="mt-1 text-xs text-foreground/55">{step.body}</p>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
-
-      {message && (
-        <p className="rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-sm text-success">
+      {message ? (
+        <p className="stu-prd-flash is-ok" role="status">
           {message}
         </p>
-      )}
-      {error && (
-        <p className="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">
+      ) : null}
+      {error ? (
+        <p className="stu-prd-flash is-err" role="alert">
           {error}
         </p>
-      )}
+      ) : null}
 
-      {showAddForm && (
+      {showAddForm ? (
         <form
           id="create-chapter-form"
           onSubmit={(e) => void addPage(e)}
-          className="rounded-xl border border-border bg-card p-4 shadow-sm"
+          className="stu-prd-create"
         >
-          <p className="text-sm font-semibold">
-            {singlePage ? "Create writing page" : "Create chapter"}
-          </p>
-          <p className="mt-1 text-xs text-foreground/55">
-            After creating, you’ll open the full-page editor automatically.
-          </p>
-          <div className="mt-3 flex flex-col gap-3 sm:flex-row">
-            <Input
+          <div>
+            <h2>{singlePage ? "Create writing page" : "Create chapter"}</h2>
+            <p>
+              Give it a clear title, then open the editor when you are ready to
+              write.
+            </p>
+          </div>
+          <div className="stu-prd-create-row">
+            <input
               autoFocus
               value={newPageTitle}
               onChange={(e) => setNewPageTitle(e.target.value)}
@@ -955,273 +859,309 @@ export default function ProjectOverviewPage() {
               }
               maxLength={200}
               disabled={adding}
+              className="stu-prd-input"
             />
-            <div className="flex shrink-0 gap-2">
-              <Button
-                type="submit"
-                disabled={adding || !newPageTitle.trim()}
-              >
-                <Plus className="size-4" />
-                {adding
-                  ? "Creating…"
-                  : singlePage
-                    ? "Create page"
-                    : "Create chapter"}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={adding}
-                onClick={() => {
-                  setShowAddForm(false);
-                  setNewPageTitle("");
-                }}
-              >
-                Cancel
-              </Button>
-            </div>
+            <button
+              type="submit"
+              className="stu-prd-btn stu-prd-btn-primary"
+              disabled={adding || !newPageTitle.trim()}
+            >
+              <Plus size={15} />
+              {adding
+                ? "Creating…"
+                : singlePage
+                  ? "Create page"
+                  : "Create chapter"}
+            </button>
+            <button
+              type="button"
+              className="stu-prd-btn stu-prd-btn-ghost"
+              disabled={adding}
+              onClick={() => {
+                setShowAddForm(false);
+                setNewPageTitle("");
+              }}
+            >
+              Cancel
+            </button>
           </div>
         </form>
-      )}
+      ) : null}
 
-      <Card className="rounded-xl shadow-sm">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 border-b border-border pb-4">
+      <section
+        className="stu-prd-panel"
+        aria-labelledby="stu-prd-chapters-heading"
+      >
+        <div className="stu-prd-panel-head">
           <div>
-            <CardTitle className="text-base">
+            <h2 id="stu-prd-chapters-heading">
               {singlePage ? "Writing page" : "Chapters"}
-            </CardTitle>
-            <CardDescription className="mt-0.5">
-              {singlePage
-                ? `${approvedCount} of ${pages.length} completed · one document surface`
-                : `${approvedCount} of ${pages.length} completed · sequential writing pipeline`}
-            </CardDescription>
+            </h2>
+            <p>
+              {pages.length === 0
+                ? singlePage
+                  ? "Create or import a page to begin writing."
+                  : "Add chapters to build your writing pipeline."
+                : `${approvedCount} of ${pages.length} approved${
+                    revisionCount > 0
+                      ? ` · ${revisionCount} need${revisionCount === 1 ? "s" : ""} revision`
+                      : ""
+                  }`}
+            </p>
           </div>
-          {!singlePage && (
-            <Button
-              type="button"
-              size="sm"
-              onClick={openCreateChapter}
-            >
-              <Plus className="size-3.5" />
-              Create chapter
-            </Button>
-          )}
-        </CardHeader>
-        <CardContent className="p-4 sm:p-5">
+          {!singlePage ? (
+            <div className="stu-prd-panel-actions">
+              <button
+                type="button"
+                className="stu-prd-btn stu-prd-btn-ghost stu-prd-btn-sm"
+                onClick={openCreateChapter}
+              >
+                <Plus size={14} />
+                Add chapter
+              </button>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="stu-prd-panel-body">
           {pages.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-border bg-muted/20 p-6 text-center">
-              <CircleHelp className="mx-auto size-5 text-foreground/35" />
-              <p className="mt-2 text-sm font-semibold">
-                {singlePage ? "No writing page yet" : "No chapters yet"}
-              </p>
-              <p className="mt-1 text-xs text-foreground/55">
+            <div className="stu-prd-empty stu-prd-empty-inset">
+              <span className="stu-prd-empty-icon" aria-hidden>
+                <CircleHelp size={22} />
+              </span>
+              <h3>{singlePage ? "No writing page yet" : "No chapters yet"}</h3>
+              <p>
                 {singlePage
                   ? "Import a Word/PDF draft, or create a page to open the editor."
-                  : "Create a chapter to open the full-width writing page."}
+                  : "Create a chapter or import a document to split into sections."}
               </p>
-              <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
-                <Button
+              <div className="stu-prd-empty-actions">
+                <button
                   type="button"
-                  size="sm"
+                  className="stu-prd-btn stu-prd-btn-primary"
                   onClick={() => fileInputRef.current?.click()}
                 >
-                  <Upload className="size-3.5" />
+                  <Upload size={15} />
                   Import document
-                </Button>
-                {!singlePage && (
-                  <Button
+                </button>
+                {!singlePage ? (
+                  <button
                     type="button"
-                    size="sm"
-                    variant="outline"
+                    className="stu-prd-btn stu-prd-btn-ghost"
                     onClick={openCreateChapter}
                   >
-                    <Plus className="size-3.5" />
+                    <Plus size={15} />
                     Create chapter
-                  </Button>
-                )}
-                {singlePage && (
-                  <Button
+                  </button>
+                ) : (
+                  <button
                     type="button"
-                    size="sm"
-                    variant="outline"
+                    className="stu-prd-btn stu-prd-btn-ghost"
                     onClick={() => {
                       setNewPageTitle("Assignment");
                       setShowAddForm(true);
                     }}
                   >
-                    <Plus className="size-3.5" />
+                    <Plus size={15} />
                     Create writing page
-                  </Button>
+                  </button>
                 )}
               </div>
             </div>
           ) : (
-            <ol className="relative" aria-label="Chapter pipeline">
+            <ol className="stu-prd-chapters" aria-label="Chapter pipeline">
               {pageStatuses.map(({ page, status, commentCount }, index) => {
-                const isLast = index === pageStatuses.length - 1;
+                const isContinue = continueTarget?._id === page._id;
                 return (
-                  <li key={page._id} className="relative flex gap-3 sm:gap-4">
-                    {/* Pipeline rail */}
-                    <div className="flex w-9 shrink-0 flex-col items-center sm:w-10">
+                  <li key={page._id}>
+                    <Link
+                      href={chapterHref(page._id)}
+                      className={cn(
+                        "stu-prd-chapter",
+                        isContinue && "is-next",
+                      )}
+                    >
                       <span
                         className={cn(
-                          "relative z-10 grid size-8 place-items-center rounded-full text-xs font-bold sm:size-9 sm:text-[13px]",
-                          pipelineNodeClass(status),
+                          "stu-prd-chapter-index",
+                          `tone-${statusTone(status)}`,
                         )}
                         aria-hidden
                       >
                         {status === "Approved" ? (
-                          <Check className="size-4 stroke-[3]" />
+                          <Check size={14} strokeWidth={3} />
                         ) : status === "Rejected" ? (
-                          <X className="size-4 stroke-[3]" />
+                          <X size={14} strokeWidth={3} />
                         ) : (
                           index + 1
                         )}
                       </span>
-                      {!isLast && (
-                        <span
-                          className={cn(
-                            "mt-1 w-0.5 flex-1 min-h-4",
-                            pipelineConnectorClass(status),
-                          )}
-                          aria-hidden
-                        />
-                      )}
-                    </div>
-
-                    <Link
-                      href={chapterHref(page._id)}
-                      className={cn(
-                        "group min-w-0 flex-1 rounded-xl border border-border bg-white px-3.5 py-3 shadow-sm transition",
-                        "hover:border-primary/35 hover:shadow-md",
-                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
-                        !isLast && "mb-3 sm:mb-4",
-                      )}
-                    >
-                      <span className="flex items-start justify-between gap-2">
-                        <span className="min-w-0">
-                          <span className="block text-[11px] font-semibold uppercase tracking-wide text-foreground/40">
-                            Stage {index + 1}
+                      <span className="stu-prd-chapter-copy">
+                        <span className="stu-prd-chapter-meta">
+                          Stage {index + 1}
+                          {isContinue ? " · Continue here" : ""}
+                        </span>
+                        <strong>{page.title}</strong>
+                        <em>{chapterHint(page.title)}</em>
+                        {commentCount > 0 ? (
+                          <span className="stu-prd-chapter-notes">
+                            <MessageSquare size={12} />
+                            {commentCount}{" "}
+                            {commentCount === 1 ? "comment" : "comments"}
                           </span>
-                          <span className="mt-0.5 block text-sm font-semibold text-foreground group-hover:text-primary">
-                            {page.title}
-                          </span>
-                        </span>
-                        <span
-                          className={cn(
-                            "shrink-0 rounded-md px-2 py-0.5 text-[10px] font-semibold",
-                            statusBadgeClass(status),
-                          )}
-                        >
-                          {statusLabel(status)}
-                        </span>
+                        ) : null}
                       </span>
-                      <span className="mt-1 block text-xs text-foreground/50">
-                        {chapterHint(page.title)}
+                      <span
+                        className={cn(
+                          "stu-prd-badge",
+                          `tone-${statusTone(status)}`,
+                        )}
+                      >
+                        {statusLabel(status)}
                       </span>
-                      {commentCount > 0 && (
-                        <span className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-medium text-amber-700">
-                          <MessageSquare className="size-3" />
-                          {commentCount}{" "}
-                          {commentCount === 1 ? "comment" : "comments"}
-                        </span>
-                      )}
+                      <ArrowRight
+                        size={16}
+                        className="stu-prd-chapter-arrow"
+                        aria-hidden
+                      />
                     </Link>
                   </li>
                 );
               })}
             </ol>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
-      <Card className="rounded-xl shadow-sm">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0">
-          <div className="flex items-center gap-2">
-            <History className="size-5 text-foreground/70" />
-            <div>
-              <CardTitle className="text-base">Version History</CardTitle>
-              <CardDescription>
-                Snapshots created when you submit a chapter
-              </CardDescription>
-            </div>
-          </div>
-          {versions.length > 0 && (
-            <Badge variant="neutral">{versions.length} versions</Badge>
-          )}
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {versions.length === 0 ? (
-            <p className="text-sm text-foreground/55">No versions yet</p>
-          ) : (
-            <>
-              <ul className="space-y-2">
-                {versions.slice(0, 8).map((v) => (
-                  <li
-                    key={v._id}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border px-3 py-2.5 text-sm"
-                  >
-                    <span className="font-semibold">
-                      Version {v.versionNumber}
-                    </span>
-                    <span className="text-xs text-foreground/55">
-                      {v.submittedAt
-                        ? new Date(v.submittedAt).toLocaleString()
-                        : "—"}
-                      {typeof v.wordCount === "number"
-                        ? ` · ${v.wordCount} words`
-                        : ""}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-              {versions.length >= 2 && (
-                <div className="space-y-3 border-t border-border pt-4">
-                  <p className="text-sm font-semibold">Compare versions</p>
-                  <div className="flex flex-col gap-2 sm:flex-row">
-                    <select
-                      className="h-11 flex-1 rounded-lg border border-border bg-card px-3 text-sm"
-                      value={compareA}
-                      onChange={(e) => setCompareA(e.target.value)}
-                    >
-                      <option value="">Version A</option>
-                      {versions.map((v) => (
-                        <option key={v._id} value={v._id}>
-                          v{v.versionNumber}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      className="h-11 flex-1 rounded-lg border border-border bg-card px-3 text-sm"
-                      value={compareB}
-                      onChange={(e) => setCompareB(e.target.value)}
-                    >
-                      <option value="">Version B</option>
-                      {versions.map((v) => (
-                        <option key={v._id} value={v._id}>
-                          v{v.versionNumber}
-                        </option>
-                      ))}
-                    </select>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => void runCompare()}
-                    >
-                      Compare
-                    </Button>
-                  </div>
-                  {compareText && (
-                    <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-lg bg-muted/40 p-3 text-xs text-foreground/70">
-                      {compareText}
-                    </pre>
-                  )}
+      <section className="stu-prd-tools" aria-label="Project tools">
+        <button
+          type="button"
+          className={cn("stu-prd-tool-toggle", showHowItWorks && "is-open")}
+          aria-expanded={showHowItWorks}
+          onClick={() => setShowHowItWorks((v) => !v)}
+        >
+          <span className="stu-prd-tool-toggle-main">
+            <Lightbulb size={16} aria-hidden />
+            <span>
+              <strong>How it works</strong>
+              <em>{howItWorksTeaser}</em>
+            </span>
+          </span>
+          <ChevronDown size={16} aria-hidden />
+        </button>
+        {showHowItWorks ? (
+          <div className="stu-prd-howto">
+            {howItWorksSteps.map((step, index) => (
+              <div key={step.title} className="stu-prd-howto-step">
+                <span aria-hidden>{index + 1}</span>
+                <div>
+                  <strong>{step.title}</strong>
+                  <p>{step.body}</p>
                 </div>
-              )}
-            </>
-          )}
-        </CardContent>
-      </Card>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        <button
+          type="button"
+          className={cn("stu-prd-tool-toggle", showVersions && "is-open")}
+          aria-expanded={showVersions}
+          onClick={() => setShowVersions((v) => !v)}
+        >
+          <span className="stu-prd-tool-toggle-main">
+            <History size={16} aria-hidden />
+            <span>
+              <strong>Version history</strong>
+              <em>
+                {versions.length === 0
+                  ? "Snapshots appear when you submit a chapter"
+                  : `${versions.length} version${versions.length === 1 ? "" : "s"} saved`}
+              </em>
+            </span>
+          </span>
+          <ChevronDown size={16} aria-hidden />
+        </button>
+        {showVersions ? (
+          <div className="stu-prd-versions">
+            {versions.length === 0 ? (
+              <p className="stu-prd-muted">No versions yet.</p>
+            ) : (
+              <>
+                <ul>
+                  {versions.slice(0, 8).map((v) => (
+                    <li key={v._id}>
+                      <strong>Version {v.versionNumber}</strong>
+                      <span>
+                        {v.submittedAt
+                          ? new Date(v.submittedAt).toLocaleString()
+                          : "—"}
+                        {typeof v.wordCount === "number"
+                          ? ` · ${v.wordCount} words`
+                          : ""}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                {versions.length >= 2 ? (
+                  <div className="stu-prd-compare">
+                    <p>Compare versions</p>
+                    <div className="stu-prd-compare-row">
+                      <select
+                        className="stu-prd-select"
+                        value={compareA}
+                        onChange={(e) => setCompareA(e.target.value)}
+                        aria-label="Version A"
+                      >
+                        <option value="">Version A</option>
+                        {versions.map((v) => (
+                          <option key={v._id} value={v._id}>
+                            v{v.versionNumber}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        className="stu-prd-select"
+                        value={compareB}
+                        onChange={(e) => setCompareB(e.target.value)}
+                        aria-label="Version B"
+                      >
+                        <option value="">Version B</option>
+                        {versions.map((v) => (
+                          <option key={v._id} value={v._id}>
+                            v{v.versionNumber}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        className="stu-prd-btn stu-prd-btn-ghost stu-prd-btn-sm"
+                        onClick={() => void runCompare()}
+                      >
+                        Compare
+                      </button>
+                    </div>
+                    {compareText ? (
+                      <pre className="stu-prd-compare-out">{compareText}</pre>
+                    ) : null}
+                  </div>
+                ) : null}
+              </>
+            )}
+          </div>
+        ) : null}
+      </section>
+
+      <div className="stu-prd-meta-foot">
+        <span>
+          <Calendar size={13} aria-hidden />
+          Started {formatDate(project.createdAt)}
+        </span>
+        <span>
+          <RefreshCw size={13} aria-hidden />
+          {formatRelative(project.updatedAt)}
+        </span>
+      </div>
     </div>
   );
 }

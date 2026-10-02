@@ -161,7 +161,7 @@ export function AdminSupervisionDashboard({ variant }: Props) {
 
 	if (!ready) {
 		return (
-			<Shell title="Supervision" subtitle="Loading…" breadcrumb="Academic products">
+			<Shell title="Supervision AI oversight" subtitle="Loading…" breadcrumb="AI product oversight">
 				<p className="muted">Loading…</p>
 			</Shell>
 		);
@@ -169,9 +169,9 @@ export function AdminSupervisionDashboard({ variant }: Props) {
 
 	return (
 		<Shell
-			title="Supervision"
-			subtitle="Oversee thesis and research projects (metadata only)"
-			breadcrumb={variant === "super" ? "Platform · Supervision" : "Academic products · Supervision"}
+			title="Supervision AI oversight"
+			subtitle="Oversee AI-linked thesis and research projects (metadata only)"
+			breadcrumb={variant === "super" ? "Platform · Supervision" : "AI product oversight · Supervision"}
 		>
 			{error && <p className="error-text">{error}</p>}
 

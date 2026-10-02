@@ -159,10 +159,12 @@ function SavedResearchListContent({ variant = "lecturer" }: Props) {
 						Browse papers and bookmarked ideas by topic, with created and updated dates.
 					</p>
 				</div>
-				<Link href={researchPath} className="sc-saved-primary-btn">
-					<Sparkles size={16} strokeWidth={1.75} />
-					New research
-				</Link>
+				{!isStudent ? (
+					<Link href={researchPath} className="sc-saved-primary-btn">
+						<Sparkles size={16} strokeWidth={1.75} />
+						New research
+					</Link>
+				) : null}
 			</header>
 
 			<div className="sc-saved-body">
@@ -180,12 +182,10 @@ function SavedResearchListContent({ variant = "lecturer" }: Props) {
 						</div>
 						<h2 className="sc-saved-empty-title">No saved research yet</h2>
 						<p className="sc-saved-empty-copy">
-							Generated papers and bookmarked ideas from Research Assistant will appear here.
+							{isStudent
+								? "Use New research in the top bar to generate papers and bookmark ideas. They will appear here."
+								: "Use New research above to generate papers and bookmark ideas. They will appear here."}
 						</p>
-						<Link href={researchPath} className="sc-saved-primary-btn">
-							<Sparkles size={16} strokeWidth={1.75} />
-							Start researching
-						</Link>
 					</div>
 				)}
 
