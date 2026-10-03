@@ -98,6 +98,11 @@ const ReviewHighlight = Highlight.extend({
   },
 });
 
+/** TipTap Highlight command typings omit our extended `comment` attribute. */
+function reviewHighlightAttrs(color: string, comment: string | null = null) {
+  return { color, comment } as { color: string };
+}
+
 type ReviewAnnotatorProps = {
   value: string;
   onChange: (html: string) => void;
@@ -531,7 +536,7 @@ export function ReviewAnnotator({
     activeEditor
       .chain()
       .focus()
-      .toggleHighlight({ color, comment: null })
+      .toggleHighlight(reviewHighlightAttrs(color, null))
       .run();
   }
 
@@ -575,14 +580,14 @@ export function ReviewAnnotator({
             .chain()
             .focus()
             .setTextSelection({ from, to })
-            .setHighlight({ color, comment: null })
+            .setHighlight(reviewHighlightAttrs(color, null))
             .run();
         } else {
           activeEditor
             .chain()
             .focus()
             .extendMarkRange("highlight")
-            .setHighlight({ color, comment: null })
+            .setHighlight(reviewHighlightAttrs(color, null))
             .run();
         }
       } catch {
@@ -590,7 +595,7 @@ export function ReviewAnnotator({
           .chain()
           .focus()
           .extendMarkRange("highlight")
-          .setHighlight({ color, comment: null })
+          .setHighlight(reviewHighlightAttrs(color, null))
           .run();
       }
     } else {
@@ -598,7 +603,7 @@ export function ReviewAnnotator({
         .chain()
         .focus()
         .extendMarkRange("highlight")
-        .setHighlight({ color, comment: null })
+        .setHighlight(reviewHighlightAttrs(color, null))
         .run();
     }
 
@@ -670,7 +675,7 @@ export function ReviewAnnotator({
       .chain()
       .focus()
       .extendMarkRange("highlight")
-      .setHighlight({ color, comment: note })
+      .setHighlight(reviewHighlightAttrs(color, note))
       .run();
 
     const html = activeEditor.getHTML();
