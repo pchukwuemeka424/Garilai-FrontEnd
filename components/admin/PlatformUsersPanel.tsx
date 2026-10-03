@@ -297,7 +297,7 @@ export function PlatformUsersPanel({
 	const onResetPassword = async (user: UserRecord) => {
 		const pw = window.prompt(`Reset password for ${user.email}:`)?.trim();
 		if (!pw || pw.length < 8) {
-			if (pw) setError("Password must be at least 8 characters.");
+			if (pw) setError("Password must be at least 10 characters and include a letter and a number.");
 			return;
 		}
 		setWorking(true);

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { wsUrl } from "@/lib/api";
+import { getStoredToken } from "@/lib/auth";
 import { applyAgentEvent, type AgentEventPayload, type ChatMessage } from "@/lib/agent-events";
 import { useAuth } from "@/hooks/useAuth";
 import type { StudentTokenQuota } from "@/lib/student-tokens";
@@ -55,6 +56,8 @@ export function useGarilSocket(options: UseGarilSocketOptions = {}) {
 		}
 
 		if (payload.type === "connected") {
+			setStatus("connected");
+			setError(null);
 			const st = payload.status as { model?: string; state?: string; sessionId?: string | null } | undefined;
 			setModel(st?.model);
 			setAgentState(st?.state ?? "idle");
@@ -142,8 +145,16 @@ export function useGarilSocket(options: UseGarilSocketOptions = {}) {
 		ws.onopen = () => {
 			if (closingRef.current || socketRef.current !== ws) return;
 			reconnectAttemptRef.current = 0;
-			setStatus("connected");
 			setError(null);
+			const token = getStoredToken();
+			if (!token) {
+				setStatus("error");
+				setError("Authentication required.");
+				ws.close();
+				return;
+			}
+			// Stay in "connecting" until the server confirms auth with type: "connected".
+			ws.send(JSON.stringify({ type: "auth", token }));
 		};
 
 		ws.onclose = () => {

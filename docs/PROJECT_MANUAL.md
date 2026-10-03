@@ -644,7 +644,7 @@ docker compose up -d --build
 
 - **No migration runner** (no Prisma/Drizzle). Schema = Mongoose models. Change models carefully in production.
 - **Connect** (`backend/src/db/connect.ts`): retries in production; index repair (e.g. legacy unique `userId` on research projects; paper-library `syncIndexes`).
-- **Default admin:** created on boot via `bootstrap-admin.service.ts` unless `DEFAULT_ADMIN_ENABLED=false`. One-shot script: `backend/scripts/ensure-default-admin.ts`.
+- **Default admin:** opt-in via `DEFAULT_ADMIN_ENABLED=true` + `DEFAULT_ADMIN_PASSWORD` (creates account only if missing; never resets existing passwords). Disable after first bootstrap. One-shot script: `backend/scripts/ensure-default-admin.ts`.
 - **Demo seeds** (not general fixtures): `seed-okes-survey.ts`, `seed-okes-supervision.ts` (`SEED_STUDENT_PASSWORD`).
 - **Governance cleanup** on boot may remove old mock rows (`admin-governance-cleanup.service.ts`).
 

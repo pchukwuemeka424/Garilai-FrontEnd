@@ -40,6 +40,7 @@
     "html2canvas": "^1.4.1",
     "hugeicons-react": "^0.4.0",
     "idb": "^8.0.3",
+    "isomorphic-dompurify": "^2.36.0",
     "jspdf": "^3.0.1",
     "jstat": "^1.9.6",
     "lucide-react": "^0.544.0",
@@ -52,6 +53,7 @@
     "react-dom": "^19.2.6",
     "react-markdown": "^10.1.0",
     "recharts": "^2.15.4",
+    "rehype-sanitize": "^6.0.0",
     "remark-gfm": "^4.0.1",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },

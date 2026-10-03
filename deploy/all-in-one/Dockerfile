@@ -1,6 +1,6 @@
-# Prefer split apps: deploy/backend + deploy/frontend (Coolify).
-# This root Dockerfile is the all-in-one image (API + static UI).
-# Equivalent: docker build -f deploy/all-in-one/Dockerfile
+# All-in-one (single container: API + static UI)
+# Prefer split services in ../backend and ../frontend for Coolify.
+#   docker build -f deploy/all-in-one/Dockerfile -t garil-ai .
 
 FROM node:22-bookworm-slim AS build
 

@@ -194,9 +194,10 @@ AUTH_SECRET=change-me-in-production
 # PUBMED_API_KEY=
 # NCBI_API_KEY=
 
-# Optional: default admin account
+# Optional first-run admin (disable after bootstrap)
+# DEFAULT_ADMIN_ENABLED=true
 # DEFAULT_ADMIN_EMAIL=admin@aula.com
-# DEFAULT_ADMIN_PASSWORD=admin123
+# DEFAULT_ADMIN_PASSWORD=  # required when enabled; use a unique strong password (≥12 chars)
 ```
 
 Do not commit real secrets. `.env` and `backend/.env` are in `.gitignore`.

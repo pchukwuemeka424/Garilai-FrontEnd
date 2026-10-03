@@ -1,0 +1,50 @@
+# Traefik dynamic config for Coolify proxy (reference copy).
+# setup-vps.sh writes this to /data/coolify/proxy/dynamic/garil-minio.yaml
+http:
+  routers:
+    garil-minio-api-https:
+      rule: "Host(`s3.garilai.com`)"
+      entryPoints:
+        - https
+      service: garil-minio-api
+      tls:
+        certResolver: letsencrypt
+      priority: 100
+    garil-minio-api-http:
+      rule: "Host(`s3.garilai.com`)"
+      entryPoints:
+        - http
+      middlewares:
+        - garil-minio-https-redirect
+      service: garil-minio-api
+      priority: 100
+    garil-minio-console-https:
+      rule: "Host(`minio.garilai.com`)"
+      entryPoints:
+        - https
+      service: garil-minio-console
+      tls:
+        certResolver: letsencrypt
+      priority: 100
+    garil-minio-console-http:
+      rule: "Host(`minio.garilai.com`)"
+      entryPoints:
+        - http
+      middlewares:
+        - garil-minio-https-redirect
+      service: garil-minio-console
+      priority: 100
+  middlewares:
+    garil-minio-https-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+  services:
+    garil-minio-api:
+      loadBalancer:
+        servers:
+          - url: "http://garil-minio:9000"
+    garil-minio-console:
+      loadBalancer:
+        servers:
+          - url: "http://garil-minio:9001"

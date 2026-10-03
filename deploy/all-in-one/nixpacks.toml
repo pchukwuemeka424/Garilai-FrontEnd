@@ -1,0 +1,22 @@
+# All-in-one Nixpacks (API + static UI in one process)
+providers = ["node"]
+
+[variables]
+NODE_ENV = "production"
+NIXPACKS_NODE_VERSION = "22"
+PORT = "3141"
+
+[phases.install]
+cmds = [
+  "npm ci",
+  "npm ci --prefix backend",
+]
+
+[phases.build]
+cmds = [
+  "npm run build",
+  "npx tsc -p backend/tsconfig.json",
+]
+
+[start]
+cmd = "node backend/dist/index.js"

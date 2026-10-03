@@ -164,7 +164,7 @@ export function AdminConsoleDetailModal({
 		e.preventDefault();
 		if (!user) return;
 		if (newPassword.length < 8) {
-			setError("Password must be at least 8 characters.");
+			setError("Password must be at least 10 characters and include a letter and a number.");
 			return;
 		}
 		if (newPassword !== confirmPassword) {

@@ -22,6 +22,7 @@ import { RemarkHtml } from "@/components/portal/editor/remark-html";
 import { apiFetch } from "@/lib/portal-api";
 import { stripReviewMarks } from "@/lib/portal/apply-highlights";
 import { cn } from "@/lib/portal/cn";
+import { sanitizeHtml } from "@/lib/sanitize-html";
 import {
   assignmentSubmissionStatus,
   primaryAssignmentPage,
@@ -366,7 +367,7 @@ export default function StudentAssignmentDetailPage() {
           {hasSubmission ? (
             <div
               className="document-editor-prose stu-asnd-prose"
-              dangerouslySetInnerHTML={{ __html: submissionHtml }}
+              dangerouslySetInnerHTML={{ __html: sanitizeHtml(submissionHtml) }}
             />
           ) : (
             <div className="stu-asnd-empty stu-asnd-empty-inset">

@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
+import rehypeSanitize from "rehype-sanitize";
 
 import { DisciplineSelect } from "@/components/aula/DisciplineSelect";
 import { NavIcon } from "@/components/aula/NavIcon";
@@ -875,7 +876,9 @@ export function ResearchAssistant({
 					<>
 						{renderTopicAnalysis()}
 						<div className="research-markdown-panel">
-							<ReactMarkdown>{ideasToMarkdown(filteredIdeas, disciplineLabel, topic.trim())}</ReactMarkdown>
+							<ReactMarkdown rehypePlugins={[rehypeSanitize]}>
+								{ideasToMarkdown(filteredIdeas, disciplineLabel, topic.trim())}
+							</ReactMarkdown>
 						</div>
 					</>
 				);
@@ -907,7 +910,7 @@ export function ResearchAssistant({
 		if (showRawResponse && assistantContent) {
 			return (
 				<div className="research-markdown-panel">
-					<ReactMarkdown>{assistantContent}</ReactMarkdown>
+					<ReactMarkdown rehypePlugins={[rehypeSanitize]}>{assistantContent}</ReactMarkdown>
 				</div>
 			);
 		}

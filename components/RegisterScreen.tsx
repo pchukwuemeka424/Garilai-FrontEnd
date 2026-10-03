@@ -164,7 +164,9 @@ export function RegisterScreen({ defaultRole = "lecturer" }: Props) {
 		}
 
 		if (step === "security") {
-			if (password.length < 8) return "Password must be at least 8 characters.";
+			if (password.length < 10 || !/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) {
+				return "Password must be at least 10 characters and include a letter and a number.";
+			}
 			if (password !== confirmPassword) return "Passwords do not match.";
 			if (!acceptedPolicies) {
 				return "Please agree to the Terms of Service, Privacy Policy, and Acceptable Use Policy.";
@@ -473,7 +475,7 @@ export function RegisterScreen({ defaultRole = "lecturer" }: Props) {
 									id="register-password"
 									label="Password"
 									type="password"
-									placeholder="At least 8 characters"
+									placeholder="At least 10 characters, with a letter and number"
 									value={password}
 									onChange={(e) => setPassword(e.target.value)}
 									autoComplete="new-password"

@@ -1,8 +1,15 @@
-.dockerignore
 .git
+.cursor
 .next
-out
 node_modules
+backend/node_modules
+backend/dist
+backend/backups
+out
 .env
 .env.local
+backend/.env
+*.md
+!README.md
 .DS_Store
+tsconfig.tsbuildinfo

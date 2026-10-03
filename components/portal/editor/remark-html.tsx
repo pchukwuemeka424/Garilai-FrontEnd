@@ -1,5 +1,6 @@
 import { stripRemarkHtml, remarkIsHtml } from "@/lib/portal/remark-html";
 import { cn } from "@/lib/portal/cn";
+import { sanitizeHtml } from "@/lib/sanitize-html";
 
 export function RemarkHtml({
   html,
@@ -17,7 +18,7 @@ export function RemarkHtml({
           "document-editor-prose max-w-none text-[15px] leading-relaxed text-foreground/85",
           className,
         )}
-        dangerouslySetInnerHTML={{ __html: value }}
+        dangerouslySetInnerHTML={{ __html: sanitizeHtml(value) }}
       />
     );
   }

@@ -23,6 +23,7 @@ import {
   type ReviewTrailEvent,
 } from "@/lib/portal/review-trail";
 import { cn } from "@/lib/portal/cn";
+import { sanitizeHtml } from "@/lib/sanitize-html";
 
 function eventKey(event: ReviewTrailEvent, index: number) {
   return event._id || `${event.type}-${event.at}-${index}`;
@@ -215,7 +216,7 @@ export function ReviewTrailPanel({
               {viewerHtml ? (
                 <div
                   className="review-highlight-content document-editor-prose max-w-none"
-                  dangerouslySetInnerHTML={{ __html: viewerHtml }}
+                  dangerouslySetInnerHTML={{ __html: sanitizeHtml(viewerHtml) }}
                 />
               ) : (
                 <p className="portal-review-hint">No draft is stored for this round.</p>

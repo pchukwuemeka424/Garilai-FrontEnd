@@ -1,0 +1,27 @@
+[Unit]
+Description=GARIL AI backend API (Fastify)
+After=network-online.target mongod.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/garil-ai/backend
+
+Environment=NODE_ENV=production
+EnvironmentFile=-/var/www/garil-ai/backend/.env
+
+ExecStart=/usr/bin/node dist/index.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/www/garil-ai/backend/backups
+
+[Install]
+WantedBy=multi-user.target

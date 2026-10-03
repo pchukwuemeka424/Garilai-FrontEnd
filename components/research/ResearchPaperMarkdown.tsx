@@ -2,6 +2,7 @@
 
 import { useId, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
+import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 import { canonicalizeSectionTitle, sectionHeadingId, stripTitleAboveAbstract } from "@/lib/research-paper-sections";
 import {
@@ -339,6 +340,7 @@ function MarkdownSection({
 	return (
 		<ReactMarkdown
 			remarkPlugins={[remarkGfm]}
+			rehypePlugins={[rehypeSanitize]}
 			components={{
 				img: allowImages
 					? ({ src, alt }) =>

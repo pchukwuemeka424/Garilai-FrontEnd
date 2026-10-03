@@ -216,8 +216,11 @@ export function AdminAdminsDashboard() {
 			setError("Select an onboarded university for this admin.");
 			return;
 		}
-		if (!form.inviteOnly && form.password.length < 8) {
-			setError("Password must be at least 8 characters, or enable invite-only.");
+		if (
+			!form.inviteOnly &&
+			(form.password.length < 10 || !/[A-Za-z]/.test(form.password) || !/[0-9]/.test(form.password))
+		) {
+			setError("Password must be at least 10 characters with a letter and number, or enable invite-only.");
 			return;
 		}
 		setWorking(true);
@@ -287,7 +290,7 @@ export function AdminAdminsDashboard() {
 		const pw = window.prompt(`New password for ${admin.email}:`)?.trim();
 		if (!pw) return;
 		if (pw.length < 8) {
-			setError("Password must be at least 8 characters.");
+			setError("Password must be at least 10 characters and include a letter and a number.");
 			return;
 		}
 		setWorking(true);

@@ -155,7 +155,7 @@ export async function deleteAllResearchFromApi(): Promise<ApiDeleteResult> {
 
 export async function fetchOutputsFromApi(): Promise<OutputListEntry[] | null> {
 	try {
-		const res = await fetch(apiUrl("/api/outputs"));
+		const res = await fetch(apiUrl("/api/outputs"), { headers: authHeaders() });
 		if (!res.ok) return null;
 		const data = (await res.json()) as { outputs?: OutputListEntry[] };
 		return data.outputs ?? [];

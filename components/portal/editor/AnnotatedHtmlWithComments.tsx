@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/portal/cn";
+import { sanitizeHtml } from "@/lib/sanitize-html";
 import {
   collectMarginCommentsFromRoot,
   type MarginCommentCard,
@@ -91,7 +92,7 @@ export function AnnotatedHtmlWithComments({
             "review-highlight-content review-annotated-view prose prose-sm max-w-none text-foreground/80",
             bodyClassName,
           )}
-          dangerouslySetInnerHTML={{ __html: html }}
+          dangerouslySetInnerHTML={{ __html: sanitizeHtml(html) }}
         />
         {legend ? (
           <p className="mt-3 text-[11px] text-foreground/45">{legend}</p>

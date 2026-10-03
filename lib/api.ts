@@ -1,5 +1,4 @@
 /** Backend origin for split dev (Next on :3000, API on :3141). Empty = same origin. */
-import { getStoredToken } from "@/lib/auth";
 
 export function getBackendOrigin(): string {
 	if (typeof window === "undefined") return "";
@@ -44,7 +43,6 @@ export function wsUrl(): string {
 					return `${protocol}//${host}/ws`;
 				})();
 
-	const token = typeof window !== "undefined" ? getStoredToken() : null;
-	if (!token) return base;
-	return `${base}?token=${encodeURIComponent(token)}`;
+	// Never put JWTs in the WebSocket URL (logs/proxies/history). Auth is sent as the first message.
+	return base;
 }
