@@ -1,6 +1,10 @@
-# Prefer split apps: deploy/backend + deploy/frontend (Coolify).
-# This root Dockerfile is the all-in-one image (API + static UI).
-# Equivalent: docker build -f deploy/all-in-one/Dockerfile
+# Build from repo root:
+#   docker build -f deploy/frontend/Dockerfile \
+#     --build-arg NEXT_PUBLIC_FEYNMAN_BACKEND=https://api.example.com \
+#     -t garil-frontend .
+#
+# Coolify: Dockerfile path = deploy/frontend/Dockerfile (or repo-root copy).
+# Runtime listens on $PORT (Coolify injects this).
 
 FROM node:22-bookworm-slim AS build
 
@@ -9,28 +13,33 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
-COPY backend/package.json backend/package-lock.json ./backend/
-RUN npm ci --prefix backend
+COPY app ./app
+COPY components ./components
+COPY hooks ./hooks
+COPY lib ./lib
+COPY public ./public
+COPY styles ./styles
+COPY next.config.ts postcss.config.mjs tsconfig.json next-env.d.ts ./
 
-COPY . .
+ARG NEXT_PUBLIC_FEYNMAN_BACKEND=
+ENV NEXT_PUBLIC_FEYNMAN_BACKEND=$NEXT_PUBLIC_FEYNMAN_BACKEND
 ENV NODE_ENV=production
+ENV GARIL_STATIC_EXPORT=0
+
 RUN npm run build \
-	&& npx tsc -p backend/tsconfig.json \
-	&& test -f out/index.html \
-	&& test -f backend/dist/index.js
+	&& test -f .next/standalone/server.js
 
 FROM node:22-bookworm-slim AS runtime
 
 WORKDIR /app
 ENV NODE_ENV=production
-ENV PORT=3141
+ENV PORT=80
+ENV HOSTNAME=0.0.0.0
+ENV GARIL_STATIC_EXPORT=0
 
-COPY --from=build /app/backend/package.json /app/backend/package-lock.json ./backend/
-RUN npm ci --omit=dev --prefix backend
+COPY --from=build /app/public ./public
+COPY --from=build /app/.next/standalone ./
+COPY --from=build /app/.next/static ./.next/static
 
-COPY --from=build /app/out ./out
-COPY --from=build /app/backend/dist ./backend/dist
-COPY --from=build /app/backend/prompts ./backend/prompts
-
-EXPOSE 3141
-CMD ["node", "backend/dist/index.js"]
+EXPOSE 80
+CMD ["node", "server.js"]
