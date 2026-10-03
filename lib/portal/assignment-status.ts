@@ -23,7 +23,9 @@ type PageLike = {
 	reviewTrail?: ReviewTrailEvent[];
 };
 
-export function primaryAssignmentPage(pages: PageLike[] | undefined) {
+export function primaryAssignmentPage<T extends PageLike>(
+	pages: T[] | undefined,
+): T | null {
 	if (!Array.isArray(pages) || pages.length === 0) return null;
 	return [...pages].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))[0] ?? null;
 }
